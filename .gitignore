@@ -1,0 +1,21 @@
+# Node / Frontend
+node_modules/
+.next/
+dist/
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+poetry.lock
+__pypackages__/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
