@@ -3,6 +3,10 @@
 # Exit on error
 set -e
 
+# --- Install System Dependencies ---
+echo "Updating package list and installing git-lfs..."
+sudo apt-get update && sudo apt-get install git-lfs -y
+
 # --- Install Global Tools ---
 echo "Installing global tools: Poetry..."
 pipx install poetry
