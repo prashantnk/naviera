@@ -4,4 +4,4 @@ app = FastAPI(title="Naviera API")
 
 @app.get("/")
 async def root():
-return {"message": "Hello, Naviera!"}
+    return {"message": "Hello, Naviera!"}
