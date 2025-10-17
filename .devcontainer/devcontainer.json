@@ -1,43 +1,57 @@
 {
   "name": "Naviera Monorepo Environment",
-
-  // 1. PYTHON CONFIGURATION: Use a specific Python 3.11 base image
-  // This uses a Debian "Bullseye" image with Python 3.11 pre-installed.
-  // This prevents Codespaces from defaulting to newer Python versions like 3.13.
-  "image": "mcr.microsoft.com/devcontainers/python:0-3.11-bullseye",
-
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers-contrib/features/poetry:2": {},
+    "ghcr.io/devcontainers/features/git-lfs:1": {}
+  },
   "customizations": {
     "vscode": {
-      // 2. VS CODE EXTENSIONS: A comprehensive list for your entire stack
       "extensions": [
-        // --- Python & Backend Essentials ---
-        "ms-python.python",                 // Official Python support
-        "ms-python.vscode-pylance",         // Smartest IntelliSense for Python
-        "charliermarsh.ruff",               // Modern, ultra-fast Python linter and formatter
-        "ms-python.black-formatter",        // Opinionated code formatter
-        "rangav.vscode-thunder-client",     // API client inside VS Code (Postman alternative)
-        "ckolkman.vscode-postgres",         // Connect to and manage your PostgreSQL database
-
-        // --- Frontend & General Web Essentials (for your future Next.js app) ---
-        "dbaeumer.vscode-eslint",           // Integrates ESLint for JavaScript/TypeScript
-        "esbenp.prettier-vscode",           // The industry-standard code formatter
-        "bradlc.vscode-tailwindcss",        // IntelliSense for Tailwind CSS if you use it
-        
-        // --- General Productivity & Collaboration ---
-        "eamodio.gitlens",                  // Supercharges Git capabilities
-        "GitHub.copilot",                   // AI-powered code completion (highly recommended)
-        "ms-azuretools.vscode-docker",      // Manage Docker containers (useful for deployment)
-        "mikestead.dotenv"                  // Syntax highlighting for .env files
-      ]
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "charliermarsh.ruff",
+        "eamodio.gitlens",
+        "ms-vsliveshare.vsliveshare",
+        "esbenp.prettier-vscode",
+        "rangav.vscode-thunder-client",
+        "ckolkman.vscode-postgres",
+        "mikestead.dotenv",
+        "Google.geminicodeassist",
+        "Codeium.codeium",
+        "Google.gemini-cli-vscode-ide-companion"
+      ],
+      "settings": {
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.formatOnSave": true
+        },
+        "python.linting.ruffEnabled": true,
+        "python.linting.enabled": true,
+        "python.defaultInterpreterPath": "/workspaces/naviera/backend/.venv/bin/python",
+        "[javascript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.formatOnSave": true
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode",
+          "editor.formatOnSave": true
+        }
+      }
     }
   },
-
-  // 3. POST-CREATION SETUP: Commands that run after the environment is built
-  // This section automates your entire setup process.
   "postCreateCommand": "sh ./.devcontainer/post-create.sh",
-
-  // Forward the backend port so you can access the running API
-  "forwardPorts": [8000],
-
+  "forwardPorts": [
+    8000,
+    3000
+  ],
   "remoteUser": "vscode"
 }
