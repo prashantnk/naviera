@@ -47,7 +47,7 @@ All commands should be run from the `naviera/backend/` directory.
 
    ```env
    # backend/.env
-   DATABASE_URL=postgresql+asyncpg://postgres.[your-project-ref]:[YOUR-PASSWORD]@[aws-0-ap-south-1.pooler.supabase.com:5432/postgres](https://aws-0-ap-south-1.pooler.supabase.com:5432/postgres)
+   DATABASE_URL=postgresql+asyncpg://postgres.[your-project-ref]:[YOUR-PASSWORD]@[aws-0-ap-south-1.pooler.supabase.com:5432/postgres]
    DB_ECHO_LOG=True # Optional: Set to True to see all SQL queries
    ```
 
@@ -70,52 +70,61 @@ Once the setup is complete, start the FastAPI development server:
 
 ```bash
 poetry run uvicorn app.main:app --reload
+```
+
 The API will be available at [http://127.0.0.1](http://127.0.0.1):8000. The --reload flag automatically restarts the server when you save code changes.
 
-🗃️ Database Migrations (Alembic)
+---
+
+## 🗃️ Database Migrations (Alembic)
+
 Alembic manages all changes to our database schema. It is the single source of truth for the database structure.
 
-The Workflow
-Make changes to your model files in app/models/.
+### The Workflow
 
-Generate a new migration script that captures these changes.
+1. Make changes to your model files in `app/models/`.
+2. Generate a new migration script that captures these changes.
+3. Review the generated script for correctness.
+4. Apply the migration to the database.
 
-Review the generated script for correctness.
+### Common Commands
 
-Apply the migration to the database.
-
-Common Commands
 All commands should be run from the backend/ directory.
 
-Generate a new migration:
+#### Generate a new migration:
 
-Bash
-
+```bash
 # Always include a descriptive message with -m
 poetry run alembic revision --autogenerate -m "Add last_login_at to user model"
-Important: After generating, always open the new file in alembic/versions/ to review it. You may need to manually add import sqlmodel.
+```
 
-Apply migrations:
+> **Important**: After generating, always open the new file in `alembic/versions/` to review it. You may need to manually add `import sqlmodel`.
 
-Bash
+#### Apply migrations:
 
+```bash
 # Applies all migrations up to the latest version
 poetry run alembic upgrade head
-Revert migrations:
+```
 
-Bash
+#### Revert migrations:
 
+```bash
 # Revert the very last migration
 poetry run alembic downgrade -1
 
 # Revert all migrations (for a clean slate)
 poetry run alembic downgrade base
-Troubleshooting Migrations
+```
+
+### Troubleshooting Migrations
+
 If you generate an empty or incorrect migration script, it's often because Alembic's history is out of sync. The safest way to fix this is:
 
-Manually delete the alembic_version table from your Supabase database using the UI.
+1. Manually delete the `alembic_version` table from your Supabase database using the UI.
+2. Delete any incorrect migration files from the `alembic/versions/` folder.
+3. Re-run the `revision --autogenerate` command.
 
-Delete any incorrect migration files from the alembic/versions/ folder.
+```
 
-Re-run the revision --autogenerate command.
 ```
