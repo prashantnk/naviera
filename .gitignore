@@ -13,7 +13,7 @@ poetry.lock
 __pypackages__/
 
 # IDE / Editor
-.vscode/
+# .vscode/
 .idea/
 
 # OS
