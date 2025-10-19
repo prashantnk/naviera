@@ -7,7 +7,7 @@ set -e
 echo "Updating package list and installing prerequisites..."
 sudo apt-get update
 # Install tools that are available in the default repository.
-sudo apt-get install -y git-lfs bat bash-completion curl
+sudo apt-get install -y git-lfs bat bash-completion curl netcat-openbsd
 
 # --- 2. Install Tools Manually ---
 echo "Installing Starship, and LSD manually..."
