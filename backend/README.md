@@ -60,8 +60,15 @@ All commands should be run from the `naviera/backend/` directory.
 
 4. **Apply Database Migrations**:
    This command connects to your database and creates all the necessary tables (`tenant`, `user`, etc.).
+
    ```bash
    poetry run alembic upgrade head
+   ```
+
+5. **Seed the Database**:
+   This script populates the database with initial data (e.g., the first tenant and owner). It is safe to run multiple times.
+   ```bash
+   poetry run seed
    ```
 
 ### 3. Running the Application
