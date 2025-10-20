@@ -32,3 +32,6 @@ pre-commit = ">=4.3.0,<5.0.0"
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+seed = "scripts.seed:main_wrapper"

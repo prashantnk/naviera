@@ -60,8 +60,15 @@ All commands should be run from the `naviera/backend/` directory.
 
 4. **Apply Database Migrations**:
    This command connects to your database and creates all the necessary tables (`tenant`, `user`, etc.).
+
    ```bash
    poetry run alembic upgrade head
+   ```
+
+5. **Seed the Database**:
+   This script populates the database with initial data (e.g., the first tenant and owner). It is safe to run multiple times.
+   ```bash
+   poetry run seed
    ```
 
 ### 3. Running the Application
@@ -78,53 +85,51 @@ The API will be available at [http://127.0.0.1](http://127.0.0.1):8000. The --re
 
 ## 🗃️ Database Migrations (Alembic)
 
-Alembic manages all changes to our database schema. It is the single source of truth for the database structure.
+Alembic manages all changes to our database schema.
 
 ### The Workflow
 
-1. Make changes to your model files in `app/models/`.
-2. Generate a new migration script that captures these changes.
-3. Review the generated script for correctness.
-4. Apply the migration to the database.
+1.  **Make changes** to your model files in `app/models/`.
+2.  **Generate a new migration script** that captures these changes.
+3.  **Review** the generated script for correctness.
+4.  **Apply** the migration to the database.
 
 ### Common Commands
 
-All commands should be run from the backend/ directory.
+- **Generate a new migration:**
 
-#### Generate a new migration:
+  ```bash
+  # Always include a descriptive message with -m
+  poetry run alembic revision --autogenerate -m "Add last_login_at to user model"
+  ```
 
-```bash
-# Always include a descriptive message with -m
-poetry run alembic revision --autogenerate -m "Add last_login_at to user model"
-```
+  **Critical Step**: After generating, always open the new file in `alembic/versions/` to review it. You will likely need to **manually add `import sqlmodel`** at the top of the script.
 
-> **Important**: After generating, always open the new file in `alembic/versions/` to review it. You may need to manually add `import sqlmodel`.
+- **Apply migrations:**
 
-#### Apply migrations:
+  ```bash
+  # Applies all migrations up to the latest version
+  poetry run alembic upgrade head
+  ```
 
-```bash
-# Applies all migrations up to the latest version
-poetry run alembic upgrade head
-```
+- **Revert migrations:**
 
-#### Revert migrations:
+  ```bash
+  # Revert the very last migration
+  poetry run alembic downgrade -1
 
-```bash
-# Revert the very last migration
-poetry run alembic downgrade -1
+  # Revert all migrations (for a clean slate)
+  poetry run alembic downgrade base
+  ```
 
-# Revert all migrations (for a clean slate)
-poetry run alembic downgrade base
-```
+### Troubleshooting: The "Empty Migration" Problem
 
-### Troubleshooting Migrations
+If you run `poetry run alembic revision --autogenerate` and it produces an empty script (with just `pass`), it means Alembic's history is out of sync with the database. This usually happens after a failed or deleted migration.
 
-If you generate an empty or incorrect migration script, it's often because Alembic's history is out of sync. The safest way to fix this is:
+If you run `poetry run alembic current`, you should see the current revision number.
 
-1. Manually delete the `alembic_version` table from your Supabase database using the UI.
-2. Delete any incorrect migration files from the `alembic/versions/` folder.
-3. Re-run the `revision --autogenerate` command.
+**The definitive fix is to manually reset the database state:**
 
-```
-
-```
+1.  Go to the Supabase dashboard and use the **Table Editor** to **delete the `alembic_version` table**. Also, delete any other application tables (`tenant`, `user`) if they are in an incorrect state.
+2.  Delete the incorrect/empty migration script file from your local `alembic/versions/` folder.
+3.  Re-run the `alembic revision --autogenerate` command again. It will now correctly generate the script.
