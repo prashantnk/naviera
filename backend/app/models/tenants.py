@@ -2,6 +2,7 @@ import uuid
 from enum import Enum
 
 from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import Column, JSON, UniqueConstraint,Index, table
 
 # 1. Import Column and JSON from sqlalchemy
 from sqlalchemy import Column, JSON
@@ -24,8 +25,16 @@ class Tenant(SQLModel, table=True):
 
 # The User model: Represents a user account, which must belong to a Tenant.
 class User(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("supabase_user_id", "tenant_id", name="unique_user_tenant"),
+        UniqueConstraint("email", "tenant_id", name="unique_email_tenant"),
+        # Add the new composite index for performance
+        Index("ix_user_supabase_tenant", "supabase_user_id", "tenant_id"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    email: str = Field(unique=True, index=True)
+    # This new field links our user profile to the Supabase Auth user identity.
+    supabase_user_id: str = Field(index=True)
+    email: str = Field(index=True)
     is_active: bool = Field(default=True)
     role: UserRole = Field(default=UserRole.customer)
 
