@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[TenantRead])
-async def list_tenants(session: AsyncSession = Depends(get_session)):
+async def list_tenants(*, session: AsyncSession = Depends(get_session)):
     """
     List all tenants in the system.
     """
@@ -24,7 +24,7 @@ async def list_tenants(session: AsyncSession = Depends(get_session)):
 
 @router.get("/{tenant_id}/users/", response_model=List[UserRead])
 async def list_users_for_tenant(
-    tenant_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    tenant_id: uuid.UUID, *, session: AsyncSession = Depends(get_session)
 ):
     """
     List all users for a specific tenant.

@@ -17,5 +17,16 @@ class Settings(BaseSettings):
     # It's a boolean that defaults to False if not set in the .env file
     DB_ECHO_LOG: bool = False
 
+    # --- Authentication ---
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # --- Supabase Client ---
+    SUPABASE_URL: str
+    SUPABASE_ANON_KEY: str
+    # Add the Supabase Issuer URL
+    JWT_ISSUER: str
+
 
 settings = Settings()  # type: ignore
