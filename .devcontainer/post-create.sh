@@ -36,6 +36,7 @@ alias reload="source ~/.bashrc && echo 'Bash configuration reloaded!'"
 alias run-backend="cd /workspaces/naviera/backend && poetry run uvicorn app.main:app --host 0.0.0.0 --reload"
 alias ls='lsd -l --icon=auto'
 alias ll='lsd -al --icon=auto'
+alias rebase='git pull; git merge origin/master; git push;'
 alias cat='batcat'
 EOF
 fi
