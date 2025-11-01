@@ -1,10 +1,12 @@
+import uuid
+
 from app.core.db import get_session
 from app.core.security import TokenPayload
+from app.exceptions.definitions import TenantNotFoundException
 from app.models.tenants import Tenant, User, UserRole
 from app.repositories.tenants import TenantRepository
 from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
-import uuid
 
 
 class TenantService:
@@ -47,11 +49,14 @@ class TenantService:
         Retrieves all tenants from the repository.
         """
         return await self.tenant_repo.list_tenants()
-    
+
     async def list_users_for_tenant(self, tenant_id: uuid.UUID) -> list[User]:
         """
         Retrieves all users for a specific tenant.
         """
+        tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
+        if not tenant:
+            raise TenantNotFoundException()
         return await self.tenant_repo.list_users_for_tenant(tenant_id=tenant_id)
 
 

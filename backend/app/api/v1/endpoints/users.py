@@ -35,12 +35,11 @@ async def onboard_new_user(
 async def list_users_in_tenant(
     *,
     current_user: User = Depends(get_current_active_user),
-    # Note: We are not using the tenant_service here yet, but will in the future
-    # to get a list of users from the repository. This is a placeholder for now.
+    tenant_service: TenantService = Depends(get_tenant_service),
 ):
     """
     List all users for the current authenticated user's tenant.
     (This will be refactored to use the service layer fully next).
     """
-    # For now, this logic is simple enough to remain, but will be moved.
-    return [current_user]  # A simplified version for now
+    users = await tenant_service.list_users_for_tenant(tenant_id=current_user.tenant_id)
+    return users
