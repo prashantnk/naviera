@@ -3,10 +3,10 @@ import uuid
 from typing import List
 
 from app.core.dependencies import get_current_active_user
-from app.models.tenants import User, UserRole
+from app.models.tenants import User
 from app.schemas.v1.tenants import TenantRead, UserRead
 from app.services.tenants import TenantService, get_tenant_service
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 router = APIRouter()
 
@@ -20,8 +20,8 @@ async def list_tenants(
     """
     List all tenants in the system.
     """
-    if user.role != UserRole.owner:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    # if user.role != UserRole.owner:
+    #     raise HTTPException(status_code=403, detail="Forbidden")
     tenants = await tenant_service.list_tenants()
     return tenants
 
@@ -36,8 +36,8 @@ async def list_users_for_tenant(
     """
     List all users for a specific tenant (administrative).
     """
-    if user.role != UserRole.owner:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    # if user.role != UserRole.owner:
+    #     raise HTTPException(status_code=403, detail="Forbidden")
 
     users = await tenant_service.list_users_for_tenant(tenant_id=tenant_id)
     return users

@@ -22,6 +22,12 @@ class TenantRepository:
         result = await self.session.exec(statement)
         return list(result.all())
 
+    async def get_tenant_by_id(self, tenant_id: uuid.UUID) -> Tenant | None:
+        """
+        Retrieves a single tenant by its ID.
+        """
+        return await self.session.get(Tenant, tenant_id)
+
     async def get_tenant_by_slug(self, slug: str) -> Tenant | None:
         """
         Retrieves a single tenant by its unique slug.

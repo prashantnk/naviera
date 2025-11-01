@@ -1,38 +1,37 @@
-# backend/app/main.py
-from app.api.v1.router import api_router as api_router_v1
-from app.core.config import settings
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
-import logging
-import time
-from fastapi import Request
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import our application's high-level components
+from app.api.v1.router import api_router as api_router_v1
+from app.core.config import settings
+from app.exceptions.handlers import register_exception_handlers
+from app.middleware import register_middleware
 
+# Create the FastAPI app
 app = FastAPI(title=settings.PROJECT_NAME)
 
-# --- Middleware ---
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """
-    Middleware to log incoming requests and their processing time.
-    """
-    start_time = time.time()
-    logger.info(f"Request: {request.method} {request.url.path}")
+# --- Register Components ---
+# Register all custom exception handlers
+register_exception_handlers(app)
 
-    response = await call_next(request)
+# Register all application middleware
+register_middleware(app)
 
-    process_time = (time.time() - start_time) * 1000
-    logger.info(f"Response: {response.status_code} (took {process_time:.2f}ms)")
-
-    return response
-# --- End Middleware ---
-
+# Register all v1 API routes
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)
+# --- End Component Registration ---
 
+# --- System Endpoints ---
 
 @app.get("/", include_in_schema=False)
 async def root():
-    return RedirectResponse(url=settings.DOCS_ENDPOINT)
+    # Redirect the root URL to the /docs page
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """
+    A simple health check endpoint to confirm the API is running.
+    """
+    return {"status": "ok"}
