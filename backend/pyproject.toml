@@ -20,6 +20,7 @@ python-jose = ">=3.5.0,<4.0.0"
 passlib = {extras = ["bcrypt"], version = ">=1.7.4,<2.0.0"}
 httpx = ">=0.28.1,<0.29.0"
 pydantic-settings = "^2.11.0"
+logfire = {extras = ["fastapi"], version = "^4.16.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.4.2,<9.0.0"
@@ -36,3 +37,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 seed = "scripts.seed:main_wrapper"
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore "E402: Module vel imleport not at top of file" for main.py
+"app/main.py" = ["E402"]

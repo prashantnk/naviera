@@ -28,5 +28,8 @@ class Settings(BaseSettings):
     # Add the Supabase Issuer URL
     JWT_ISSUER: str
 
+    # --- Logging ---
+    LOGFIRE_TOKEN: str = ""
+
 
 settings = Settings()  # type: ignore

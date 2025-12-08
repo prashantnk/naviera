@@ -1,14 +1,24 @@
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from app.core.logging import setup_logging
+
+#  Run setup BEFORE creating the app
+setup_logging()
+
+import logfire
 
 # Import our application's high-level components
 from app.api.v1.router import api_router as api_router_v1
 from app.core.config import settings
 from app.exceptions.handlers import register_exception_handlers
 from app.middleware import register_middleware
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 # Create the FastAPI app
 app = FastAPI(title=settings.PROJECT_NAME)
+
+# Instrument the app with Logfire
+# (This sets up HTTP traffic monitoring)
+logfire.instrument_fastapi(app)
 
 # --- Register Components ---
 # Register all custom exception handlers
