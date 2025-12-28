@@ -20,7 +20,8 @@ if config.config_file_name is not None:
 # --- CUSTOM SETUP FOR OUR PROJECT ---
 from sqlmodel import SQLModel
 # Explicitly import the modules containing your models. This is the most robust way.
-from app.models import tenants
+from app.models import tenants, pickups
+
 # We will add future model files here, e.g., from app.models import pickup_models
 from app.core.config import settings
 
