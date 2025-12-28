@@ -1,11 +1,9 @@
 import uuid
 from enum import Enum
 
+from sqlalchemy import JSON, Column, Index, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import Column, JSON, UniqueConstraint,Index, table
 
-# 1. Import Column and JSON from sqlalchemy
-from sqlalchemy import Column, JSON
 
 # Define Enums first, as they are used in the models below
 class UserRole(str, Enum):
