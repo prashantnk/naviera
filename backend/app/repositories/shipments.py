@@ -1,9 +1,9 @@
+import logging
 import uuid
 from typing import List, Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# Import your Database Models
 from app.models.pickups import (
     Address,
     PackageDetails,
@@ -12,6 +12,8 @@ from app.models.pickups import (
     PickupRequest,
 )
 
+# --- Setup Logger ---
+logger = logging.getLogger(__name__)
 
 class ShipmentRepository:
     """
@@ -47,6 +49,8 @@ class ShipmentRepository:
         all at once. If any part fails, the database rolls back automatically.
         """
 
+        logger.info("Repo: Starting Atomic Shipment Transaction")
+
         # --- Step 1: Handle New Addresses ---
         # If the user typed a new address, we must save it first to get an ID.
         if new_pickup_address:
@@ -56,37 +60,37 @@ class ShipmentRepository:
             await self.session.refresh(new_pickup_address)
             # Link the new ID to the shipment
             pickup.pickup_address_id = new_pickup_address.id
+            logger.debug(f"Repo: Created new Pickup Address {new_pickup_address.id}")
 
         if new_delivery_address:
             self.session.add(new_delivery_address)
             await self.session.flush()
             await self.session.refresh(new_delivery_address)
             pickup.delivery_address_id = new_delivery_address.id
+            logger.debug(f"Repo: Created new Delivery Address {new_delivery_address.id}")
 
-        # --- Step 2: Save the Main Shipment Header ---
+        # --- Step 2: Save Header ---
         self.session.add(pickup)
         await self.session.flush()  # Generates pickup.id
         await self.session.refresh(pickup)
+        logger.debug(f"Repo: Created Pickup Header {pickup.id}")
 
-        # --- Step 3: Save Children (Packages) ---
+        # --- Step 3: Save Children ---
         for pkg in packages:
-            # Link the child to the parent
             pkg.pickup_id = pickup.id
             self.session.add(pkg)
 
-        # --- Step 4: Save Children (Documents) ---
         for doc in documents:
             doc.pickup_id = pickup.id
             self.session.add(doc)
 
-        # --- Step 5: Save Children (Payment) ---
         if payment:
             payment.pickup_id = pickup.id
             self.session.add(payment)
 
-        # --- Step 6: The Final Commit ---
-        # This makes all the above changes permanent.
+        # --- Step 4: Final Commit ---
         await self.session.commit()
         await self.session.refresh(pickup)
-
+        
+        logger.info("Repo: Transaction Committed Successfully")
         return pickup
