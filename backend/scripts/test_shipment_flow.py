@@ -69,6 +69,8 @@ def generate_dummy_payload():
             "state": "Karnataka",
             "pincode": "560001",
             "country": "IN",
+            "is_saved": False,
+            "address_type": "CUSTOMER",
         },
         # --- Packages ---
         "packages": [

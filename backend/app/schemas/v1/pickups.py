@@ -112,7 +112,14 @@ class PickupCreate(SQLModel):
     documents: List[PickupDocumentCreate] = []
 
     @model_validator(mode="after")
-    def check_addresses(self) -> "PickupCreate":
+    def validate_business_logic(self) -> "PickupCreate":
+        """
+        Enforces critical business rules:
+        1. Addresses must be provided (either ID or Object).
+        2. Reverse shipments MUST have a reason.
+        3. SECURITY: Cannot create 'WAREHOUSE' addresses on the fly.
+        """
+        # --- Rule 1: Address Presence ---
         if not self.pickup_address_id and not self.new_pickup_address:
             raise ValueError(
                 "Either pickup_address_id OR new_pickup_address is required"
@@ -121,6 +128,31 @@ class PickupCreate(SQLModel):
             raise ValueError(
                 "Either delivery_address_id OR new_delivery_address is required"
             )
+
+        # --- Rule 2: Reverse Logic ---
+        if self.shipment_type == ShipmentType.REVERSE and not self.reason_for_return:
+            raise ValueError(
+                "reason_for_return is mandatory when shipment_type is REVERSE"
+            )
+
+        # --- Rule 3: Anti-Pollution (Security) ---
+        # Users should not define global Warehouses in this transient flow.
+        if (
+            self.new_pickup_address
+            and self.new_pickup_address.address_type == AddressType.WAREHOUSE
+        ):
+            raise ValueError(
+                "You cannot create a WAREHOUSE address here. Please use the Settings page."
+            )
+
+        if (
+            self.new_delivery_address
+            and self.new_delivery_address.address_type == AddressType.WAREHOUSE
+        ):
+            raise ValueError(
+                "You cannot create a WAREHOUSE address here. Please use the Settings page."
+            )
+
         return self
 
 
