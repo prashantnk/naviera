@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -19,6 +19,7 @@ from app.schemas.v1.pickups import PickupCreate
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
+
 
 class ShipmentService:
     """
@@ -41,18 +42,22 @@ class ShipmentService:
         # --- 1. Resolve Pickup Address ---
         # Variable to hold the Address Model (if we are creating a new one)
         new_pickup_addr_model: Optional[Address] = None
-        final_pickup_id: Optional[uuid.UUID] = None
+        final_pickup_id: uuid.UUID
 
         if payload.pickup_address_id:
             # Case A: User selected a Saved Address
-            logger.debug(f"Resolving Saved Pickup Address ID: {payload.pickup_address_id}")
+            logger.debug(
+                f"Resolving Saved Pickup Address ID: {payload.pickup_address_id}"
+            )
             existing_addr = await self.shipment_repo.get_address_by_id(
                 payload.pickup_address_id
             )
 
             # SECURITY CHECK: Ensure address belongs to this tenant
             if not existing_addr or existing_addr.tenant_id != tenant_id:
-                logger.warning(f"Security Alert: User tried to access invalid/other tenant address: {payload.pickup_address_id}")
+                logger.warning(
+                    f"Security Alert: User tried to access invalid/other tenant address: {payload.pickup_address_id}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Pickup Address not found or access denied",
@@ -62,11 +67,13 @@ class ShipmentService:
             # Case B: User provided a New Address Object
             # Convert Schema -> Model
             logger.debug("Processing New Pickup Address Snapshot")
+            # NEW: Generate ID immediately
+            final_pickup_id = uuid.uuid4()
             new_pickup_addr_model = Address(
-                **payload.new_pickup_address.model_dump(), tenant_id=tenant_id
+                id=final_pickup_id,  # Assign it here
+                **payload.new_pickup_address.model_dump(),
+                tenant_id=tenant_id,
             )
-            # We don't have an ID yet. The Repo will handle this.
-            final_pickup_id = None  # Repo will assign this
 
         else:
             # This should be caught by Pydantic validators, but double check
@@ -77,10 +84,12 @@ class ShipmentService:
 
         # --- 2. Resolve Delivery Address ---
         new_delivery_addr_model: Optional[Address] = None
-        final_delivery_id: Optional[uuid.UUID] = None
+        final_delivery_id: uuid.UUID
 
         if payload.delivery_address_id:
-            logger.debug(f"Resolving Saved Delivery Address ID: {payload.delivery_address_id}")
+            logger.debug(
+                f"Resolving Saved Delivery Address ID: {payload.delivery_address_id}"
+            )
             existing_del = await self.shipment_repo.get_address_by_id(
                 payload.delivery_address_id
             )
@@ -92,10 +101,13 @@ class ShipmentService:
             final_delivery_id = existing_del.id
         elif payload.new_delivery_address:
             logger.debug("Processing New Delivery Address Snapshot")
+            # NEW: Generate ID immediately
+            final_delivery_id = uuid.uuid4()
             new_delivery_addr_model = Address(
-                **payload.new_delivery_address.model_dump(), tenant_id=tenant_id
+                id=final_delivery_id,  # Assign it here
+                **payload.new_delivery_address.model_dump(),
+                tenant_id=tenant_id,
             )
-            final_delivery_id = None
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -103,9 +115,13 @@ class ShipmentService:
             )
 
         # --- 3. Prepare Child Objects ---
-        package_models = [PackageDetails(**pkg.model_dump()) for pkg in payload.packages]
-        document_models = [PickupDocument(**doc.model_dump()) for doc in payload.documents]
-        
+        package_models = [
+            PackageDetails(**pkg.model_dump()) for pkg in payload.packages
+        ]
+        document_models = [
+            PickupDocument(**doc.model_dump()) for doc in payload.documents
+        ]
+
         payment_model = None
         if payload.payment_details:
             payment_model = PaymentDetails(**payload.payment_details.model_dump())
@@ -122,8 +138,8 @@ class ShipmentService:
             shipment_description=payload.shipment_description,
             reason_for_return=payload.reason_for_return,
             status=PickupStatus.DRAFT,
-            pickup_address_id=final_pickup_id,  # type: ignore
-            delivery_address_id=final_delivery_id,  # type: ignore
+            pickup_address_id=final_pickup_id,
+            delivery_address_id=final_delivery_id,
         )
 
         # --- 5. Delegate to Repository ---

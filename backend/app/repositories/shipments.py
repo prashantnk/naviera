@@ -2,6 +2,8 @@ import logging
 import uuid
 from typing import List, Optional
 
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.pickups import (
@@ -14,6 +16,7 @@ from app.models.pickups import (
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
+
 
 class ShipmentRepository:
     """
@@ -67,7 +70,9 @@ class ShipmentRepository:
             await self.session.flush()
             await self.session.refresh(new_delivery_address)
             pickup.delivery_address_id = new_delivery_address.id
-            logger.debug(f"Repo: Created new Delivery Address {new_delivery_address.id}")
+            logger.debug(
+                f"Repo: Created new Delivery Address {new_delivery_address.id}"
+            )
 
         # --- Step 2: Save Header ---
         self.session.add(pickup)
@@ -90,7 +95,27 @@ class ShipmentRepository:
 
         # --- Step 4: Final Commit ---
         await self.session.commit()
-        await self.session.refresh(pickup)
-        
+
+        # --- Step 5: Eager Load Relationships (The Fix) ---
+        # Instead of simple refresh(), we explicitly load all nested data
+        # so Pydantic doesn't crash with "MissingGreenlet"
+        logger.debug("Repo: Re-fetching shipment with all relationships")
+
+        query = (
+            select(PickupRequest)
+            .where(PickupRequest.id == pickup.id)
+            .options(
+                # We add # type: ignore to silence Pylance for these specific lines
+                selectinload(PickupRequest.pickup_address),  # type: ignore
+                selectinload(PickupRequest.delivery_address),  # type: ignore
+                selectinload(PickupRequest.packages),  # type: ignore
+                selectinload(PickupRequest.documents),  # type: ignore
+                selectinload(PickupRequest.payment_details),  # type: ignore
+            )
+        )
+
+        result = await self.session.exec(query)
+        full_pickup = result.one()
+
         logger.info("Repo: Transaction Committed Successfully")
-        return pickup
+        return full_pickup
