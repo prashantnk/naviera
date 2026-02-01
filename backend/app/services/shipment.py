@@ -1,4 +1,6 @@
 import logging
+import random
+import string
 import uuid
 from typing import Optional
 
@@ -14,11 +16,22 @@ from app.models.pickups import (
     PickupRequest,
     PickupStatus,
 )
+from app.models.tenants import Tenant
 from app.repositories.shipments import ShipmentRepository
 from app.schemas.v1.pickups import PickupCreate
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
+
+
+def generate_tracking_id(prefix: str = "NAV") -> str:
+    """
+    Generates a unique tracking ID like 'NAV-A1B2C3D4'.
+    Collision probability is extremely low for this MVP.
+    """
+    chars = string.ascii_uppercase + string.digits
+    unique_str = "".join(random.choices(chars, k=8))
+    return f"{prefix}-{unique_str}"
 
 
 class ShipmentService:
@@ -30,8 +43,33 @@ class ShipmentService:
     def __init__(self, shipment_repo: ShipmentRepository):
         self.shipment_repo = shipment_repo
 
+    async def _generate_unique_tracking_id(self, tenant_slug: str) -> str:
+        """
+        Generates a unique tracking ID (e.g., NAVIERA-X9A2B3C4).
+        Checks the database to ensure no collisions exist.
+        Retries automatically if a collision is found.
+        """
+        prefix = tenant_slug.upper()
+
+        # Loop until a unique ID is found (usually runs once)
+        while True:
+            # Generate 8-char suffix: X9A2B3C4
+            chars = string.ascii_uppercase + string.digits
+            suffix = "".join(random.choices(chars, k=8))
+            candidate_id = f"{prefix}-{suffix}"
+
+            # Check DB for existence
+            is_taken = await self.shipment_repo.check_tracking_id_exists(candidate_id)
+
+            if not is_taken:
+                return candidate_id
+
+            logger.warning(
+                f"Collision detected for Tracking ID {candidate_id}. Retrying..."
+            )
+
     async def create_shipment(
-        self, *, payload: PickupCreate, tenant_id: uuid.UUID, user_id: uuid.UUID
+        self, *, payload: PickupCreate, tenant: Tenant, user_id: uuid.UUID
     ) -> PickupRequest:
         """
         Main entry point for creating a shipment.
@@ -54,7 +92,7 @@ class ShipmentService:
             )
 
             # SECURITY CHECK: Ensure address belongs to this tenant or the address selected is correct
-            if not existing_addr or existing_addr.tenant_id != tenant_id:
+            if not existing_addr or existing_addr.tenant_id != tenant.id:
                 logger.warning(
                     f"Security Alert: User tried to access invalid/other tenant address: {payload.pickup_address_id}"
                 )
@@ -72,7 +110,7 @@ class ShipmentService:
             new_pickup_addr_model = Address(
                 id=final_pickup_id,  # Assign it here
                 **payload.new_pickup_address.model_dump(),
-                tenant_id=tenant_id,
+                tenant_id=tenant.id,
                 user_id=user_id,
             )
 
@@ -94,7 +132,7 @@ class ShipmentService:
             existing_del = await self.shipment_repo.get_address_by_id(
                 payload.delivery_address_id
             )
-            if not existing_del or existing_del.tenant_id != tenant_id:
+            if not existing_del or existing_del.tenant_id != tenant.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Delivery Address not found or access denied",
@@ -107,7 +145,7 @@ class ShipmentService:
             new_delivery_addr_model = Address(
                 id=final_delivery_id,  # Assign it here
                 **payload.new_delivery_address.model_dump(),
-                tenant_id=tenant_id,
+                tenant_id=tenant.id,
                 user_id=user_id,
             )
         else:
@@ -129,10 +167,13 @@ class ShipmentService:
             payment_model = PaymentDetails(**payload.payment_details.model_dump())
 
         # --- 4. Prepare Shipment Header ---
+
+        new_tracking_id = await self._generate_unique_tracking_id(tenant.slug)
         pickup_request = PickupRequest(
-            tenant_id=tenant_id,
+            tenant_id=tenant.id,
             created_by_user_id=user_id,
             order_reference_id=payload.order_reference_id,
+            tracking_id=new_tracking_id,
             shipment_type=payload.shipment_type,
             service_type=payload.service_type,
             requested_pickup_date=payload.requested_pickup_date,

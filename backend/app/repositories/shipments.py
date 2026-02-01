@@ -36,6 +36,17 @@ class ShipmentRepository:
         """
         return await self.session.get(Address, address_id)
 
+    async def check_tracking_id_exists(self, tracking_id: str) -> bool:
+        """
+        Quickly checks if a tracking ID is already taken.
+        Returns True if it exists, False if it is available.
+        """
+        statement = select(PickupRequest).where(
+            PickupRequest.tracking_id == tracking_id
+        )
+        result = await self.session.exec(statement)
+        return result.first() is not None
+
     async def create_shipment_transactional(
         self,
         *,
