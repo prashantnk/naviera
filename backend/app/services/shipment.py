@@ -53,7 +53,7 @@ class ShipmentService:
                 payload.pickup_address_id
             )
 
-            # SECURITY CHECK: Ensure address belongs to this tenant
+            # SECURITY CHECK: Ensure address belongs to this tenant or the address selected is correct
             if not existing_addr or existing_addr.tenant_id != tenant_id:
                 logger.warning(
                     f"Security Alert: User tried to access invalid/other tenant address: {payload.pickup_address_id}"
@@ -73,6 +73,7 @@ class ShipmentService:
                 id=final_pickup_id,  # Assign it here
                 **payload.new_pickup_address.model_dump(),
                 tenant_id=tenant_id,
+                user_id=user_id,
             )
 
         else:
@@ -107,6 +108,7 @@ class ShipmentService:
                 id=final_delivery_id,  # Assign it here
                 **payload.new_delivery_address.model_dump(),
                 tenant_id=tenant_id,
+                user_id=user_id,
             )
         else:
             raise HTTPException(
