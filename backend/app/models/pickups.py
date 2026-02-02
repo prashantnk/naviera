@@ -3,7 +3,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import List, Optional
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
 # --- 1. Enums (The Rules) ---
 
@@ -50,6 +50,13 @@ class DocumentType(str, Enum):
     BOX_PHOTO = "BOX_PHOTO"  # Proof of condition
     LABEL_IMAGE = "LABEL_IMAGE"  # If user provides their own label
     OTHER = "OTHER"
+
+
+class ActivityType(str, Enum):
+    STATUS_CHANGE = "STATUS_CHANGE"
+    INFO_UPDATE = "INFO_UPDATE"  # Address, Package details changed
+    COMMENT = "COMMENT"  # Just a note, no data change
+    EXCEPTION = "EXCEPTION"  # Delivery Attempt Failed, etc.
 
 
 # --- 2. Modular Tables ---
@@ -179,6 +186,8 @@ class PickupRequest(SQLModel, table=True):
     service_type: ServiceType = Field(default=ServiceType.SURFACE)
     status: PickupStatus = Field(default=PickupStatus.DRAFT)
 
+    latest_status_comment: Optional[str] = Field(default=None)
+
     # The "Shipment Details" section from UI
     product_category: Optional[str] = Field(
         default=None, description="e.g. Electronics, Clothing"
@@ -207,6 +216,8 @@ class PickupRequest(SQLModel, table=True):
         sa_relationship_kwargs={"uselist": False}, back_populates="pickup"
     )
 
+    activities: List["ShipmentActivity"] = Relationship(back_populates="pickup")
+
     # Address Loading
     pickup_address: Address = Relationship(
         sa_relationship_kwargs={
@@ -222,3 +233,39 @@ class PickupRequest(SQLModel, table=True):
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ShipmentActivity(SQLModel, table=True):
+    """
+    The Immutable Ledger of everything that happens to a shipment.
+    Tracks: Who, What, When, Why, and Visibility.
+    """
+
+    __tablename__ = "shipment_activities"  # type: ignore
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    pickup_id: uuid.UUID = Field(foreign_key="pickups.id", nullable=False)
+
+    # THE ACTOR (Who did it?)
+    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False)
+
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    activity_type: ActivityType = Field(default=ActivityType.INFO_UPDATE)
+
+    # VISIBILITY (User Requirement)
+    # True = Show on public tracking page. False = Internal Log.
+    is_public: bool = Field(default=False)
+
+    # THE WHAT (System Generated Summary)
+    summary: Optional[str] = None
+
+    # THE WHY (User Comment)
+    comment: Optional[str] = None
+
+    # THE DIFF (Technical Payload)
+    # Stores: { "field_name": { "old": "val", "new": "val" }, "packages": {...} }
+    diff: dict = Field(default={}, sa_column=Column(JSON))
+
+    # Relationships
+    pickup: PickupRequest = Relationship(back_populates="activities")
