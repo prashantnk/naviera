@@ -1,10 +1,11 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
-from app.schemas.v1.pickups import PickupCreate, PickupRead
+from app.schemas.v1.pickups import PickupCreate, PickupRead, PickupUpdate
 from app.services.shipment import ShipmentService, get_shipment_service
 
 # --- Setup Logger ---
@@ -42,3 +43,35 @@ async def create_shipment(
 
     logger.info(f"API Success: Created Shipment ID {shipment.id}")
     return shipment
+
+
+@router.patch("/{shipment_id}", response_model=PickupRead)
+async def update_shipment(
+    *,
+    shipment_id: uuid.UUID,
+    payload: PickupUpdate,
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+    shipment_service: ShipmentService = Depends(get_shipment_service),
+):
+    """
+    Update an existing Shipment.
+
+    - **Permissions**: Only Admins/Owners can perform this action.
+    - **Features**:
+        - Updates fields (Status, Date, etc.)
+        - Syncs Packages (Add/Update/Remove)
+        - Syncs Documents
+        - **Auto-generates Audit Log** (ShipmentActivity)
+    """
+    logger.info(f"API Request: Update Shipment {shipment_id} by {current_user.email}")
+
+    updated_shipment = await shipment_service.update_shipment(
+        shipment_id=shipment_id,
+        payload=payload,
+        user=current_user,
+        tenant_id=current_tenant.id,
+    )
+
+    logger.info(f"API Success: Updated Shipment {shipment_id}")
+    return updated_shipment

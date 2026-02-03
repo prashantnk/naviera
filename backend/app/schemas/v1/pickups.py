@@ -197,3 +197,66 @@ class PickupRead(SQLModel):
     documents: List[PickupDocumentRead] = []
 
     created_at: datetime
+
+
+# --- 4. Update Schemas (The Edit Flow) ---
+
+
+class PackageUpdate(PackageBase):
+    """
+    Used for rditing packages inside a shipment.
+    - id: If present, we update the existing row. If None, we create a new row.
+    """
+
+    id: Optional[UUID] = None
+
+
+class PickupDocumentUpdate(PickupDocumentBase):
+    """
+    Used for syncing documents.
+    - id: If present, we keep/update it. If None, we create a new record.
+    """
+
+    id: Optional[UUID] = None
+
+
+class PickupUpdate(SQLModel):
+    """
+    The Master Payload for Editing a Shipment.
+    Supports both User corrections and Admin operations.
+    All fields are Optional -> "Patch" semantics.
+    """
+
+    # --- 1. Lifecycle & Audit ---
+    status: Optional[PickupStatus] = None
+    comment: Optional[str] = None  # Reason for change (Required for Status changes)
+    is_public: bool = False  # Should this update be visible on the Tracking Page?
+
+    # --- 2. Scheduling & Reference ---
+    requested_pickup_date: Optional[date] = None
+    order_reference_id: Optional[str] = None
+
+    # --- 3. Cargo Details ---
+    product_category: Optional[str] = None
+    shipment_description: Optional[str] = None
+    reason_for_return: Optional[str] = None
+
+    # --- 4. Address Corrections (The Snapshot Strategy) ---
+    # Scenario A: User picks a different existing address
+    pickup_address_id: Optional[UUID] = None
+    delivery_address_id: Optional[UUID] = None
+
+    # Scenario B: User manually edits the text (Creates a new snapshot)
+    new_pickup_address: Optional[AddressCreate] = None
+    new_delivery_address: Optional[AddressCreate] = None
+
+    # --- 5. Package Adjustments ---
+    # The Frontend sends the *complete* list of desired packages.
+    packages: Optional[List[PackageUpdate]] = None
+
+    # --- 6. Document Adjustments ---
+    documents: Optional[List[PickupDocumentUpdate]] = None
+
+    # --- 7. Financials ---
+    # We reuse PaymentDetailsCreate because usually, you update the whole block (Amount + Mode)
+    payment_details: Optional[PaymentDetailsCreate] = None

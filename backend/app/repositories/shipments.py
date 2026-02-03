@@ -12,6 +12,7 @@ from app.models.pickups import (
     PaymentDetails,
     PickupDocument,
     PickupRequest,
+    ShipmentActivity,
 )
 
 # --- Setup Logger ---
@@ -56,6 +57,7 @@ class ShipmentRepository:
         payment: Optional[PaymentDetails] = None,
         new_pickup_address: Optional[Address] = None,
         new_delivery_address: Optional[Address] = None,
+        activity: ShipmentActivity,
     ) -> PickupRequest:
         """
         The Atomic Transaction.
@@ -104,6 +106,9 @@ class ShipmentRepository:
             payment.pickup_id = pickup.id
             self.session.add(payment)
 
+        # --- Step 4: Save Initial Activity (NEW) ---
+        self.session.add(activity)
+
         # --- Step 4: Final Commit ---
         await self.session.commit()
 
@@ -130,3 +135,102 @@ class ShipmentRepository:
 
         logger.info("Repo: Transaction Committed Successfully")
         return full_pickup
+
+    async def get_shipment_full_details(
+        self, shipment_id: uuid.UUID
+    ) -> Optional[PickupRequest]:
+        """
+        Fetches a shipment with ALL relationships loaded.
+        Essential for calculating diffs (e.g., comparing old packages vs new packages).
+        """
+        query = (
+            select(PickupRequest)
+            .where(PickupRequest.id == shipment_id)
+            .options(
+                selectinload(PickupRequest.pickup_address),  # type: ignore
+                selectinload(PickupRequest.delivery_address),  # type: ignore
+                selectinload(PickupRequest.packages),  # type: ignore
+                selectinload(PickupRequest.documents),  # type: ignore
+                selectinload(PickupRequest.payment_details),  # type: ignore
+                # We generally don't load 'activities' here to keep it light,
+                # unless we need history for some reason.
+            )
+        )
+        result = await self.session.exec(query)
+        return result.first()
+
+    async def update_shipment_with_activity(
+        self,
+        *,
+        shipment: PickupRequest,
+        activity: ShipmentActivity,
+        packages_to_add: List[PackageDetails],
+        packages_to_delete: List[PackageDetails],
+        documents_to_add: List[PickupDocument],
+        documents_to_delete: List[PickupDocument],
+        new_pickup_address: Optional[Address] = None,
+        new_delivery_address: Optional[Address] = None,
+    ) -> PickupRequest:
+        """
+        The "Edit" Transaction.
+        1. Updates Shipment Header.
+        2. Syncs Packages & Documents (Add/Remove).
+        3. Saves the Activity Log.
+        4. RETURNS THE FULLY LOADED OBJECT.
+        """
+        logger.info(f"Repo: Updating Shipment {shipment.id} with Activity Log")
+
+        # 1. Handle New Addresses (Snapshot Strategy)
+        if new_pickup_address:
+            self.session.add(new_pickup_address)
+            await self.session.flush()
+            shipment.pickup_address_id = new_pickup_address.id
+
+        if new_delivery_address:
+            self.session.add(new_delivery_address)
+            await self.session.flush()
+            shipment.delivery_address_id = new_delivery_address.id
+
+        # 2. Sync Packages
+        for pkg in packages_to_add:
+            pkg.pickup_id = shipment.id
+            self.session.add(pkg)
+
+        for pkg in packages_to_delete:
+            await self.session.delete(pkg)
+
+        # 3. Sync Documents
+        for doc in documents_to_add:
+            doc.pickup_id = shipment.id
+            self.session.add(doc)
+
+        for doc in documents_to_delete:
+            await self.session.delete(doc)
+
+        # 4. Save Shipment Header (Updates existing fields)
+        self.session.add(shipment)
+
+        # 5. Save Activity Log
+        self.session.add(activity)
+
+        # 6. Commit everything
+        await self.session.commit()
+
+        # 7. CRITICAL FIX: Eager Load Everything!
+        # Do not use simple refresh(). We need to fetch the tree.
+        logger.debug("Repo: Re-fetching updated shipment with all relationships")
+
+        query = (
+            select(PickupRequest)
+            .where(PickupRequest.id == shipment.id)
+            .options(
+                selectinload(PickupRequest.pickup_address),  # type: ignore
+                selectinload(PickupRequest.delivery_address),  # type: ignore
+                selectinload(PickupRequest.packages),  # type: ignore
+                selectinload(PickupRequest.documents),  # type: ignore
+                selectinload(PickupRequest.payment_details),  # type: ignore
+            )
+        )
+
+        result = await self.session.exec(query)
+        return result.one()

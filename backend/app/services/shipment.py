@@ -2,23 +2,25 @@ import logging
 import random
 import string
 import uuid
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
 from app.models.pickups import (
+    ActivityType,
     Address,
     PackageDetails,
     PaymentDetails,
     PickupDocument,
     PickupRequest,
     PickupStatus,
+    ShipmentActivity,
 )
-from app.models.tenants import Tenant
+from app.models.tenants import Tenant, User, UserRole
 from app.repositories.shipments import ShipmentRepository
-from app.schemas.v1.pickups import PickupCreate
+from app.schemas.v1.pickups import PickupCreate, PickupUpdate
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
@@ -185,6 +187,17 @@ class ShipmentService:
             delivery_address_id=final_delivery_id,
         )
 
+        # 5. NEW: Create Initial Activity Log
+        initial_activity = ShipmentActivity(
+            pickup_id=pickup_request.id,
+            user_id=user_id,
+            activity_type=ActivityType.INFO_UPDATE,
+            summary="Shipment Created",
+            comment="Initial Creation",
+            is_public=False,
+            diff={},  # No diff for creation
+        )
+
         # --- 5. Delegate to Repository ---
         logger.info("Service: Delegating to Repository for Atomic Transaction")
         created_shipment = await self.shipment_repo.create_shipment_transactional(
@@ -194,9 +207,278 @@ class ShipmentService:
             payment=payment_model,
             new_pickup_address=new_pickup_addr_model,
             new_delivery_address=new_delivery_addr_model,
+            activity=initial_activity,
         )
 
         return created_shipment
+
+    # --- 2. The Diff Engine (Helper) ---
+
+    def _calculate_diff(
+        self, old_obj: PickupRequest, update_data: PickupUpdate
+    ) -> Dict:
+        """
+        Compares the Old Shipment vs. The Update Payload.
+        Returns a dictionary of changes (The 'Diff').
+        """
+        diff = {}
+
+        # A. Simple Fields
+        fields_to_check = [
+            "status",
+            "requested_pickup_date",
+            "product_category",
+            "shipment_description",
+            "reason_for_return",
+        ]
+
+        for field in fields_to_check:
+            new_val = getattr(update_data, field)
+            old_val = getattr(old_obj, field)
+
+            # Helper to handle Date comparison vs String comparison
+            if new_val is not None and new_val != old_val:
+                # Convert dates to ISO string for JSON serialization
+                old_json = (
+                    old_val.isoformat() if hasattr(old_val, "isoformat") else old_val
+                )
+                new_json = (
+                    new_val.isoformat() if hasattr(new_val, "isoformat") else new_val
+                )
+
+                diff[field] = {"old": old_json, "new": new_json}
+
+        # B. Packages (List Sync Logic)
+        if update_data.packages is not None:
+            pkg_diff = {"modified": [], "added": [], "removed": []}
+
+            # Map existing DB packages by ID
+            old_pkgs_map = {p.id: p for p in old_obj.packages}
+
+            # IDs present in the payload
+            payload_ids = set()
+
+            for pkg_in in update_data.packages:
+                if pkg_in.id and pkg_in.id in old_pkgs_map:
+                    # Case 1: Update existing
+                    payload_ids.add(pkg_in.id)
+                    old_pkg = old_pkgs_map[pkg_in.id]
+
+                    # Check internal changes
+                    changes = {}
+                    for k in ["weight", "length", "breadth", "height", "description"]:
+                        val_new = getattr(pkg_in, k)
+                        val_old = getattr(old_pkg, k)
+                        if val_new != val_old:
+                            changes[k] = {"old": val_old, "new": val_new}
+
+                    if changes:
+                        pkg_diff["modified"].append(
+                            {"id": str(pkg_in.id), "changes": changes}
+                        )
+                else:
+                    # Case 2: Add new
+                    pkg_diff["added"].append(pkg_in.model_dump(exclude={"id"}))
+
+            # Case 3: Remove (In DB but not in Payload)
+            for old_id, old_pkg in old_pkgs_map.items():
+                if old_id not in payload_ids:
+                    pkg_diff["removed"].append(
+                        {"id": str(old_id), "desc": old_pkg.description}
+                    )
+
+            if any(pkg_diff.values()):
+                diff["packages"] = pkg_diff
+
+        # C. Documents (List Sync Logic)
+        if update_data.documents is not None:
+            doc_diff = {"added": [], "removed": []}
+            old_docs_map = {d.id: d for d in old_obj.documents}
+            payload_ids = set()
+
+            for doc_in in update_data.documents:
+                if doc_in.id and doc_in.id in old_docs_map:
+                    payload_ids.add(doc_in.id)
+                else:
+                    doc_diff["added"].append(doc_in.file_name)
+
+            for old_id, old_doc in old_docs_map.items():
+                if old_id not in payload_ids:
+                    doc_diff["removed"].append(old_doc.file_name)
+
+            if any(doc_diff.values()):
+                diff["documents"] = doc_diff
+
+        return diff
+
+    # --- 3. Update Flow (The Main Logic) ---
+
+    async def update_shipment(
+        self,
+        shipment_id: uuid.UUID,
+        payload: PickupUpdate,
+        user: User,
+        tenant_id: uuid.UUID,
+    ) -> PickupRequest:
+        """
+        Handles Edit Logic:
+        1. Permission Check (Admin Only).
+        2. Fetch Old Data.
+        3. Calculate Diff.
+        4. Save Activity Log & Updates.
+        """
+        # 1. Permission Check
+        if user.role not in [UserRole.admin, UserRole.owner]:
+            raise HTTPException(
+                status_code=403, detail="Only Admins can edit shipments"
+            )
+
+        # 2. Fetch Current State
+        current = await self.shipment_repo.get_shipment_full_details(shipment_id)
+        if not current or current.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+
+        # 3. Calculate Diff
+        diff = self._calculate_diff(current, payload)
+
+        # 4. Handle Address Snapshots (Special Case)
+        new_pickup_addr = None
+        if payload.new_pickup_address:
+            new_pickup_addr = Address(
+                id=uuid.uuid4(),
+                **payload.new_pickup_address.model_dump(),
+                tenant_id=tenant_id,
+                user_id=user.id,
+            )
+            diff["pickup_address"] = "Updated Address Details (Snapshot)"
+        elif (
+            payload.pickup_address_id
+            and payload.pickup_address_id != current.pickup_address_id
+        ):
+            addr = await self.shipment_repo.get_address_by_id(payload.pickup_address_id)
+            if not addr or addr.tenant_id != tenant_id:
+                raise HTTPException(404, "Invalid Pickup Address ID")
+            current.pickup_address_id = payload.pickup_address_id
+            diff["pickup_address"] = (
+                f"Changed to Address ID {payload.pickup_address_id}"
+            )
+
+        new_delivery_addr = None
+        if payload.new_delivery_address:
+            new_delivery_addr = Address(
+                id=uuid.uuid4(),
+                **payload.new_delivery_address.model_dump(),
+                tenant_id=tenant_id,
+                user_id=user.id,
+            )
+            diff["delivery_address"] = "Updated Address Details (Snapshot)"
+        elif (
+            payload.delivery_address_id
+            and payload.delivery_address_id != current.delivery_address_id
+        ):
+            addr = await self.shipment_repo.get_address_by_id(
+                payload.delivery_address_id
+            )
+            if not addr or addr.tenant_id != tenant_id:
+                raise HTTPException(404, "Invalid Delivery Address ID")
+            current.delivery_address_id = payload.delivery_address_id
+            diff["delivery_address"] = (
+                f"Changed to Address ID {payload.delivery_address_id}"
+            )
+
+        # 5. Prepare Lists for Sync (Packages)
+        packages_to_add = []
+        packages_to_delete = []
+        if payload.packages is not None:
+            old_pkgs_map = {p.id: p for p in current.packages}
+            payload_ids = set()
+
+            for pkg_in in payload.packages:
+                if pkg_in.id and pkg_in.id in old_pkgs_map:
+                    # Update in place
+                    payload_ids.add(pkg_in.id)
+                    existing = old_pkgs_map[pkg_in.id]
+                    for k, v in pkg_in.model_dump(exclude={"id"}).items():
+                        setattr(existing, k, v)
+                else:
+                    # Create new
+                    packages_to_add.append(
+                        PackageDetails(**pkg_in.model_dump(exclude={"id"}))
+                    )
+
+            for old_id, old_pkg in old_pkgs_map.items():
+                if old_id not in payload_ids:
+                    packages_to_delete.append(old_pkg)
+
+        # 6. Prepare Lists for Sync (Documents)
+        documents_to_add = []
+        documents_to_delete = []
+        if payload.documents is not None:
+            old_docs_map = {d.id: d for d in current.documents}
+            payload_ids = set()
+            for doc_in in payload.documents:
+                if doc_in.id and doc_in.id in old_docs_map:
+                    payload_ids.add(doc_in.id)
+                else:
+                    documents_to_add.append(
+                        PickupDocument(**doc_in.model_dump(exclude={"id"}))
+                    )
+            for old_id, old_doc in old_docs_map.items():
+                if old_id not in payload_ids:
+                    documents_to_delete.append(old_doc)
+
+        # 7. Apply Simple Updates to Header
+        if payload.status:
+            current.status = payload.status
+        if payload.requested_pickup_date:
+            current.requested_pickup_date = payload.requested_pickup_date
+
+        # Denormalization: Update latest comment on header if status changed
+        if payload.comment and payload.status:
+            current.latest_status_comment = payload.comment
+
+        if payload.order_reference_id:
+            current.order_reference_id = payload.order_reference_id
+
+        # 8. Create Activity Log
+        activity_type = ActivityType.INFO_UPDATE
+        if "status" in diff:
+            activity_type = ActivityType.STATUS_CHANGE
+        elif not diff and payload.comment:
+            activity_type = ActivityType.COMMENT
+
+        # Summary Generator
+        summary_list = []
+        if "status" in diff and payload.status:
+            summary_list.append(f"Status: {payload.status.value}")
+        if "packages" in diff:
+            summary_list.append("Packages Updated")
+        if "documents" in diff:
+            summary_list.append("Documents Updated")
+        if not summary_list:
+            summary_list.append("Details Updated")
+
+        activity = ShipmentActivity(
+            pickup_id=shipment_id,
+            user_id=user.id,
+            activity_type=activity_type,
+            summary=", ".join(summary_list),
+            comment=payload.comment,
+            is_public=payload.is_public,
+            diff=diff,
+        )
+
+        # 9. Save Everything
+        return await self.shipment_repo.update_shipment_with_activity(
+            shipment=current,
+            activity=activity,
+            packages_to_add=packages_to_add,
+            packages_to_delete=packages_to_delete,
+            documents_to_add=documents_to_add,
+            documents_to_delete=documents_to_delete,
+            new_pickup_address=new_pickup_addr,
+            new_delivery_address=new_delivery_addr,
+        )
 
 
 # --- Factory for Dependency Injection ---
