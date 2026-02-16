@@ -2,8 +2,9 @@ import logging
 import uuid
 from typing import List, Optional
 
+from sqlalchemy import desc
 from sqlalchemy.orm import selectinload
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.pickups import (
@@ -234,3 +235,59 @@ class ShipmentRepository:
 
         result = await self.session.exec(query)
         return result.one()
+
+    # --- NEW: Read & Listing Methods ---
+
+    async def get_shipment_by_tracking_id(
+        self, tracking_id: str
+    ) -> Optional[PickupRequest]:
+        """
+        Public Tracking: Fetch by human-readable ID (NAV-XXXX).
+        """
+        statement = select(PickupRequest).where(
+            PickupRequest.tracking_id == tracking_id
+        )
+        result = await self.session.exec(statement)
+        return result.first()
+
+    async def get_shipment_history(
+        self, pickup_id: uuid.UUID
+    ) -> List[ShipmentActivity]:
+        """
+        Fetches the full audit log for a specific shipment, ordered by time.
+        """
+        statement = (
+            select(ShipmentActivity)
+            .where(ShipmentActivity.pickup_id == pickup_id)
+            .order_by(desc(col(ShipmentActivity.timestamp)))  # Newest first
+        )
+        result = await self.session.exec(statement)
+        return list(result.all())
+
+    async def list_shipments(
+        self, tenant_id: uuid.UUID, user_id: Optional[uuid.UUID] = None
+    ) -> List[PickupRequest]:
+        """
+        The Master List function.
+        - If user_id is provided: Returns "My Orders" (Customer view).
+        - If user_id is None: Returns "All Orders" (Admin view).
+        """
+        query = select(PickupRequest).where(PickupRequest.tenant_id == tenant_id)
+
+        if user_id:
+            query = query.where(PickupRequest.created_by_user_id == user_id)
+
+        # Order by newest first
+        query = query.order_by(desc(col(PickupRequest.created_at)))
+
+        # Optimization: We usually need addresses for the list view
+        query = query.options(
+            selectinload(PickupRequest.pickup_address),  # type: ignore
+            selectinload(PickupRequest.delivery_address),  # type: ignore
+            selectinload(PickupRequest.packages),  # type: ignore
+            selectinload(PickupRequest.documents),  # type: ignore
+            selectinload(PickupRequest.payment_details),  # type: ignore
+        )
+
+        result = await self.session.exec(query)
+        return list(result.all())

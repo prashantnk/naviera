@@ -2,7 +2,7 @@ import logging
 import random
 import string
 import uuid
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -20,7 +20,13 @@ from app.models.pickups import (
 )
 from app.models.tenants import Tenant, User, UserRole
 from app.repositories.shipments import ShipmentRepository
-from app.schemas.v1.pickups import PickupCreate, PickupUpdate
+from app.schemas.v1.pickups import (
+    PickupCreate,
+    PickupUpdate,
+    PublicActivityRead,
+    PublicTrackingRead,
+    ShipmentActivityRead,
+)
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
@@ -44,6 +50,94 @@ class ShipmentService:
 
     def __init__(self, shipment_repo: ShipmentRepository):
         self.shipment_repo = shipment_repo
+
+    # --- Read & Tracking Logic ---
+
+    async def get_timeline(
+        self, shipment_id: uuid.UUID, user: User, tenant_id: uuid.UUID
+    ) -> List[ShipmentActivityRead]:
+        """
+        Admin Only: Get full audit history.
+        """
+        # 1. Security Check
+        if user.role not in [UserRole.admin, UserRole.owner]:
+            raise HTTPException(
+                status_code=403, detail="Only Admins can view full timelines"
+            )
+
+        # 2. Verify Shipment belongs to tenant
+        shipment = await self.shipment_repo.get_shipment_full_details(shipment_id)
+        if not shipment or shipment.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+
+        # 3. Fetch History
+        activities = await self.shipment_repo.get_shipment_history(shipment_id)
+
+        # 4. Map to Schema (Explicit mapping ensures type safety)
+        return [
+            ShipmentActivityRead(
+                id=a.id,
+                timestamp=a.timestamp,
+                user_id=a.user_id,
+                activity_type=a.activity_type,
+                summary=a.summary,
+                comment=a.comment,
+                is_public=a.is_public,
+                diff=a.diff,
+            )
+            for a in activities
+        ]
+
+    async def track_shipment_public(self, tracking_id: str) -> PublicTrackingRead:
+        """
+        Public Access: Get sanitized shipment status.
+        Does NOT require login.
+        """
+        shipment = await self.shipment_repo.get_shipment_by_tracking_id(tracking_id)
+        if not shipment:
+            raise HTTPException(status_code=404, detail="Tracking ID not found")
+
+        # Fetch activities to build the public timeline
+        activities = await self.shipment_repo.get_shipment_history(shipment.id)
+
+        # Filter: Only show "is_public=True" events
+        public_timeline = []
+        for a in activities:
+            if a.is_public:
+                public_timeline.append(
+                    PublicActivityRead(
+                        timestamp=a.timestamp,
+                        status_title=a.summary or "Update",
+                        message=a.comment,  # Only show comment if marked public
+                    )
+                )
+
+        return PublicTrackingRead(
+            tracking_id=shipment.tracking_id,  # type: ignore
+            status=shipment.status,
+            current_location="Processing",  # In future, derive this from last activity metadata
+            estimated_delivery=None,  # In future, calculate this
+            timeline=public_timeline,
+        )
+
+    async def list_my_shipments(
+        self, user: User, tenant_id: uuid.UUID
+    ) -> List[PickupRequest]:
+        """
+        Smart Listing:
+        - Admins see ALL shipments for the tenant.
+        - Customers see ONLY their own shipments.
+        """
+        if user.role in [UserRole.admin, UserRole.owner]:
+            # Admin View: Pass user_id=None to get everything
+            return await self.shipment_repo.list_shipments(
+                tenant_id=tenant_id, user_id=None
+            )
+        else:
+            # Customer View: Restricted to their ID
+            return await self.shipment_repo.list_shipments(
+                tenant_id=tenant_id, user_id=user.id
+            )
 
     async def _generate_unique_tracking_id(self, tenant_slug: str) -> str:
         """

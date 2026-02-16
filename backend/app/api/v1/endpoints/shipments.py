@@ -1,11 +1,12 @@
 import logging
+from typing import List
 import uuid
 
 from fastapi import APIRouter, Depends, status
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
-from app.schemas.v1.pickups import PickupCreate, PickupRead, PickupUpdate
+from app.schemas.v1.pickups import PickupCreate, PickupRead, PickupUpdate, PublicTrackingRead, ShipmentActivityRead, ShipmentActivityRead
 from app.services.shipment import ShipmentService, get_shipment_service
 
 # --- Setup Logger ---
@@ -75,3 +76,51 @@ async def update_shipment(
 
     logger.info(f"API Success: Updated Shipment {shipment_id}")
     return updated_shipment
+
+@router.get("/", response_model=List[PickupRead])
+async def list_shipments(
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+    shipment_service: ShipmentService = Depends(get_shipment_service),
+):
+    """
+    List Shipments.
+    - **Admins**: View ALL shipments.
+    - **Customers**: View ONLY their created shipments.
+    """
+    return await shipment_service.list_my_shipments(
+        user=current_user, 
+        tenant_id=current_tenant.id
+    )
+
+
+@router.get("/{shipment_id}/timeline", response_model=List[ShipmentActivityRead])
+async def get_shipment_timeline(
+    shipment_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+    shipment_service: ShipmentService = Depends(get_shipment_service),
+):
+    """
+    Get Audit Timeline.
+    - **Restricted**: Only Admins/Owners can view this full technical history.
+    """
+    return await shipment_service.get_timeline(
+        shipment_id=shipment_id,
+        user=current_user,
+        tenant_id=current_tenant.id
+    )
+
+
+@router.get("/tracking/{tracking_id}", response_model=PublicTrackingRead)
+async def track_shipment(
+    tracking_id: str,
+    # Note: NO User Dependency here. This is public.
+    shipment_service: ShipmentService = Depends(get_shipment_service),
+):
+    """
+    Public Tracking Page.
+    - **Public**: No authentication required.
+    - **Data**: Returns sanitized status and public timeline events only.
+    """
+    return await shipment_service.track_shipment_public(tracking_id=tracking_id)
