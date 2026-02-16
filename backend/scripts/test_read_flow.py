@@ -123,10 +123,21 @@ def test_read_flow():
 
         # --- 5. TEST: List Shipments ---
         print("\n📋 5. Testing List Shipments (GET /shipments/)...")
-        res = client.get(f"{settings.API_V1_STR}/shipments/", headers=headers)
+        # Request Page 1 with size 5
+        res = client.get(
+            f"{settings.API_V1_STR}/shipments/?page=1&size=5", headers=headers
+        )
+
         if res.status_code == 200:
-            list_data = res.json()
-            print(f"✅ List Success! Found {len(list_data)} shipments.")
+            data = res.json()
+            # Verify Structure
+            if "items" in data and "total" in data:
+                print("✅ Pagination Success!")
+                print(f"   Total Items: {data['total']}")
+                print(f"   Current Page Size: {len(data['items'])}")
+                print(f"   Total Pages: {data['pages']}")
+            else:
+                print(f"❌ Response format incorrect: {data.keys()}")
         else:
             print(f"❌ List Failed: {res.status_code}")
 

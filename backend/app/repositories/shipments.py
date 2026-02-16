@@ -1,10 +1,10 @@
 import logging
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import desc
 from sqlalchemy.orm import selectinload
-from sqlmodel import col, select
+from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.pickups import (
@@ -265,22 +265,31 @@ class ShipmentRepository:
         return list(result.all())
 
     async def list_shipments(
-        self, tenant_id: uuid.UUID, user_id: Optional[uuid.UUID] = None
-    ) -> List[PickupRequest]:
+        self,
+        tenant_id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        size: int = 20,
+    ) -> Tuple[List[PickupRequest], int]:  # <--- RETURN TYPE CHANGED
         """
-        The Master List function.
-        - If user_id is provided: Returns "My Orders" (Customer view).
-        - If user_id is None: Returns "All Orders" (Admin view).
+        Fetches a paginated list of shipments.
+        Returns: ([List of objects], Total Count)
         """
+        # 1. Base Query
         query = select(PickupRequest).where(PickupRequest.tenant_id == tenant_id)
-
         if user_id:
             query = query.where(PickupRequest.created_by_user_id == user_id)
 
-        # Order by newest first
-        query = query.order_by(desc(col(PickupRequest.created_at)))
+        # 2. Count Total (Fast Query)
+        # We clone the query to count rows before applying limit/offset
+        count_query = select(func.count()).select_from(query.subquery())
+        total = (await self.session.exec(count_query)).one()
 
-        # Optimization: We usually need addresses for the list view
+        # 3. Apply Pagination & Sorting
+        query = query.order_by(desc(PickupRequest.created_at))  # type: ignore
+        query = query.offset((page - 1) * size).limit(size)
+
+        # 4. Eager Load Children (Prevent MissingGreenlet)
         query = query.options(
             selectinload(PickupRequest.pickup_address),  # type: ignore
             selectinload(PickupRequest.delivery_address),  # type: ignore
@@ -289,5 +298,8 @@ class ShipmentRepository:
             selectinload(PickupRequest.payment_details),  # type: ignore
         )
 
-        result = await self.session.exec(query)
-        return list(result.all())
+        # 5. Execute
+        items = (await self.session.exec(query)).all()
+
+        # Return a clean Tuple
+        return list(items), total

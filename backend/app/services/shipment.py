@@ -2,7 +2,7 @@ import logging
 import random
 import string
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -52,6 +52,30 @@ class ShipmentService:
         self.shipment_repo = shipment_repo
 
     # --- Read & Tracking Logic ---
+
+    async def get_shipment_details(
+        self, shipment_id: uuid.UUID, user: User, tenant_id: uuid.UUID
+    ) -> PickupRequest:
+        """
+        Get Full Details of a single shipment.
+        - **Admin/Owner**: Can see ANY shipment in the tenant.
+        - **Customer**: Can ONLY see their own shipment.
+        """
+        # 1. Fetch data (eagerly loaded)
+        shipment = await self.shipment_repo.get_shipment_full_details(shipment_id)
+
+        # 2. Basic Existence Check
+        if not shipment or shipment.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+
+        # 3. Ownership Check (The Guard Rail)
+        # If user is NOT an admin, they MUST be the creator of this shipment.
+        if user.role not in [UserRole.admin, UserRole.owner]:
+            if shipment.created_by_user_id != user.id:
+                # We return 404 instead of 403 to prevent ID enumeration scanning
+                raise HTTPException(status_code=404, detail="Shipment not found")
+
+        return shipment
 
     async def get_timeline(
         self, shipment_id: uuid.UUID, user: User, tenant_id: uuid.UUID
@@ -121,8 +145,8 @@ class ShipmentService:
         )
 
     async def list_my_shipments(
-        self, user: User, tenant_id: uuid.UUID
-    ) -> List[PickupRequest]:
+        self, user: User, tenant_id: uuid.UUID, page: int, size: int
+    ) -> Tuple[List[PickupRequest], int]:
         """
         Smart Listing:
         - Admins see ALL shipments for the tenant.
@@ -131,12 +155,12 @@ class ShipmentService:
         if user.role in [UserRole.admin, UserRole.owner]:
             # Admin View: Pass user_id=None to get everything
             return await self.shipment_repo.list_shipments(
-                tenant_id=tenant_id, user_id=None
+                tenant_id=tenant_id, user_id=None, page=page, size=size
             )
         else:
             # Customer View: Restricted to their ID
             return await self.shipment_repo.list_shipments(
-                tenant_id=tenant_id, user_id=user.id
+                tenant_id=tenant_id, user_id=user.id, page=page, size=size
             )
 
     async def _generate_unique_tracking_id(self, tenant_slug: str) -> str:
@@ -405,6 +429,41 @@ class ShipmentService:
 
         return diff
 
+    def _validate_status_transition(
+        self, current_status: PickupStatus, new_status: PickupStatus
+    ):
+        """
+        Enforces valid lifecycle moves.
+        Draft -> Open -> Assigned -> In Transit -> Completed
+        """
+        # Allow same status (just updating details)
+        if current_status == new_status:
+            return
+
+        # Define valid next steps
+        valid_transitions = {
+            PickupStatus.DRAFT: [PickupStatus.OPEN, PickupStatus.CANCELLED],
+            PickupStatus.OPEN: [PickupStatus.ASSIGNED, PickupStatus.CANCELLED],
+            PickupStatus.ASSIGNED: [PickupStatus.IN_TRANSIT, PickupStatus.CANCELLED],
+            # Removed PickupStatus.EXCEPTION from below lines
+            PickupStatus.IN_TRANSIT: [
+                PickupStatus.COMPLETED,
+                PickupStatus.RTO_INITIATED,
+            ],
+            PickupStatus.RTO_INITIATED: [PickupStatus.COMPLETED],
+            # Terminal states (cannot move out)
+            PickupStatus.COMPLETED: [],
+            PickupStatus.CANCELLED: [],
+        }
+
+        allowed = valid_transitions.get(current_status, [])
+
+        if new_status not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status transition: Cannot move from {current_status.value} to {new_status.value}",
+            )
+
     # --- 3. Update Flow (The Main Logic) ---
 
     async def update_shipment(
@@ -434,6 +493,10 @@ class ShipmentService:
 
         # 3. Calculate Diff
         diff = self._calculate_diff(current, payload)
+
+        # --- NEW: Check Status Transition ---
+        if payload.status:
+            self._validate_status_transition(current.status, payload.status)
 
         # 4. Handle Address Snapshots (Special Case)
         new_pickup_addr = None
