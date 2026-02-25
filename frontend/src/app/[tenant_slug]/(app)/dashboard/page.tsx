@@ -1,5 +1,5 @@
-// src/app/(app)/[tenant_slug]/page.tsx
-// We use 'await params' because in Next.js 15, params are async!
+// src/app/[tenant_slug]/(app)/dashboard/page.tsx
+
 export default async function TenantDashboard({
   params,
 }: {
@@ -14,7 +14,7 @@ export default async function TenantDashboard({
         You are viewing:{" "}
         <span className="font-mono text-purple-600">{tenant_slug}</span>
       </p>
-      <p className="text-sm text-gray-500">(Zone B: App)</p>
+      <p className="text-sm text-gray-500">(Zone B: App Dashboard)</p>
     </div>
   );
 }

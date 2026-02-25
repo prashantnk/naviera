@@ -3,66 +3,64 @@ import { APP_CONFIG } from "@/lib/config";
 import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
-  // Matcher: Filters which paths this middleware runs on.
-  // We exclude static files (images, fonts) and internal Next.js files (_next).
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
 
-export default async function middleware(req: NextRequest) {
+export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
-
-  // 1. Get Hostname (e.g. "logismart.naviera.com" or "logismart.localhost:3000")
-  let hostname = req.headers.get("host")!;
-
-  // Handle local development where host includes port (remove :3000)
+  let hostname = req.headers.get("host") || "";
   hostname = hostname.replace(":.+", "");
 
-  // 2. Identify the Environment
   const isLocal = hostname.includes(APP_CONFIG.DOMAINS.LOCALHOST);
   const isCodespace = hostname.includes(APP_CONFIG.DOMAINS.CODESPACE_SUFFIX);
   const isProduction = hostname.includes(APP_CONFIG.DOMAINS.PRODUCTION);
 
-  // 3. Extract Subdomain Logic
-  const parts = hostname.split(".");
   let subdomain = "";
+  const parts = hostname.split(".");
 
-  if (isLocal) {
-    // Logic for Localhost:
-    // "localhost" -> parts = ["localhost"] -> No subdomain
-    // "logismart.localhost" -> parts = ["logismart", "localhost"] -> subdomain = "logismart"
-    if (parts.length > 1) {
-      subdomain = parts[0];
-    }
-  } else if (isProduction) {
-    // Logic for Production:
-    // "naviera.com" -> parts = ["naviera", "com"] -> No subdomain
-    // "logismart.naviera.com" -> parts = ["logismart", "naviera", "com"] -> subdomain = "logismart"
-    if (parts.length > 2) {
-      subdomain = parts[0];
-    }
-  } else if (isCodespace) {
-    // Logic for Codespaces:
-    // Codespace URLs are messy (e.g. potential-fiesta-...-3000.app.github.dev).
-    // They don't support subdomains easily.
-    // For now, in Codespaces, we will NOT use subdomains to avoid breaking the URL.
-    // We will treat the Codespace URL as the "Main Domain".
-    subdomain = "";
+  if (isLocal && parts.length > 1) {
+    subdomain = parts[0];
+  } else if (isProduction && parts.length > 2) {
+    subdomain = parts[0];
   }
 
-  // --- ROUTING LOGIC ---
+  // Create new headers object to pass data to our layouts
+  const requestHeaders = new Headers(req.headers);
 
-  // SCENARIO A: We have a valid Tenant Subdomain
-  // Example: logismart.naviera.com (User sees this)
-  // Rewrite to: /app/logismart/dashboard (Next.js serves this)
-  if (subdomain && subdomain !== "www") {
-    // We rewrite the URL path to include the dynamic segment
-    return NextResponse.rewrite(
-      new URL(`/app/${subdomain}${url.pathname}`, req.url),
-    );
+  // --- SCENARIO 1: SUBDOMAIN MODE (Prod / Localhost) ---
+  if (subdomain && subdomain !== "www" && !isCodespace) {
+    requestHeaders.set("x-routing-mode", "subdomain");
+
+    const rewriteUrl = url.clone(); // Clone preserves query params (?code=xxx)
+    
+    // Prevent double-prefixing if Next.js makes an internal data fetch
+    if (!url.pathname.startsWith(`/${subdomain}`)) {
+        rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
+    }
+    
+    return NextResponse.rewrite(rewriteUrl, {
+      request: { headers: requestHeaders },
+    });
   }
 
-  // SCENARIO B: No subdomain (Main Domain)
-  // User visits: naviera.com or localhost:3000
-  // Next.js serves the Root Group `(marketing)` automatically.
-  return NextResponse.next();
+  // --- SCENARIO 2: PATH MODE (Codespaces or naviera.com/logismart) ---
+  requestHeaders.set("x-routing-mode", "path");
+
+  // Extract the first segment (e.g., "logismart" from "/logismart/dashboard")
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  const possibleSlug = pathSegments[0];
+
+  // If they hit the root (/) or a generic path without a slug (/login), force Naviera
+  if (!possibleSlug || possibleSlug === "login" || possibleSlug === "dashboard") {
+    const rewriteUrl = url.clone();
+    rewriteUrl.pathname = `/naviera${url.pathname}`;
+    return NextResponse.rewrite(rewriteUrl, {
+      request: { headers: requestHeaders },
+    });
+  }
+
+  // If they typed /logismart/login, let it pass through! Next.js will handle it natively.
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
