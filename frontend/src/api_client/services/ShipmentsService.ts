@@ -30,12 +30,43 @@ export class ShipmentsService {
     ): CancelablePromise<PickupRead> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/v1/shipments/',
+            url: '/api/v1/shipments',
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Shipments
+     * List Shipments (Paginated).
+     * - **Admins**: View ALL shipments.
+     * - **Customers**: View ONLY their created shipments.
+     * @param page Page number
+     * @param size Items per page
+     * @param xTenantSlug
+     * @returns PaginatedResponse_PickupRead_ Successful Response
+     * @throws ApiError
+     */
+    public static listShipments(
+        page: number = 1,
+        size: number = 20,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<PaginatedResponse_PickupRead_> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/shipments',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            query: {
+                'page': page,
+                'size': size,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -100,37 +131,6 @@ export class ShipmentsService {
             },
             headers: {
                 'x-tenant-slug': xTenantSlug,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * List Shipments
-     * List Shipments (Paginated).
-     * - **Admins**: View ALL shipments.
-     * - **Customers**: View ONLY their created shipments.
-     * @param page Page number
-     * @param size Items per page
-     * @param xTenantSlug
-     * @returns PaginatedResponse_PickupRead_ Successful Response
-     * @throws ApiError
-     */
-    public static listShipments(
-        page: number = 1,
-        size: number = 20,
-        xTenantSlug?: (string | null),
-    ): CancelablePromise<PaginatedResponse_PickupRead_> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/shipments',
-            headers: {
-                'x-tenant-slug': xTenantSlug,
-            },
-            query: {
-                'page': page,
-                'size': size,
             },
             errors: {
                 422: `Validation Error`,
