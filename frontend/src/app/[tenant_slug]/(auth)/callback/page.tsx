@@ -3,7 +3,7 @@
 
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +22,7 @@ export default function AuthCallbackPage() {
     // React 18+ runs useEffect twice in development mode. 
     // We use a ref to ensure we only call our backend API once.
     const hasAttemptedSync = useRef(false);
+    const supabase = getSupabaseClient(tenantSlug);
 
     useEffect(() => {
         if (hasAttemptedSync.current || !tenantSlug) return;

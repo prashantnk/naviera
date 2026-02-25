@@ -8,13 +8,29 @@ export default async function TenantDashboard({
   const { tenant_slug } = await params;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-24 bg-green-50">
-      <h1 className="text-4xl font-bold">🏢 Tenant Dashboard</h1>
-      <p className="mt-4 text-xl">
-        You are viewing:{" "}
-        <span className="font-mono text-purple-600">{tenant_slug}</span>
-      </p>
-      <p className="text-sm text-gray-500">(Zone B: App Dashboard)</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+        <p className="text-slate-500 mt-1">
+          Welcome back to your <span className="font-semibold text-slate-700">{tenant_slug}</span> overview.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Placeholder Stat Cards */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-sm font-medium text-slate-500">Total Shipments</p>
+          <p className="text-3xl font-bold text-slate-900 mt-2">1,248</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-sm font-medium text-slate-500">In Transit</p>
+          <p className="text-3xl font-bold text-primary mt-2">42</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-sm font-medium text-slate-500">Delivered (30d)</p>
+          <p className="text-3xl font-bold text-slate-900 mt-2">1,102</p>
+        </div>
+      </div>
     </div>
   );
 }

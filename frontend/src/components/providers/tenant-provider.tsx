@@ -1,9 +1,10 @@
 // src/components/providers/tenant-provider.tsx
 "use client";
 
+import { configureApiClient } from "@/lib/api-config";
 import { Tenant } from "@/types/tenant";
 import { useParams } from "next/navigation";
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 
 interface TenantContextType {
     tenant: Tenant | null;
@@ -25,6 +26,11 @@ export function TenantProvider({
 }) {
     const params = useParams();
     const tenantSlug = (params?.tenant_slug as string) || "naviera";
+
+    // Configure the API client once, globally, for this browser session!
+    useEffect(() => {
+        configureApiClient(tenantSlug);
+    }, [tenantSlug]);
 
     // The Magic URL Resolver
     const routeTo = (path: string) => {

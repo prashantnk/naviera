@@ -5,13 +5,14 @@ import { useTenant } from '@/components/providers/tenant-provider';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function LoginForm() {
     const router = useRouter();
     const { tenantSlug, routeTo } = useTenant();
+    const supabase = getSupabaseClient(tenantSlug);
 
     // UI State Management
     const [step, setStep] = useState<1 | 2>(1); // 1 = Email, 2 = Code
