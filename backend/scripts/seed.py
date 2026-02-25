@@ -4,75 +4,100 @@ from sqlmodel import select
 from app.core.db import AsyncSessionLocal
 from app.models.tenants import Tenant, User, UserRole
 
-TENANT_NAME = "Naviera Logistics"
-TENANT_SLUG = "naviera"
-OWNER_EMAIL = "owner@naviera.com"
 OWNER_SUPABASE_ID = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
 
-async def seed_data():
-    print("Seeding database with initial data...")
-
-    async with AsyncSessionLocal() as session: # type: ignore
-        # --- The UI Configuration Data ---
-        marketing_config = {
-            "brand": {"primary_color": "#2563eb"},
+# Define our two tenants
+TENANTS = [
+    {
+        "name": "Naviera Logistics",
+        "slug": "naviera",
+        "email": "admin@naviera.com",
+        "settings": {
+            "brand": {"primary_color": "#2563eb"}, # BLUE
             "landing_page": {
                 "blocks": [
                     {
                         "type": "HERO",
                         "content": {
-                            "title": "Logistics for the Future (From DB)",
-                            "subtitle": "This content is being served live from your FastAPI Backend + Supabase Postgres.",
-                            "ctaText": "Start Shipping",
+                            "title": "The Operating System for Modern Logistics",
+                            "subtitle": "Manage shipments, multi-tenant billing, and tracking with one API.",
+                            "ctaText": "Start Free Trial",
                             "ctaLink": "/login",
-                            "badge": "Live Data 🚀"
+                            "badge": "Naviera Platform"
                         }
                     }
                 ]
             }
         }
-        
-        # 1. Check if the tenant exists
-        statement = select(Tenant).where(Tenant.slug == TENANT_SLUG)
-        result = await session.exec(statement)
-        tenant = result.first()
+    },
+    {
+        "name": "Logismart Shipping",
+        "slug": "logismart",
+        "email": "admin@logismart.com",
+        "settings": {
+            "brand": {"primary_color": "#dc2626"}, # RED
+            "landing_page": {
+                "blocks": [
+                    {
+                        "type": "HERO",
+                        "content": {
+                            "title": "Fast, Safe & Reliable Delivery Across the World.",
+                            "subtitle": "Simplifying delivery through innovation, efficiency, and trust for individuals and enterprises across India.",
+                            "ctaText": "Book a Shipment",
+                            "ctaLink": "/login",
+                            "badge": "Global Logistics Solutions"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+]
 
-        if tenant:
-            print(f"Tenant '{TENANT_NAME}' exists. Updating settings...")
-            tenant.settings = marketing_config # <--- Force update the settings
-            session.add(tenant)
-            await session.commit()
-        else:
-            print(f"Creating tenant: {TENANT_NAME}")
-            tenant = Tenant(
-                name=TENANT_NAME, 
-                slug=TENANT_SLUG,
-                settings=marketing_config
-            )
-            session.add(tenant)
+async def seed_data():
+    print("Seeding database with tenants...")
+
+    async with AsyncSessionLocal() as session: # type: ignore
+        for t_data in TENANTS:
+            # 1. Upsert Tenant
+            statement = select(Tenant).where(Tenant.slug == t_data["slug"])
+            result = await session.exec(statement)
+            tenant = result.first()
+
+            if tenant:
+                print(f"Updating existing tenant: {t_data['name']}")
+                tenant.settings = t_data["settings"]
+                session.add(tenant)
+            else:
+                print(f"Creating tenant: {t_data['name']}")
+                tenant = Tenant(
+                    name=t_data["name"], 
+                    slug=t_data["slug"],
+                    settings=t_data["settings"]
+                )
+                session.add(tenant)
+            
             await session.commit()
             await session.refresh(tenant)
 
-        # 2. Check and Create User
-        statement = select(User).where(
-            User.supabase_user_id == OWNER_SUPABASE_ID, User.tenant_id == tenant.id
-        )
-        result = await session.exec(statement)
-        user = result.first()
-
-        if not user:
-            print(f"Creating owner user: {OWNER_EMAIL}")
-            user = User(
-                email=OWNER_EMAIL,
-                supabase_user_id=OWNER_SUPABASE_ID,
-                tenant_id=tenant.id,
-                role=UserRole.owner,
-                is_active=True,
+            # 2. Check and Create Admin User
+            statement = select(User).where(
+                User.supabase_user_id == OWNER_SUPABASE_ID, User.tenant_id == tenant.id
             )
-            session.add(user)
-            await session.commit()
-        else:
-            print(f"Owner user '{OWNER_EMAIL}' already exists. Skipping.")
+            result = await session.exec(statement)
+            user = result.first()
+
+            if not user:
+                print(f"Creating owner user: {t_data['email']}")
+                user = User(
+                    email=t_data["email"],
+                    supabase_user_id=OWNER_SUPABASE_ID,
+                    tenant_id=tenant.id,
+                    role=UserRole.owner,
+                    is_active=True,
+                )
+                session.add(user)
+                await session.commit()
 
     print("Seeding finished.")
 
