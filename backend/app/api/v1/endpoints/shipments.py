@@ -86,7 +86,8 @@ async def update_shipment(
     return updated_shipment
 
 
-@router.get("/", response_model=PaginatedResponse[PickupRead])
+# CHANGED: Removed the "/" to prevent 307 Redirects from the proxy
+@router.get("", response_model=PaginatedResponse[PickupRead])
 async def list_shipments(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Items per page"),

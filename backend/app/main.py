@@ -12,9 +12,17 @@ from app.exceptions.handlers import register_exception_handlers
 from app.middleware import register_middleware
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.routing import APIRoute
+
+def custom_generate_unique_id(route: APIRoute) -> str:
+    """
+    Forces OpenAPI to use the clean Python function name 
+    (e.g., 'list_shipments') instead of a verbose path-based name.
+    """
+    return f"{route.name}"
 
 # Create the FastAPI app
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(title=settings.PROJECT_NAME, generate_unique_id_function=custom_generate_unique_id)
 
 # Instrument the app with Logfire
 # (This sets up HTTP traffic monitoring)
