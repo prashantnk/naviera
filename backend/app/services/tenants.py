@@ -44,6 +44,12 @@ class TenantService:
         # Use the repository to save the new user
         return await self.tenant_repo.create_user(new_user)
 
+    async def get_tenant_by_slug(self, slug: str) -> Tenant | None:
+        """
+        Retrieves a tenant by slug for public-facing endpoints.
+        """
+        return await self.tenant_repo.get_tenant_by_slug(slug)
+
     async def list_tenants(self) -> list[Tenant]:
         """
         Retrieves all tenants from the repository.

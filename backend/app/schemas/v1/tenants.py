@@ -1,7 +1,8 @@
 import uuid
 
-from app.models.tenants import UserRole
 from sqlmodel import SQLModel
+
+from app.models.tenants import UserRole
 
 # This is a Pydantic model, not a table model.
 # It inherits from SQLModel but we do not set `table=True`.
@@ -12,6 +13,7 @@ class TenantRead(SQLModel):
     id: uuid.UUID
     name: str
     slug: str
+    settings: dict = {}
 
 
 class UserRead(SQLModel):
