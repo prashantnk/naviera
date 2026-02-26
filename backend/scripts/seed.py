@@ -1,77 +1,108 @@
 import asyncio
+from sqlmodel import select
 
 from app.core.db import AsyncSessionLocal
 from app.models.tenants import Tenant, User, UserRole
-from sqlmodel import select
 
-# --- Configuration for the Seed Data ---
-# We define our first tenant and its owner here.
-# Using variables makes it easy to change later.
-TENANT_NAME = "Naviera Logistics"
-TENANT_SLUG = "naviera"
-OWNER_EMAIL = "owner@naviera.com"
-# Add a placeholder Supabase User ID for our seed user.
 OWNER_SUPABASE_ID = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-# ---
 
+# Define our two tenants
+TENANTS = [
+    {
+        "name": "Naviera Logistics",
+        "slug": "naviera",
+        "email": "admin@naviera.com",
+        "settings": {
+            "brand": {"primary_color": "#2563eb"}, # BLUE
+            "landing_page": {
+                "blocks": [
+                    {
+                        "type": "HERO",
+                        "content": {
+                            "title": "The Operating System for Modern Logistics",
+                            "subtitle": "Manage shipments, multi-tenant billing, and tracking with one API.",
+                            "ctaText": "Start Free Trial",
+                            "ctaLink": "/login",
+                            "badge": "Naviera Platform"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    {
+        "name": "Logismart Shipping",
+        "slug": "logismart",
+        "email": "admin@logismart.com",
+        "settings": {
+            "brand": {"primary_color": "#dc2626"}, # RED
+            "landing_page": {
+                "blocks": [
+                    {
+                        "type": "HERO",
+                        "content": {
+                            "title": "Fast, Safe & Reliable Delivery Across the World.",
+                            "subtitle": "Simplifying delivery through innovation, efficiency, and trust for individuals and enterprises across India.",
+                            "ctaText": "Book a Shipment",
+                            "ctaLink": "/login",
+                            "badge": "Global Logistics Solutions"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+]
 
 async def seed_data():
-    """
-    Asynchronous function to seed the database with initial data.
-    """
-    print("Seeding database with initial data...")
+    print("Seeding database with tenants...")
 
-    # AsyncSessionLocal() is the factory we created in db.py
-    # We use an 'async with' block to ensure the session is always closed.
-    async with AsyncSessionLocal() as session:  # type: ignore
-        # Check if the tenant already exists using its unique slug
-        statement = select(Tenant).where(Tenant.slug == TENANT_SLUG)
-        result = await session.exec(statement)
-        tenant = result.first()
+    async with AsyncSessionLocal() as session: # type: ignore
+        for t_data in TENANTS:
+            # 1. Upsert Tenant
+            statement = select(Tenant).where(Tenant.slug == t_data["slug"])
+            result = await session.exec(statement)
+            tenant = result.first()
 
-        if tenant:
-            print(f"Tenant '{TENANT_NAME}' already exists. Skipping.")
-        else:
-            # If the tenant doesn't exist, create it.
-            print(f"Creating tenant: {TENANT_NAME}")
-            tenant = Tenant(name=TENANT_NAME, slug=TENANT_SLUG)
-            session.add(tenant)
+            if tenant:
+                print(f"Updating existing tenant: {t_data['name']}")
+                tenant.settings = t_data["settings"]
+                session.add(tenant)
+            else:
+                print(f"Creating tenant: {t_data['name']}")
+                tenant = Tenant(
+                    name=t_data["name"], 
+                    slug=t_data["slug"],
+                    settings=t_data["settings"]
+                )
+                session.add(tenant)
+            
             await session.commit()
             await session.refresh(tenant)
 
-        # Query for the user using the unique combination of supabase_id and tenant_id
-        statement = select(User).where(
-            User.supabase_user_id == OWNER_SUPABASE_ID, User.tenant_id == tenant.id
-        )
-        result = await session.exec(statement)
-        user = result.first()
-
-        if not user:
-            print(f"Creating owner user: {OWNER_EMAIL}")
-            user = User(
-                email=OWNER_EMAIL,
-                supabase_user_id=OWNER_SUPABASE_ID,  # Add the new field
-                tenant_id=tenant.id,
-                role=UserRole.owner,
-                is_active=True,
+            # 2. Check and Create Admin User
+            statement = select(User).where(
+                User.supabase_user_id == OWNER_SUPABASE_ID, User.tenant_id == tenant.id
             )
-            session.add(user)
-            await session.commit()
-        else:
-            print(f"Owner user '{OWNER_EMAIL}' already exists. Skipping.")
+            result = await session.exec(statement)
+            user = result.first()
+
+            if not user:
+                print(f"Creating owner user: {t_data['email']}")
+                user = User(
+                    email=t_data["email"],
+                    supabase_user_id=OWNER_SUPABASE_ID,
+                    tenant_id=tenant.id,
+                    role=UserRole.owner,
+                    is_active=True,
+                )
+                session.add(user)
+                await session.commit()
 
     print("Seeding finished.")
 
-
-async def main():
-    """Main async function to run the seeder."""
-    await seed_data()
-
-
 def main_wrapper():
-    """Synchronous wrapper to run the main async function."""
-    asyncio.run(main())
-
+    asyncio.run(seed_data())
 
 if __name__ == "__main__":
     main_wrapper()

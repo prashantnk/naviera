@@ -6,7 +6,7 @@ from app.core.dependencies import get_current_active_user
 from app.models.tenants import User
 from app.schemas.v1.tenants import TenantRead, UserRead
 from app.services.tenants import TenantService, get_tenant_service
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
 
@@ -41,3 +41,18 @@ async def list_users_for_tenant(
 
     users = await tenant_service.list_users_for_tenant(tenant_id=tenant_id)
     return users
+
+@router.get("/{slug}/public", response_model=TenantRead)
+async def get_public_tenant(
+    *,
+    slug: str,
+    tenant_service: TenantService = Depends(get_tenant_service)
+):
+    """
+    Public endpoint to fetch tenant branding and landing page config.
+    No authentication required.
+    """
+    tenant = await tenant_service.get_tenant_by_slug(slug=slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant

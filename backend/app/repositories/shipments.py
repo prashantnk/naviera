@@ -1,9 +1,10 @@
 import logging
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from sqlalchemy import desc
 from sqlalchemy.orm import selectinload
-from sqlmodel import select
+from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.pickups import (
@@ -234,3 +235,71 @@ class ShipmentRepository:
 
         result = await self.session.exec(query)
         return result.one()
+
+    # --- NEW: Read & Listing Methods ---
+
+    async def get_shipment_by_tracking_id(
+        self, tracking_id: str
+    ) -> Optional[PickupRequest]:
+        """
+        Public Tracking: Fetch by human-readable ID (NAV-XXXX).
+        """
+        statement = select(PickupRequest).where(
+            PickupRequest.tracking_id == tracking_id
+        )
+        result = await self.session.exec(statement)
+        return result.first()
+
+    async def get_shipment_history(
+        self, pickup_id: uuid.UUID
+    ) -> List[ShipmentActivity]:
+        """
+        Fetches the full audit log for a specific shipment, ordered by time.
+        """
+        statement = (
+            select(ShipmentActivity)
+            .where(ShipmentActivity.pickup_id == pickup_id)
+            .order_by(desc(col(ShipmentActivity.timestamp)))  # Newest first
+        )
+        result = await self.session.exec(statement)
+        return list(result.all())
+
+    async def list_shipments(
+        self,
+        tenant_id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        size: int = 20,
+    ) -> Tuple[List[PickupRequest], int]:  # <--- RETURN TYPE CHANGED
+        """
+        Fetches a paginated list of shipments.
+        Returns: ([List of objects], Total Count)
+        """
+        # 1. Base Query
+        query = select(PickupRequest).where(PickupRequest.tenant_id == tenant_id)
+        if user_id:
+            query = query.where(PickupRequest.created_by_user_id == user_id)
+
+        # 2. Count Total (Fast Query)
+        # We clone the query to count rows before applying limit/offset
+        count_query = select(func.count()).select_from(query.subquery())
+        total = (await self.session.exec(count_query)).one()
+
+        # 3. Apply Pagination & Sorting
+        query = query.order_by(desc(PickupRequest.created_at))  # type: ignore
+        query = query.offset((page - 1) * size).limit(size)
+
+        # 4. Eager Load Children (Prevent MissingGreenlet)
+        query = query.options(
+            selectinload(PickupRequest.pickup_address),  # type: ignore
+            selectinload(PickupRequest.delivery_address),  # type: ignore
+            selectinload(PickupRequest.packages),  # type: ignore
+            selectinload(PickupRequest.documents),  # type: ignore
+            selectinload(PickupRequest.payment_details),  # type: ignore
+        )
+
+        # 5. Execute
+        items = (await self.session.exec(query)).all()
+
+        # Return a clean Tuple
+        return list(items), total

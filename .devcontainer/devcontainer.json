@@ -1,3 +1,4 @@
+// .devcontainer/devcontainer.json
 {
   "name": "Naviera Monorepo Environment",
   "image": "mcr.microsoft.com/devcontainers/base:bookworm",
@@ -14,6 +15,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        // --- Existing Backend Extensions (PRESERVED) ---
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.black-formatter",
@@ -27,9 +29,16 @@
         "mikestead.dotenv",
         "Google.geminicodeassist",
         "Codeium.codeium",
-        "Google.gemini-cli-vscode-ide-companion"
+        "Google.gemini-cli-vscode-ide-companion",
+        "openai.chatgpt",
+        // --- NEW: Frontend Extensions (ADDED) ---
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        // --- Theme ---
+        "akamud.vscode-theme-onedark"
       ],
       "settings": {
+        // --- Existing Python Settings (PRESERVED) ---
         "python.defaultInterpreterPath": "/workspaces/naviera/backend/.venv/bin/python",
         "python.terminal.activateEnvironment": false,
         "editor.formatOnSave": true,
@@ -40,24 +49,35 @@
             "source.organizeImports": "explicit"
           }
         },
+        // These are the lines that were accidentally removed - restoring them now:
         "python.linting.ruffEnabled": true,
         "python.linting.enabled": true,
         "python.analysis.reportUnknownMemberType": "none",
         "python.analysis.typeCheckingMode": "basic",
         "python.analysis.autoImportCompletions": true,
-        "[javascript]": {
+
+        // --- NEW: Frontend Settings (ADDED) ---
+        "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[typescriptreact]": {
           "editor.defaultFormatter": "esbenp.prettier-vscode"
         },
-        "[typescript]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "tailwindCSS.includeLanguages": {
+          "typescript": "javascript",
+          "typescriptreact": "javascript"
+        },
+        // We merge this carefully. For Python, it uses 'source.fixAll'.
+        // For JS/TS, we want ESLint to fix issues on save.
+        "editor.codeActionsOnSave": {
+          "source.fixAll": "explicit",
+          "source.organizeImports": "explicit",
+          "source.fixAll.eslint": "explicit" // <--- Added for Frontend
         }
       }
     }
   },
   "postCreateCommand": "sh ./.devcontainer/post-create.sh",
-  "forwardPorts": [
-    8000,
-    3000
-  ],
+  "forwardPorts": [8000, 3000],
   "remoteUser": "vscode"
 }

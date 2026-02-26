@@ -7,6 +7,7 @@ from sqlmodel import Field, SQLModel  # Using SQLModel for consistency
 
 # Import Enums
 from app.models.pickups import (
+    ActivityType,
     AddressType,
     DocumentType,
     PaymentMode,
@@ -260,3 +261,45 @@ class PickupUpdate(SQLModel):
     # --- 7. Financials ---
     # We reuse PaymentDetailsCreate because usually, you update the whole block (Amount + Mode)
     payment_details: Optional[PaymentDetailsCreate] = None
+
+
+# --- 5. Timeline & Tracking Schemas (Read Only) ---
+
+
+class ShipmentActivityRead(SQLModel):
+    """
+    For Admins: The complete history of a shipment.
+    """
+
+    id: UUID
+    timestamp: datetime
+    user_id: UUID
+    activity_type: ActivityType
+    summary: Optional[str] = None
+    comment: Optional[str] = None
+    is_public: bool
+    diff: dict = {}  # Admins need to see the technical changes
+
+
+class PublicActivityRead(SQLModel):
+    """
+    For Customers: A sanitized timeline event.
+    No 'diff', no 'user_id', no internal 'comment'.
+    """
+
+    timestamp: datetime
+    status_title: str  # Derived from summary/status
+    message: Optional[str] = None  # Derived from public comment
+
+
+class PublicTrackingRead(SQLModel):
+    """
+    The Public Tracking Page Data.
+    Minimal info to prove shipment exists and show status.
+    """
+
+    tracking_id: str
+    status: PickupStatus
+    current_location: str = "Processing"  # Placeholder for now
+    estimated_delivery: Optional[date] = None
+    timeline: List[PublicActivityRead] = []

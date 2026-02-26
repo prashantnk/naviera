@@ -1,4 +1,5 @@
 {
+  "workbench.colorTheme": "Atom One Dark",
   "editor.formatOnSave": true,
   "editor.wordWrap": "on",
   "files.exclude": {
