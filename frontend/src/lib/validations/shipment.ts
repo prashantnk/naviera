@@ -38,7 +38,9 @@ export const shipmentFormSchema = z.object({
   order_reference_id: z.string().min(3, "Order Reference is required"),
   requested_pickup_date: z.string().min(1, "Please select a pickup date"),
 
-  // Allow passing an ID instead of a full object
+  // Add Service Type
+  service_type: z.enum(["SURFACE", "EXPRESS"]).default("SURFACE"),
+
   pickup_address_id: z.string().optional(),
   new_pickup_address: addressSchema.optional(),
 

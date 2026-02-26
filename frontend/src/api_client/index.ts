@@ -29,6 +29,8 @@ export { PickupStatus } from './models/PickupStatus';
 export type { PickupUpdate } from './models/PickupUpdate';
 export type { PublicActivityRead } from './models/PublicActivityRead';
 export type { PublicTrackingRead } from './models/PublicTrackingRead';
+export type { RateCalculationRequest } from './models/RateCalculationRequest';
+export type { RateCalculationResponse } from './models/RateCalculationResponse';
 export { ServiceType } from './models/ServiceType';
 export type { ShipmentActivityRead } from './models/ShipmentActivityRead';
 export { ShipmentType } from './models/ShipmentType';

@@ -9,16 +9,32 @@ import { useEffect, useState } from "react";
 import { UpdateStatusDialog } from "@/components/forms/update-status-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Box, Loader2, MapPin, Pencil } from "lucide-react";
+import { downloadShippingLabel } from "@/lib/api";
+import { ArrowLeft, Box, Loader2, MapPin, Pencil, Printer } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 export default function ShipmentDetailsPage() {
     const params = useParams();
     const shipmentId = params.id as string;
-    const { routeTo } = useTenant();
+    const { routeTo, tenantSlug } = useTenant();
 
     const [shipment, setShipment] = useState<PickupRead | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isPrinting, setIsPrinting] = useState(false);
+
+    const handlePrintLabel = async () => {
+        setIsPrinting(true);
+        try {
+            await downloadShippingLabel(tenantSlug, shipmentId, shipment?.tracking_id || shipmentId);
+
+        } catch (error) {
+            console.error("Print Error:", error);
+            toast.error("Failed to generate shipping label.");
+        } finally {
+            setIsPrinting(false);
+        }
+    };
 
     const fetchDetails = async () => {
         if (!shipmentId) return;
@@ -62,9 +78,14 @@ export default function ShipmentDetailsPage() {
                     </div>
                 </div>
 
-                {/* Admin Operations */}
+                {/* Admin Operations Placeholder */}
                 <div className="flex gap-2">
-                    {/* THE NEW EDIT BUTTON */}
+                    {/* THE NEW PRINT BUTTON */}
+                    <Button variant="outline" onClick={handlePrintLabel} disabled={isPrinting}>
+                        {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+                        Print Label
+                    </Button>
+
                     <Button variant="outline" asChild>
                         <Link href={routeTo(`/shipments/${shipment.id}/edit`)}>
                             <Pencil className="mr-2 h-4 w-4" /> Edit Details
