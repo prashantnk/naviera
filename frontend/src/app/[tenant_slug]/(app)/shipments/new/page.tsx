@@ -1,12 +1,12 @@
 // src/app/[tenant_slug]/(app)/shipments/new/page.tsx
 "use client";
 
-import { ShipmentsService } from "@/api_client";
+import { AddressesService, AddressRead, AddressType, ShipmentsService } from "@/api_client";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { shipmentFormSchema, ShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { AddressFieldset } from "@/components/forms/address-fieldset";
@@ -27,8 +27,30 @@ const STEPS = [
 export default function CreateShipmentWizard() {
     const { routeTo } = useTenant();
     const router = useRouter();
+
     const [currentStep, setCurrentStep] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // 🔥 Split into two distinct states!
+    const [warehouses, setWarehouses] = useState<AddressRead[]>([]);
+    const [customers, setCustomers] = useState<AddressRead[]>([]);
+
+    useEffect(() => {
+        const fetchAddresses = async () => {
+            try {
+                // 🔥 Fire both API requests at the exact same time for maximum speed
+                const [whData, custData] = await Promise.all([
+                    AddressesService.listSavedAddresses(AddressType.WAREHOUSE),
+                    AddressesService.listSavedAddresses(AddressType.CUSTOMER)
+                ]);
+                setWarehouses(whData);
+                setCustomers(custData);
+            } catch (e) {
+                console.error("Failed to load address book", e);
+            }
+        };
+        fetchAddresses();
+    }, []);
 
     const form = useForm<ShipmentFormValues>({
         resolver: zodResolver(shipmentFormSchema),
@@ -110,8 +132,18 @@ export default function CreateShipmentWizard() {
 
                         {currentStep === 1 && (
                             <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                                <AddressFieldset control={form.control} type="new_pickup_address" title="1. Origin (Pickup)" />
-                                <AddressFieldset control={form.control} type="new_delivery_address" title="2. Destination (Delivery)" />
+                                <AddressFieldset
+                                    control={form.control}
+                                    type="pickup"
+                                    title="1. Origin (Pickup)"
+                                    savedAddresses={warehouses}
+                                />
+                                <AddressFieldset
+                                    control={form.control}
+                                    type="delivery"
+                                    title="2. Destination (Delivery)"
+                                    savedAddresses={customers}
+                                />
                             </div>
                         )}
 

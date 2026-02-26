@@ -37,6 +37,7 @@ export type { UserRead } from './models/UserRead';
 export { UserRole } from './models/UserRole';
 export type { ValidationError } from './models/ValidationError';
 
+export { AddressesService } from './services/AddressesService';
 export { ShipmentsService } from './services/ShipmentsService';
 export { SystemService } from './services/SystemService';
 export { TenantsService } from './services/TenantsService';
