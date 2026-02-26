@@ -51,4 +51,25 @@ export class UsersService {
             },
         });
     }
+    /**
+     * Get My Profile
+     * Returns the currently authenticated user's profile (including their role).
+     * @param xTenantSlug
+     * @returns UserRead Successful Response
+     * @throws ApiError
+     */
+    public static getMyProfile(
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<UserRead> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/users/me',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }

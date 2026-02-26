@@ -171,18 +171,23 @@ export class ShipmentsService {
      * Public Tracking Page.
      * - **Public**: No authentication required.
      * - **Data**: Returns sanitized status and public timeline events only.
-     * @param trackingId
+     * @param identifier
+     * @param xTenantSlug
      * @returns PublicTrackingRead Successful Response
      * @throws ApiError
      */
     public static trackShipment(
-        trackingId: string,
+        identifier: string,
+        xTenantSlug?: (string | null),
     ): CancelablePromise<PublicTrackingRead> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/shipments/tracking/{tracking_id}',
+            url: '/api/v1/shipments/tracking/{identifier}',
             path: {
-                'tracking_id': trackingId,
+                'identifier': identifier,
+            },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
             },
             errors: {
                 422: `Validation Error`,

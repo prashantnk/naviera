@@ -113,8 +113,10 @@ async def list_shipments(
     # Calculate total pages
     total_pages = math.ceil(total / size) if size > 0 else 0
 
+    parsed_items = [PickupRead.model_validate(item) for item in items]
+
     return PaginatedResponse(
-        items=items, total=total, page=page, size=size, pages=total_pages
+        items=parsed_items, total=total, page=page, size=size, pages=total_pages
     )
 
 
@@ -134,9 +136,10 @@ async def get_shipment_timeline(
     )
 
 
-@router.get("/tracking/{tracking_id}", response_model=PublicTrackingRead)
+@router.get("/tracking/{identifier}", response_model=PublicTrackingRead)
 async def track_shipment(
-    tracking_id: str,
+    identifier: str,
+    current_tenant: Tenant = Depends(get_tenant_from_header),
     # Note: NO User Dependency here. This is public.
     shipment_service: ShipmentService = Depends(get_shipment_service),
 ):
@@ -145,7 +148,9 @@ async def track_shipment(
     - **Public**: No authentication required.
     - **Data**: Returns sanitized status and public timeline events only.
     """
-    return await shipment_service.track_shipment_public(tracking_id=tracking_id)
+    return await shipment_service.track_shipment_public(
+        identifier=identifier, tenant_id=current_tenant.id
+    )
 
 
 @router.get("/{shipment_id}", response_model=PickupRead)

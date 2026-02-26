@@ -1,36 +1,52 @@
 // src/components/auth/auth-guard.tsx
 "use client";
 
+import { UserRead, UserRole, UsersService } from "@/api_client";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { getSupabaseClient } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+
+// 1. Upgraded Context Type
+interface UserContextType {
+    user: UserRead | null;
+    isAdmin: boolean;
+}
+const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+    const [user, setUser] = useState<UserRead | null>(null);
+    const [isChecking, setIsChecking] = useState(true);
+
     const router = useRouter();
     const { routeTo, tenantSlug } = useTenant();
     const supabase = getSupabaseClient(tenantSlug);
 
     useEffect(() => {
-        const checkAuth = async () => {
-            // Check local storage for an active Supabase session
-            const { data: { session } } = await supabase.auth.getSession();
+        const checkAuthAndFetchProfile = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
 
-            if (!session) {
-                // Not logged in? Kick them to their specific tenant's login page!
+                if (!session) {
+                    router.push(routeTo("/login"));
+                    return;
+                }
+
+                const profile = await UsersService.getMyProfile();
+                setUser(profile);
+            } catch (error) {
+                console.error("Auth check failed:", error);
                 router.push(routeTo("/login"));
-            } else {
-                setIsAuthenticated(true);
+            } finally {
+                setIsChecking(false);
             }
         };
 
-        checkAuth();
-    }, [router, routeTo]);
+        checkAuthAndFetchProfile();
+    }, [router, routeTo, supabase]);
 
-    // While checking, show a full-screen loading state themed to the tenant
-    if (isAuthenticated === null) {
+    if (isChecking) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-slate-50">
                 <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -38,6 +54,21 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    // If authenticated, render the dashboard content!
-    return <>{children}</>;
+    // 2. Calculate isAdmin ONCE here
+    const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.OWNER;
+
+    return (
+        <UserContext.Provider value={{ user, isAdmin }}>
+            {children}
+        </UserContext.Provider>
+    );
+}
+
+// Custom hook
+export function useUser() {
+    const context = useContext(UserContext);
+    if (context === undefined) {
+        throw new Error("useUser must be used within an AuthGuard");
+    }
+    return context;
 }

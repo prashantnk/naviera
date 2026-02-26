@@ -3,9 +3,10 @@
 
 import { useTenant } from "@/components/providers/tenant-provider";
 import { cn } from "@/lib/utils";
-import { Home, MapPin, Package, PlusCircle, Settings } from "lucide-react";
+import { Globe, Home, MapPin, Package, PlusCircle, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
 
 export function AppSidebar() {
     const { tenant, routeTo } = useTenant();
@@ -67,6 +68,16 @@ export function AppSidebar() {
                     );
                 })}
             </nav>
+            {/* 🔥 NEW: Return to Public Site Footer */}
+            <div className="p-4 border-t border-slate-800">
+                <Link
+                    href={routeTo("/")}
+                    className="flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-md bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+                >
+                    <Globe className="h-4 w-4" />
+                    Public Website
+                </Link>
+            </div>
         </aside>
     );
 }

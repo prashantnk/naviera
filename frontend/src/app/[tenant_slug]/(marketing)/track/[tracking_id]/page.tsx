@@ -14,7 +14,7 @@ export default function PublicTrackingPage() {
     const params = useParams();
     const router = useRouter();
     const trackingId = params.tracking_id as string;
-    const { routeTo } = useTenant();
+    const { routeTo, tenantSlug } = useTenant();
 
     const [data, setData] = useState<PublicTrackingRead | null>(null);
     const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export default function PublicTrackingPage() {
         };
 
         fetchTrackingData();
-    }, [trackingId]);
+    }, [trackingId, tenantSlug]);
 
     const handleNewSearch = (e: React.FormEvent) => {
         e.preventDefault();
