@@ -2,12 +2,16 @@
 "use client";
 
 import { PickupRead, ShipmentsService } from "@/api_client";
+import { useTenant } from "@/components/providers/tenant-provider";
 import { DataTable } from "@/components/ui/data-table";
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { columns } from "./columns";
 
 export default function ShipmentsPage() {
+    const router = useRouter();
+    const { routeTo } = useTenant();
     const [data, setData] = useState<PickupRead[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -46,7 +50,11 @@ export default function ShipmentsPage() {
                     <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
                 </div>
             ) : (
-                <DataTable columns={columns} data={data} />
+                <DataTable
+                    columns={columns}
+                    data={data}
+                    onRowClick={(row) => router.push(routeTo(`/shipments/${row.id}`))}
+                />
             )}
         </div>
     );

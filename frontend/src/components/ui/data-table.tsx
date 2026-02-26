@@ -2,31 +2,24 @@
 "use client";
 
 import {
-    ColumnDef,
-    flexRender,
-    getCoreRowModel,
-    useReactTable,
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+    ColumnDef, flexRender, getCoreRowModel, useReactTable,
 } from "@tanstack/react-table";
 
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-
+// 1. ADD onRowClick TO PROPS
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
     data: TData[];
+    onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<TData, TValue>({
     columns,
     data,
+    onRowClick, // 2. EXTRACT IT
 }: DataTableProps<TData, TValue>) {
-    // Initialize the TanStack Headless Engine
     const table = useReactTable({
         data,
         columns,
@@ -36,18 +29,14 @@ export function DataTable<TData, TValue>({
     return (
         <div className="rounded-md border bg-white shadow-sm">
             <Table>
+                {/* ... (Keep TableHeader exactly the same) ... */}
                 <TableHeader className="bg-slate-50/50">
                     {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>
                             {headerGroup.headers.map((header) => {
                                 return (
                                     <TableHead key={header.id} className="font-semibold text-slate-700">
-                                        {header.isPlaceholder
-                                            ? null
-                                            : flexRender(
-                                                header.column.columnDef.header,
-                                                header.getContext()
-                                            )}
+                                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                                     </TableHead>
                                 );
                             })}
@@ -60,6 +49,9 @@ export function DataTable<TData, TValue>({
                             <TableRow
                                 key={row.id}
                                 data-state={row.getIsSelected() && "selected"}
+                                // 3. ADD CLICK HANDLER AND HOVER CURSOR
+                                onClick={() => onRowClick && onRowClick(row.original)}
+                                className={onRowClick ? "cursor-pointer hover:bg-slate-50" : ""}
                             >
                                 {row.getVisibleCells().map((cell) => (
                                     <TableCell key={cell.id} className="text-slate-600">
