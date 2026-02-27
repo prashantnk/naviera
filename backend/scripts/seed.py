@@ -1,4 +1,5 @@
 import asyncio
+
 from sqlmodel import select
 
 from app.core.db import AsyncSessionLocal
@@ -13,7 +14,12 @@ TENANTS = [
         "slug": "naviera",
         "email": "admin@naviera.com",
         "settings": {
-            "brand": {"primary_color": "#2563eb"}, # BLUE
+            "brand": {"primary_color": "#2563eb", "logo_url": None},  # BLUE
+            "contact": {
+                "phone": "1800-000-0000",
+                "email": "hello@naviera.com",
+                "whatsapp": "9999999999",
+            },
             "landing_page": {
                 "blocks": [
                     {
@@ -23,41 +29,69 @@ TENANTS = [
                             "subtitle": "Manage shipments, multi-tenant billing, and tracking with one API.",
                             "ctaText": "Start Free Trial",
                             "ctaLink": "/login",
-                            "badge": "Naviera Platform"
-                        }
+                            "badge": "Naviera Platform",
+                            "trustPartners": ["OceanWay", "AeroSwift", "GroundForce"],
+                        },
                     }
                 ]
-            }
-        }
+            },
+        },
     },
     {
-        "name": "Logismart Shipping",
+        "name": "Logismart",
         "slug": "logismart",
         "email": "admin@logismart.com",
         "settings": {
-            "brand": {"primary_color": "#dc2626"}, # RED
+            "brand": {
+                "primary_color": "#dc2626",
+                "logo_url": "/logismart-logo.png",
+            },  # RED
+            "contact": {
+                "phones": [
+                    "1800-309-1130",
+                    "9205-444-895",
+                    "9205-444-896",
+                    "9205-444-897",
+                ],
+                "emails": ["contact@logismart.in", "logismartprivatelimited@gmail.com"],
+                "whatsapp": "9821008627",
+                "socials": {
+                    "facebook": "https://www.facebook.com/logismart.in",
+                    "instagram": "https://www.instagram.com/logismartin?fbclid=IwY2xjawNnS0BleHRuA2FlbQIxMABicmlkETFaM1ZmWXRLMTBYaE9oQWdVAR4VQBG8JStxs5Uj666A-tKb8fPNJJ3gadBluDX9ecP_wvpR7K8Rj5oQWHw-DQ_aem_UfWjoOXqRqub78fN-Myjgg",
+                    "youtube": "https://www.youtube.com/@logismart",
+                    "linkedin": "https://www.linkedin.com/company/logismart-private-limited/about/",
+                },
+            },
             "landing_page": {
                 "blocks": [
                     {
                         "type": "HERO",
                         "content": {
-                            "title": "Fast, Safe & Reliable Delivery Across the World.",
-                            "subtitle": "Simplifying delivery through innovation, efficiency, and trust for individuals and enterprises across India.",
-                            "ctaText": "Book a Shipment",
-                            "ctaLink": "/login",
-                            "badge": "Global Logistics Solutions"
-                        }
+                            "title": "International & Domestic Courier & Cargo Services",
+                            "subtitle": "Air, Cargo, Train & Transport. Fast, safe, and reliable delivery across the world.",
+                            "ctaText": "Book Your Shipment",
+                            "ctaLink": "/shipments/new",
+                            "badge": "Logismart Pvt. Ltd.",
+                            "trustPartners": [
+                                "DHL",
+                                "FedEx",
+                                "DTDC",
+                                "Blue Dart",
+                                "UPS",
+                            ],
+                        },
                     }
                 ]
-            }
-        }
-    }
+            },
+        },
+    },
 ]
+
 
 async def seed_data():
     print("Seeding database with tenants...")
 
-    async with AsyncSessionLocal() as session: # type: ignore
+    async with AsyncSessionLocal() as session:  # type: ignore
         for t_data in TENANTS:
             # 1. Upsert Tenant
             statement = select(Tenant).where(Tenant.slug == t_data["slug"])
@@ -71,12 +105,12 @@ async def seed_data():
             else:
                 print(f"Creating tenant: {t_data['name']}")
                 tenant = Tenant(
-                    name=t_data["name"], 
+                    name=t_data["name"],
                     slug=t_data["slug"],
-                    settings=t_data["settings"]
+                    settings=t_data["settings"],
                 )
                 session.add(tenant)
-            
+
             await session.commit()
             await session.refresh(tenant)
 
@@ -101,8 +135,10 @@ async def seed_data():
 
     print("Seeding finished.")
 
+
 def main_wrapper():
     asyncio.run(seed_data())
+
 
 if __name__ == "__main__":
     main_wrapper()
