@@ -8,7 +8,7 @@ export default async function ContactPage({ params }: { params: Promise<{ tenant
     const contact = tenant?.settings?.contact;
 
     return (
-        <div className="bg-slate-50 min-h-screen py-16">
+        <div className="bg-slate-50 py-20">
             <div className="container mx-auto px-4 md:px-6 max-w-5xl">
 
                 <div className="text-center mb-16">

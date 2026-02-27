@@ -1,4 +1,5 @@
 // frontend/src/app/[tenant_slug]/(marketing)/layout.tsx
+import { Footer } from "@/components/blocks/footer";
 import { Header } from "@/components/blocks/header";
 import { TenantProvider } from "@/components/providers/tenant-provider";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -16,9 +17,12 @@ export default async function MarketingLayout({
 }) {
   const { tenant_slug } = await params;
   const tenant = await getTenantBySlug(tenant_slug);
+
+  // Extract theme and contact info from the DB
   const primaryColor = tenant?.settings?.brand?.primary_color;
   const whatsappNumber = tenant?.settings?.contact?.whatsapp;
 
+  // Next 15: Await the headers API to extract our middleware injection
   const headersList = await headers();
   const routingMode = (headersList.get("x-routing-mode") as "subdomain" | "path") || "path";
 
@@ -26,10 +30,17 @@ export default async function MarketingLayout({
     <div className="flex min-h-screen flex-col relative">
       <ThemeProvider primaryColor={primaryColor} />
       <TenantProvider tenant={tenant} routingMode={routingMode}>
-        <Header />
-        <div className="flex-1">{children}</div>
 
-        {/* 🔥 NEW: FLOATING WHATSAPP BUTTON */}
+        {/* Global Header */}
+        <Header />
+
+        {/* Main Page Content */}
+        <div className="flex-1 bg-white">{children}</div>
+
+        {/* 🔥 GLOBAL FOOTER ADDED HERE */}
+        <Footer />
+
+        {/* 🔥 GLOBAL FLOATING WHATSAPP BUTTON ADDED HERE */}
         {whatsappNumber && (
           <Link
             href={`https://wa.me/${whatsappNumber}`}
@@ -42,6 +53,7 @@ export default async function MarketingLayout({
             </span>
           </Link>
         )}
+
       </TenantProvider>
     </div>
   );

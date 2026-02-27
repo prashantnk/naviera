@@ -135,70 +135,71 @@ export function HeroSection({ title, subtitle, ctaText, ctaLink, badge, trustPar
             </div>
 
             {/* ➡️ RIGHT COLUMN: Multi-Modal Bento Collage */}
-            <div className="lg:col-span-6 relative w-full h-[550px] lg:h-[650px] animate-in fade-in slide-in-from-right-12 duration-1000 delay-300 mt-10 lg:mt-0">
+            <div className="lg:col-span-6 relative w-full h-[400px] sm:h-[550px] lg:h-[650px] animate-in fade-in slide-in-from-right-12 duration-1000 delay-300 mt-12 lg:mt-0">
 
               {/* Ambient Glow behind images */}
-              <div className="absolute inset-10 bg-[#003366]/10 blur-[80px] rounded-full opacity-80 z-0" />
+              <div className="absolute inset-4 sm:inset-10 bg-[#003366]/10 blur-[60px] sm:blur-[80px] rounded-full opacity-80 z-0" />
 
               {/* IMAGE 1: Air Cargo (Top Right) */}
-              <div className="absolute top-0 right-0 w-[65%] h-[55%] bg-white p-2 rounded-[2rem] shadow-xl z-10 border border-slate-100 transform hover:scale-[1.02] hover:-rotate-1 transition-all duration-500">
+              <div className="absolute top-0 right-0 w-[70%] sm:w-[65%] h-[50%] sm:h-[55%] bg-white p-1.5 sm:p-2 rounded-[1.5rem] sm:rounded-[2rem] shadow-xl z-10 border border-slate-100 transform hover:scale-[1.02] hover:-rotate-1 transition-all duration-500">
                 <img
                   src="https://images.unsplash.com/photo-1542296332-2e4473faf563?q=80&w=2070&auto=format&fit=crop"
                   alt="Global Air Cargo"
-                  className="w-full h-full object-cover rounded-[1.5rem]"
+                  className="w-full h-full object-cover rounded-[1.25rem] sm:rounded-[1.5rem]"
                 />
               </div>
 
               {/* IMAGE 2: Surface/Trucks (Bottom Right) */}
-              <div className="absolute bottom-8 right-8 w-[60%] h-[40%] bg-white p-2 rounded-[2rem] shadow-2xl z-20 border border-slate-100 transform hover:scale-[1.02] hover:rotate-1 transition-all duration-500">
+              <div className="absolute bottom-4 sm:bottom-8 right-2 sm:right-8 w-[65%] sm:w-[60%] h-[40%] bg-white p-1.5 sm:p-2 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl z-20 border border-slate-100 transform hover:scale-[1.02] hover:rotate-1 transition-all duration-500">
                 <img
                   src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop"
                   alt="Surface Transport Fleet"
-                  className="w-full h-full object-cover rounded-[1.5rem]"
+                  className="w-full h-full object-cover rounded-[1.25rem] sm:rounded-[1.5rem]"
                 />
               </div>
 
               {/* IMAGE 3: Warehousing (Middle Left - Overlapping) */}
-              <div className="absolute top-[20%] left-0 w-[45%] h-[45%] bg-white p-2 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.15)] z-30 border border-slate-100 transform hover:scale-[1.05] transition-all duration-500">
+              <div className="absolute top-[25%] sm:top-[20%] left-0 w-[55%] sm:w-[45%] h-[40%] sm:h-[45%] bg-white p-1.5 sm:p-2 rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.15)] z-30 border border-slate-100 transform hover:scale-[1.05] transition-all duration-500">
                 <img
                   src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop"
                   alt="Warehousing Operations"
-                  className="w-full h-full object-cover rounded-[1.5rem]"
+                  className="w-full h-full object-cover rounded-[1.25rem] sm:rounded-[1.5rem]"
                 />
               </div>
 
-              {/* 🚀 FLOAT 1: Delivery Rate (Bottom Left) */}
-              <div className="absolute -bottom-2 -left-4 md:left-4 bg-white/95 backdrop-blur-xl p-5 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-slate-100 z-40 transform hover:-translate-y-2 transition-transform duration-500 flex items-center gap-4">
-                <div className="h-12 w-12 rounded-full bg-green-100 border border-green-200 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="h-6 w-6 text-green-600" />
+              {/* 🚀 FLOAT 1: Delivery Rate (Bottom Right on Mobile, Bottom Left on Desktop) */}
+              <div className="absolute -bottom-8 right-0 sm:-bottom-2 sm:right-auto sm:left-4 bg-white/95 backdrop-blur-xl p-3 sm:p-5 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-slate-100 z-40 transform hover:-translate-y-2 transition-transform duration-500 flex items-center gap-3 sm:gap-4 w-[180px] sm:w-auto scale-90 sm:scale-100 origin-bottom-right sm:origin-bottom-left">
+                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full bg-green-100 border border-green-200 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Delivery Rate</p>
-                  <p className="text-3xl font-black text-slate-900 tracking-tight">99.8%</p>
+                  <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Delivery Rate</p>
+                  <p className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">99.8%</p>
                 </div>
               </div>
 
-              {/* 🚀 FLOAT 2: Live Route Mockup (Top Right, overlapping Air) */}
-              <div className="absolute top-1/2 -translate-y-1/2 -left-8 md:-left-12 bg-white/95 backdrop-blur-xl p-5 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.12)] border border-slate-100 z-40 transform lg:-rotate-2 hover:scale-105 transition-transform duration-500 hidden sm:block w-64">
-                <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+              {/* 🚀 FLOAT 2: Live Route Mockup (Top Left on Mobile, Middle Left on Desktop) */}
+              {/* 🔥 FIX: Removed 'hidden sm:block' and added proper mobile scaling! */}
+              <div className="absolute -top-6 left-0 sm:top-1/2 sm:-translate-y-1/2 sm:-left-12 bg-white/95 backdrop-blur-xl p-4 sm:p-5 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.12)] border border-slate-100 z-40 transform lg:-rotate-2 hover:scale-105 transition-transform duration-500 w-[190px] sm:w-64 scale-85 sm:scale-100 origin-top-left">
+                <div className="flex items-center justify-between mb-3 sm:mb-4 border-b border-slate-100 pb-2 sm:pb-3">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
                     <PlaneTakeoff className="h-3 w-3 text-[#dc2626]" /> Live Air Cargo
                   </span>
                   <span className="flex h-2 w-2 rounded-full bg-green-500 animate-ping" />
                 </div>
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 h-6 w-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                      <MapPin className="h-3 w-3 text-slate-500" />
+                <div className="space-y-3 sm:space-y-4">
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <div className="mt-0.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                      <MapPin className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-slate-500" />
                     </div>
-                    <div><p className="text-sm font-bold text-slate-900 leading-tight">New Delhi</p><p className="text-[10px] text-slate-500 uppercase font-semibold">Origin</p></div>
+                    <div><p className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">New Delhi</p><p className="text-[9px] sm:text-[10px] text-slate-500 uppercase font-semibold">Origin</p></div>
                   </div>
-                  <div className="ml-3 border-l-2 border-dashed border-[#dc2626]/40 h-6" />
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 h-6 w-6 rounded-full bg-[#003366]/10 border border-[#003366]/20 flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="h-3 w-3 text-[#003366]" />
+                  <div className="ml-2.5 sm:ml-3 border-l-2 border-dashed border-[#dc2626]/40 h-4 sm:h-6" />
+                  <div className="flex items-start gap-2 sm:gap-3">
+                    <div className="mt-0.5 h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-[#003366]/10 border border-[#003366]/20 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-[#003366]" />
                     </div>
-                    <div><p className="text-sm font-bold text-slate-900 leading-tight">New York</p><p className="text-[10px] text-slate-500 uppercase font-semibold">In Transit</p></div>
+                    <div><p className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">New York</p><p className="text-[9px] sm:text-[10px] text-slate-500 uppercase font-semibold">In Transit</p></div>
                   </div>
                 </div>
               </div>

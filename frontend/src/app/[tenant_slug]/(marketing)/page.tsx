@@ -51,9 +51,6 @@ export default async function MarketingPage({
       {/* 2. Hardcoded Business Value Section */}
       <FeaturesSection tenantName={tenantName} />
 
-      {/* 3. Global Footer */}
-      <Footer />
-
     </div>
   );
 }
