@@ -81,45 +81,69 @@ class ShipmentService:
         self, shipment_id: uuid.UUID, user: User, tenant_id: uuid.UUID
     ) -> List[ShipmentActivityRead]:
         """
-        Admin Only: Get full audit history.
+        Get Audit Timeline.
+        Admins see everything. Customers see only public events for their own shipments.
         """
-        # 1. Security Check
-        if user.role not in [UserRole.admin, UserRole.owner]:
-            raise HTTPException(
-                status_code=403, detail="Only Admins can view full timelines"
-            )
-
-        # 2. Verify Shipment belongs to tenant
+        # 1. Verify Shipment belongs to tenant
         shipment = await self.shipment_repo.get_shipment_full_details(shipment_id)
         if not shipment or shipment.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Shipment not found")
 
+        is_admin = user.role in [UserRole.admin, UserRole.owner]
+
+        # 2. Security Check for Customers (Must own the shipment)
+        if not is_admin:
+            if shipment.created_by_user_id != user.id:
+                raise HTTPException(status_code=404, detail="Shipment not found")
+
         # 3. Fetch History
         activities = await self.shipment_repo.get_shipment_history(shipment_id)
 
-        # 4. Map to Schema (Explicit mapping ensures type safety)
-        return [
-            ShipmentActivityRead(
-                id=a.id,
-                timestamp=a.timestamp,
-                user_id=a.user_id,
-                activity_type=a.activity_type,
-                summary=a.summary,
-                comment=a.comment,
-                is_public=a.is_public,
-                diff=a.diff,
-            )
-            for a in activities
-        ]
+        # 4. Map to Schema & Filter
+        result = []
+        for a in activities:
+            if not is_admin and not a.is_public:
+                # Allow the customer to see the initial creation event so the timeline isn't empty
+                if a.summary != "Shipment Created":
+                    continue
 
-    async def track_shipment_public(self, tracking_id: str) -> PublicTrackingRead:
+            result.append(
+                ShipmentActivityRead(
+                    id=a.id,
+                    timestamp=a.timestamp,
+                    user_id=a.user_id,
+                    activity_type=a.activity_type,
+                    summary=a.summary,
+                    comment=a.comment,
+                    is_public=a.is_public,
+                    diff=a.diff,
+                )
+            )
+
+        return result
+
+    async def track_shipment_public(
+        self, identifier: str, tenant_id: uuid.UUID
+    ) -> PublicTrackingRead:
         """
         Public Access: Get sanitized shipment status.
-        Does NOT require login.
+        Does NOT require login, BUT requires the correct Tenant context.
+        Accepts either a Tracking ID (NAV-XXXX) or an internal Shipment UUID.
         """
-        shipment = await self.shipment_repo.get_shipment_by_tracking_id(tracking_id)
-        if not shipment:
-            raise HTTPException(status_code=404, detail="Tracking ID not found")
+        try:
+            # Try parsing as UUID first
+            shipment_uuid = uuid.UUID(identifier)
+            shipment = await self.shipment_repo.get_shipment_full_details(shipment_uuid)
+        except ValueError:
+            # Fallback to Tracking ID
+            shipment = await self.shipment_repo.get_shipment_by_tracking_id(identifier)
+
+        # 🔥 THE SECURITY FIX: Must exist AND belong to the requested tenant!
+        if not shipment or shipment.tenant_id != tenant_id:
+            logger.warning(
+                f"Tracking lookup failed or blocked for identifier: {identifier}"
+            )
+            raise HTTPException(status_code=404, detail="Shipment not found")
 
         # Fetch activities to build the public timeline
         activities = await self.shipment_repo.get_shipment_history(shipment.id)
@@ -132,15 +156,15 @@ class ShipmentService:
                     PublicActivityRead(
                         timestamp=a.timestamp,
                         status_title=a.summary or "Update",
-                        message=a.comment,  # Only show comment if marked public
+                        message=a.comment,
                     )
                 )
 
         return PublicTrackingRead(
             tracking_id=shipment.tracking_id,  # type: ignore
             status=shipment.status,
-            current_location="Processing",  # In future, derive this from last activity metadata
-            estimated_delivery=None,  # In future, calculate this
+            current_location="Processing",
+            estimated_delivery=None,
             timeline=public_timeline,
         )
 
@@ -312,7 +336,7 @@ class ShipmentService:
             activity_type=ActivityType.INFO_UPDATE,
             summary="Shipment Created",
             comment="Initial Creation",
-            is_public=False,
+            is_public=True,
             diff={},  # No diff for creation
         )
 

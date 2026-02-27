@@ -29,6 +29,8 @@ export { PickupStatus } from './models/PickupStatus';
 export type { PickupUpdate } from './models/PickupUpdate';
 export type { PublicActivityRead } from './models/PublicActivityRead';
 export type { PublicTrackingRead } from './models/PublicTrackingRead';
+export type { RateCalculationRequest } from './models/RateCalculationRequest';
+export type { RateCalculationResponse } from './models/RateCalculationResponse';
 export { ServiceType } from './models/ServiceType';
 export type { ShipmentActivityRead } from './models/ShipmentActivityRead';
 export { ShipmentType } from './models/ShipmentType';
@@ -37,6 +39,7 @@ export type { UserRead } from './models/UserRead';
 export { UserRole } from './models/UserRole';
 export type { ValidationError } from './models/ValidationError';
 
+export { AddressesService } from './services/AddressesService';
 export { ShipmentsService } from './services/ShipmentsService';
 export { SystemService } from './services/SystemService';
 export { TenantsService } from './services/TenantsService';

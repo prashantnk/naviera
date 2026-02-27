@@ -7,6 +7,8 @@ import type { PickupCreate } from '../models/PickupCreate';
 import type { PickupRead } from '../models/PickupRead';
 import type { PickupUpdate } from '../models/PickupUpdate';
 import type { PublicTrackingRead } from '../models/PublicTrackingRead';
+import type { RateCalculationRequest } from '../models/RateCalculationRequest';
+import type { RateCalculationResponse } from '../models/RateCalculationResponse';
 import type { ShipmentActivityRead } from '../models/ShipmentActivityRead';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -169,19 +171,76 @@ export class ShipmentsService {
      * Public Tracking Page.
      * - **Public**: No authentication required.
      * - **Data**: Returns sanitized status and public timeline events only.
-     * @param trackingId
+     * @param identifier
+     * @param xTenantSlug
      * @returns PublicTrackingRead Successful Response
      * @throws ApiError
      */
     public static trackShipment(
-        trackingId: string,
+        identifier: string,
+        xTenantSlug?: (string | null),
     ): CancelablePromise<PublicTrackingRead> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/shipments/tracking/{tracking_id}',
+            url: '/api/v1/shipments/tracking/{identifier}',
             path: {
-                'tracking_id': trackingId,
+                'identifier': identifier,
             },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Download Shipping Label
+     * Generates and downloads a 4x6 PDF Shipping Label.
+     * @param shipmentId
+     * @param xTenantSlug
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static downloadShippingLabel(
+        shipmentId: string,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/shipments/{shipment_id}/label',
+            path: {
+                'shipment_id': shipmentId,
+            },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Calculate Shipping Rate
+     * Calculates the estimated shipping cost based on Chargeable Weight
+     * (Actual vs Volumetric) and Service Type.
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns RateCalculationResponse Successful Response
+     * @throws ApiError
+     */
+    public static calculateShippingRate(
+        requestBody: RateCalculationRequest,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<RateCalculationResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/shipments/calculate-rate',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

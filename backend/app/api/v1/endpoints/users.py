@@ -1,5 +1,7 @@
 from typing import List
 
+from fastapi import APIRouter, Depends, status
+
 from app.core.dependencies import (
     get_current_active_user,
     get_supabase_user_from_token,
@@ -9,7 +11,6 @@ from app.core.security import TokenPayload
 from app.models.tenants import Tenant, User
 from app.schemas.v1.tenants import UserRead
 from app.services.tenants import TenantService, get_tenant_service
-from fastapi import APIRouter, Depends, status
 
 router = APIRouter()
 
@@ -43,3 +44,11 @@ async def list_users_in_tenant(
     """
     users = await tenant_service.list_users_for_tenant(tenant_id=current_user.tenant_id)
     return users
+
+
+@router.get("/me", response_model=UserRead)
+async def get_my_profile(current_user: User = Depends(get_current_active_user)):
+    """
+    Returns the currently authenticated user's profile (including their role).
+    """
+    return current_user

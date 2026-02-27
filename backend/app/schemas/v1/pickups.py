@@ -303,3 +303,23 @@ class PublicTrackingRead(SQLModel):
     current_location: str = "Processing"  # Placeholder for now
     estimated_delivery: Optional[date] = None
     timeline: List[PublicActivityRead] = []
+
+
+# --- 6. Pricing & Rate Calculator Schemas ---
+
+
+class RateCalculationRequest(SQLModel):
+    pickup_pincode: str
+    delivery_pincode: str
+    packages: List[PackageCreate]
+    service_type: ServiceType
+
+
+class RateCalculationResponse(SQLModel):
+    chargeable_weight: float
+    base_charge: float
+    service_surcharge: float
+    tax_amount: float
+    total_amount: float
+    currency: str = "INR"
+    estimated_days: int

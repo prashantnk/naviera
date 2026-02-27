@@ -4,6 +4,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
@@ -13,8 +14,12 @@ from app.schemas.v1.pickups import (
     PickupRead,
     PickupUpdate,
     PublicTrackingRead,
+    RateCalculationRequest,
+    RateCalculationResponse,
     ShipmentActivityRead,
 )
+from app.services.label import LabelGenerator
+from app.services.pricing import PricingEngine
 from app.services.shipment import ShipmentService, get_shipment_service
 
 # --- Setup Logger ---
@@ -108,8 +113,10 @@ async def list_shipments(
     # Calculate total pages
     total_pages = math.ceil(total / size) if size > 0 else 0
 
+    parsed_items = [PickupRead.model_validate(item) for item in items]
+
     return PaginatedResponse(
-        items=items, total=total, page=page, size=size, pages=total_pages
+        items=parsed_items, total=total, page=page, size=size, pages=total_pages
     )
 
 
@@ -129,9 +136,10 @@ async def get_shipment_timeline(
     )
 
 
-@router.get("/tracking/{tracking_id}", response_model=PublicTrackingRead)
+@router.get("/tracking/{identifier}", response_model=PublicTrackingRead)
 async def track_shipment(
-    tracking_id: str,
+    identifier: str,
+    current_tenant: Tenant = Depends(get_tenant_from_header),
     # Note: NO User Dependency here. This is public.
     shipment_service: ShipmentService = Depends(get_shipment_service),
 ):
@@ -140,7 +148,9 @@ async def track_shipment(
     - **Public**: No authentication required.
     - **Data**: Returns sanitized status and public timeline events only.
     """
-    return await shipment_service.track_shipment_public(tracking_id=tracking_id)
+    return await shipment_service.track_shipment_public(
+        identifier=identifier, tenant_id=current_tenant.id
+    )
 
 
 @router.get("/{shipment_id}", response_model=PickupRead)
@@ -158,3 +168,48 @@ async def get_shipment_details(
     return await shipment_service.get_shipment_details(
         shipment_id=shipment_id, user=current_user, tenant_id=current_tenant.id
     )
+
+
+@router.get("/{shipment_id}/label")
+async def download_shipping_label(
+    shipment_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+    shipment_service: ShipmentService = Depends(get_shipment_service),
+):
+    """
+    Generates and downloads a 4x6 PDF Shipping Label.
+    """
+    # 1. Fetch shipment (Ensures Security/Auth rules apply!)
+    shipment = await shipment_service.get_shipment_details(
+        shipment_id=shipment_id, user=current_user, tenant_id=current_tenant.id
+    )
+
+    # 2. Generate PDF
+    pdf_buffer = LabelGenerator.generate_pdf(shipment, current_tenant)
+
+    # 3. Stream it to the client
+    filename = f"Label_{shipment.tracking_id}.pdf"
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.post("/calculate-rate", response_model=RateCalculationResponse)
+async def calculate_shipping_rate(
+    payload: RateCalculationRequest,
+    # Notice: We still require auth to prevent public API abuse!
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+):
+    """
+    Calculates the estimated shipping cost based on Chargeable Weight
+    (Actual vs Volumetric) and Service Type.
+    """
+    logger.info(f"API Request: Calculate Rate for Tenant '{current_tenant.slug}'")
+
+    # We don't need the database here, it's pure math!
+    return PricingEngine.calculate_rate(payload)

@@ -4,12 +4,10 @@
 import { Button } from "@/components/ui/button";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { ShipmentFormValues } from "@/lib/validations/shipment";
 import { Box, Plus, Trash2 } from "lucide-react";
-import { Control, useFieldArray } from "react-hook-form";
+import { useFieldArray } from "react-hook-form";
 
-export function PackageFieldset({ control }: { control: Control<ShipmentFormValues> }) {
-    // Initialize the dynamic array hook
+export function PackageFieldset({ control }: { control: any }) {
     const { fields, append, remove } = useFieldArray({
         control,
         name: "packages",
