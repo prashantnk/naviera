@@ -2,7 +2,7 @@
 import { FeaturesSection } from "@/components/blocks/features-section";
 import { HeroSection } from "@/components/blocks/hero-section";
 import { getTenantBySlug } from "@/lib/api";
-import { PageBlock } from "@/types/tenant";
+import { FeaturesBlockContent, HeroBlockContent, PageBlock } from "@/types/tenant";
 
 export default async function MarketingPage({ params }: { params: Promise<{ tenant_slug: string }> }) {
   const { tenant_slug } = await params;
@@ -18,26 +18,27 @@ export default async function MarketingPage({ params }: { params: Promise<{ tena
       {blocks.map((block: PageBlock, index: number) => {
         switch (block.type) {
           case "HERO":
+            const content: HeroBlockContent = block.content as HeroBlockContent; // Type assertion for safety
             return (
               <HeroSection
                 key={index}
-                title={block.content.title}
-                subtitle={block.content.subtitle}
-                ctaText={block.content.ctaText}
-                ctaLink={block.content.ctaLink}
-                badge={block.content.badge}
-                trustPartners={block.content.trustPartners}
-                layoutVariant={block.content.layoutVariant}
-                images={block.content.images}
+                title={content.title}
+                subtitle={content.subtitle}
+                ctaText={content.ctaText}
+                ctaLink={content.ctaLink}
+                badge={content.badge}
+                trustPartners={content.trustPartners}
+                layoutVariant={content.layoutVariant}
+                images={content.images}
               />
             );
+          // 🔥 NEW: Map the features block
+          case "FEATURES":
+            return <FeaturesSection key={index} content={block.content as FeaturesBlockContent} />;
           default:
             return null;
         }
       })}
-
-      {/* 2. 🔥 RESTORED: The Features Section */}
-      <FeaturesSection tenantName={tenant.name} />
     </main>
   );
 }
