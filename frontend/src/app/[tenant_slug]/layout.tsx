@@ -7,7 +7,10 @@ export async function generateMetadata({ params }: { params: Promise<{ tenant_sl
     const tenant = await getTenantBySlug(tenant_slug);
 
     const tenantName = tenant?.name || "Logistics Solutions";
-    const description = tenant?.settings?.landing_page?.blocks[0]?.content?.subtitle || "Fast, safe, and reliable delivery across the world.";
+    
+    const firstBlockContent = tenant?.settings?.landing_page?.blocks[0]?.content;
+    const subtitle = (firstBlockContent && 'subtitle' in firstBlockContent) ? (firstBlockContent.subtitle as string) : null;
+    const description = subtitle || "Fast, safe, and reliable delivery across the world.";
 
     return {
         // Next.js Title Template Feature

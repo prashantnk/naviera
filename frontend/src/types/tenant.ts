@@ -36,7 +36,7 @@ export interface FeaturesBlockContent {
 
 export interface PageBlock {
   type: "HERO" | "FEATURES" | "TRUST_BAR";
-  content: HeroBlockContent | FeaturesBlockContent | unknown;
+  content: HeroBlockContent | FeaturesBlockContent | object;
 }
 
 export interface TenantSettings {
