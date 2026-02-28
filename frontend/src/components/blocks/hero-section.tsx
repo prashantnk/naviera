@@ -21,6 +21,18 @@ interface HeroSectionProps {
   layoutVariant?: "saas" | "logistics_bento";
   images?: string[];
 }
+// A clever component to map strings to specific visual brandings
+function BrandLogo({ name }: { name: string }) {
+  const n = name.toUpperCase();
+  if (n === "DHL") return <div className="bg-[#FFCC00] px-3 py-1 rounded text-[#D40511] font-black italic text-xl tracking-tighter shadow-sm">DHL</div>;
+  if (n === "FEDEX") return <div className="text-2xl font-extrabold tracking-tighter"><span className="text-[#4D148C]">Fed</span><span className="text-[#FF6600]">Ex</span></div>;
+  if (n === "DTDC") return <div className="text-2xl font-black italic text-[#003366] tracking-tighter">DTDC</div>;
+  if (n === "BLUE DART") return <div className="text-xl font-black text-[#0055A5] tracking-tighter uppercase">BLUE DART</div>;
+  if (n === "UPS") return <div className="text-2xl font-bold text-[#351C15] tracking-tighter">ups</div>;
+
+  // Generic Fallback for Naviera / Unknown Partners
+  return <div className="text-xl font-bold text-slate-700 tracking-tight uppercase bg-white px-3 py-1 rounded shadow-sm border border-slate-100">{name}</div>;
+}
 
 export function HeroSection({ title, subtitle, ctaText, ctaLink, badge, trustPartners = [], layoutVariant = "logistics_bento", images = [] }: HeroSectionProps) {
   const { routeTo } = useTenant();
@@ -151,16 +163,14 @@ export function HeroSection({ title, subtitle, ctaText, ctaLink, badge, trustPar
                 </form>
               </div>
 
-              {/* OFFICIAL PARTNERS */}
+              {/* 🔥 DYNAMIC OFFICIAL PARTNERS */}
               {trustPartners.length > 0 && (
-                <div className="pt-6 mt-2 border-t border-slate-200 max-w-xl animate-in fade-in duration-700 delay-700">
+                <div className="pt-6 mt-2 border-t border-slate-200/60 max-w-xl animate-in fade-in duration-700 delay-700">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Official Partners</p>
                   <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-                    <div className="bg-[#FFCC00] px-3 py-1 rounded text-[#D40511] font-black italic text-xl tracking-tighter shadow-sm">DHL</div>
-                    <div className="text-2xl font-extrabold tracking-tighter"><span className="text-[#4D148C]">Fed</span><span className="text-[#FF6600]">Ex</span></div>
-                    <div className="text-2xl font-black italic text-[#003366] tracking-tighter">DTDC</div>
-                    <div className="text-xl font-black text-[#0055A5] tracking-tighter uppercase">BLUE DART</div>
-                    <div className="text-2xl font-bold text-[#351C15] tracking-tighter">ups</div>
+                    {trustPartners.map(partner => (
+                      <BrandLogo key={partner} name={partner} />
+                    ))}
                   </div>
                 </div>
               )}

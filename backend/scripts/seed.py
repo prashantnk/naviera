@@ -34,7 +34,9 @@ TENANTS = [
                             "ctaLink": "/login",
                             "badge": "Naviera Platform",
                             "layoutVariant": "saas",
-                            "images": ["https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop"],
+                            "images": [
+                                "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop"
+                            ],
                         },
                     }
                 ]
@@ -89,7 +91,69 @@ TENANTS = [
                                 "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop",
                             ],
                         },
-                    }
+                    },
+                    {
+                        "type": "FEATURES",
+                        "content": {
+                            "badge": "WHY LOGISMART SHIPPING?",
+                            "headline": "Complete Logistics & Courier Solutions",
+                            "subheadline": "We are an Indian company providing logistics & courier solutions to businesses looking for excellence and innovation. Committed to SERVE.",
+                            "features": [
+                                {
+                                    "title": "Fully IT Enabled Setup",
+                                    "description": "Hands-on information for any cargo booked through us. Manage your entire supply chain seamlessly.",
+                                    "icon": "monitor",
+                                    "bullets": [
+                                        "Secured Login & Online Tracking",
+                                        "Generate Manifests & Download MIS",
+                                        "Order Status & NDR Reports",
+                                        "COD Remittance Reports",
+                                    ],
+                                },
+                                {
+                                    "title": "E-Commerce Ready",
+                                    "description": "Packages tailored for B2B and B2C startups with specialized capabilities.",
+                                    "icon": "shopping-bag",
+                                    "bullets": [
+                                        "Cash on Delivery (COD)",
+                                        "Reverse Pickup & Open Delivery",
+                                        "Same & Next Day Delivery",
+                                    ],
+                                },
+                                {
+                                    "title": "Pan India Presence",
+                                    "description": "Distance & time are not a barrier for us. Air, Surface, Train, Cargo, Export, and Import covered extensively.",
+                                    "icon": "globe",
+                                },
+                                {
+                                    "title": "Value For Money",
+                                    "description": "Our seamless nature integrates directly with client workflows, making us the intelligent choice for prime customer service.",
+                                    "icon": "package",
+                                    "bullets": [
+                                        "Round the clock pickup & delivery",
+                                        "Single account multiple locations",
+                                        "Sunday/Holiday support",
+                                        "Remote location delivery",
+                                    ],
+                                },
+                            ],
+                           "clientsHeadline": "Trusted by Leading Brands Across Industries",
+                            "clientsSubheadline": "Apparel, Electronics, Automotive, FMCG & Pharma",
+                            "clientLogos": [
+                                {"name": "Nestle", "color": "#1e40af"}, # Blue
+                                {"name": "ITC Limited", "color": "#dc2626"}, # Red
+                                {"name": "JOCKEY", "color": "#0f172a"}, # Black
+                                {"name": "WILLS LIFESTYLE", "color": "#1e293b"}, # Dark Slate
+                                {"name": "micromax", "color": "#2563eb"}, # Blue
+                                {"name": "MRF", "color": "#b91c1c"}, # Deep Red
+                                {"name": "ASHOK LEYLAND", "color": "#0f172a"}, # Black
+                                {"name": "Hero", "color": "#ef4444"}, # Red
+                                {"name": "Dr.Reddy's", "color": "#1d4ed8"}, # Blue
+                                {"name": "NIVEA", "color": "#1e3a8a"}, # Navy
+                                {"name": "BRITANNIA", "color": "#15803d"} # Green
+                            ]
+                        },
+                    },
                 ]
             },
         },
