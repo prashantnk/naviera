@@ -13,12 +13,13 @@ export function Header() {
   const { tenant, routeTo } = useTenant();
   const brand = tenant?.settings?.brand;
   const contact = tenant?.settings?.contact;
+  const announcement = tenant?.settings?.announcement_bar; // 🔥 Extract from DB
 
   const params = useParams();
   const router = useRouter();
   const tenantSlug = (params?.tenant_slug as string) || "naviera";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 🔥 Mobile State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -38,9 +39,13 @@ export function Header() {
 
   return (
     <>
-      {tenant?.slug === 'logismart' && (
-        <div className="w-full bg-[#dc2626] text-white text-xs md:text-sm font-semibold py-1.5 text-center tracking-wide">
-          International Courier & Logistics Solutions Across World - Fast, Safe & Delivery on Time
+      {/* 🔥 DATA-DRIVEN ANNOUNCEMENT BAR */}
+      {announcement?.is_active && (
+        <div
+          className="w-full text-white text-xs md:text-sm font-semibold py-1.5 text-center tracking-wide"
+          style={{ backgroundColor: 'var(--primary)' }}
+        >
+          {announcement.text}
         </div>
       )}
 
@@ -60,7 +65,6 @@ export function Header() {
             )}
           </Link>
 
-          {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-7 text-sm font-bold text-slate-700">
             <Link href={routeTo("/")} className="hover:text-primary transition-colors">Home</Link>
             <Link href={routeTo("/about")} className="hover:text-primary transition-colors">About Us</Link>
@@ -69,7 +73,6 @@ export function Header() {
             <Link href={routeTo("/contact")} className="hover:text-primary transition-colors">Contact Us</Link>
           </nav>
 
-          {/* Desktop Actions */}
           <div className="hidden md:flex items-center gap-3">
             {contact?.phones && contact.phones.length > 0 && (
               <a href={`tel:${contact.phones[0].replace(/[^0-9+]/g, '')}`} className="hidden xl:flex items-center gap-2 text-sm font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-200 hover:text-primary transition-colors cursor-pointer mr-2">
@@ -93,18 +96,18 @@ export function Header() {
               </Button>
             )}
 
-            <Button asChild className="font-bold shadow-md rounded-full px-6 bg-[#dc2626] text-white hover:bg-[#b91c1c] hidden md:flex">
+            {/* 🔥 NO HARDCODED RED: Uses bg-primary to adapt to tenant config */}
+            <Button asChild className="font-bold shadow-md rounded-full px-6 bg-primary text-primary-foreground hover:opacity-90 hidden md:flex">
               <Link href={routeTo("/shipments/new")}>Book Your Shipment</Link>
             </Button>
           </div>
 
-          {/* Mobile Menu Toggle */}
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
             {isMobileMenuOpen ? <X className="h-6 w-6 text-slate-900" /> : <Menu className="h-6 w-6 text-slate-900" />}
           </Button>
+
         </div>
 
-        {/* 🔥 Mobile Dropdown Menu */}
         {isMobileMenuOpen && (
           <div className="lg:hidden absolute top-full left-0 w-full bg-white border-b border-slate-200 shadow-xl py-6 px-6 flex flex-col gap-6 animate-in slide-in-from-top-2">
             <nav className="flex flex-col gap-4 text-base font-bold text-slate-700">
@@ -130,7 +133,8 @@ export function Header() {
                   <Link href={routeTo("/login")}><UserCircle2 className="h-5 w-5 mr-2" /> Customer Login</Link>
                 </Button>
               )}
-              <Button size="lg" asChild className="w-full bg-[#dc2626] text-white hover:bg-[#b91c1c]">
+              {/* 🔥 NO HARDCODED RED: Uses bg-primary to adapt to tenant config */}
+              <Button size="lg" asChild className="w-full bg-primary text-primary-foreground hover:opacity-90">
                 <Link href={routeTo("/shipments/new")}>Book Your Shipment</Link>
               </Button>
             </div>

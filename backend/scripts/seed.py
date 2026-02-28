@@ -7,18 +7,21 @@ from app.models.tenants import Tenant, User, UserRole
 
 OWNER_SUPABASE_ID = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
 
-# Define our two tenants
 TENANTS = [
     {
-        "name": "Naviera Logistics",
+        "name": "Naviera",
         "slug": "naviera",
-        "email": "admin@naviera.com",
+        "email": "pashantnk2001@gmail.com",
         "settings": {
-            "brand": {"primary_color": "#2563eb", "logo_url": None},  # BLUE
+            "brand": {
+                "primary_color": "#2563eb",
+                "secondary_color": "#1e40af",  # Dark Blue
+                "logo_url": None,
+            },
+            "announcement_bar": {"is_active": False, "text": ""},  # Hidden for Naviera
             "contact": {
-                "phone": "1800-000-0000",
-                "email": "hello@naviera.com",
-                "whatsapp": "9999999999",
+                "phones": ["9430650271"],
+                "emails": ["pashantnk2001@gmail.com"],
             },
             "landing_page": {
                 "blocks": [
@@ -30,7 +33,8 @@ TENANTS = [
                             "ctaText": "Start Free Trial",
                             "ctaLink": "/login",
                             "badge": "Naviera Platform",
-                            "trustPartners": ["OceanWay", "AeroSwift", "GroundForce"],
+                            "layoutVariant": "saas",
+                            "images": ["https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop"],
                         },
                     }
                 ]
@@ -43,9 +47,14 @@ TENANTS = [
         "email": "admin@logismart.com",
         "settings": {
             "brand": {
-                "primary_color": "#dc2626",
+                "primary_color": "#dc2626",  # Logismart Red
+                "secondary_color": "#003366",  # Logismart Navy
                 "logo_url": "/logismart-logo.png",
-            },  # RED
+            },
+            "announcement_bar": {
+                "is_active": True,  # Visible for Logismart
+                "text": "International Courier & Logistics Solutions Across World - Fast, Safe & Delivery on Time",
+            },
             "contact": {
                 "phones": [
                     "1800-309-1130",
@@ -55,12 +64,6 @@ TENANTS = [
                 ],
                 "emails": ["contact@logismart.in", "logismartprivatelimited@gmail.com"],
                 "whatsapp": "9821008627",
-                "socials": {
-                    "facebook": "https://www.facebook.com/logismart.in",
-                    "instagram": "https://www.instagram.com/logismartin?fbclid=IwY2xjawNnS0BleHRuA2FlbQIxMABicmlkETFaM1ZmWXRLMTBYaE9oQWdVAR4VQBG8JStxs5Uj666A-tKb8fPNJJ3gadBluDX9ecP_wvpR7K8Rj5oQWHw-DQ_aem_UfWjoOXqRqub78fN-Myjgg",
-                    "youtube": "https://www.youtube.com/@logismart",
-                    "linkedin": "https://www.linkedin.com/company/logismart-private-limited/about/",
-                },
             },
             "landing_page": {
                 "blocks": [
@@ -78,6 +81,12 @@ TENANTS = [
                                 "DTDC",
                                 "Blue Dart",
                                 "UPS",
+                            ],
+                            "layoutVariant": "logistics_bento",
+                            "images": [
+                                "https://images.unsplash.com/photo-1542296332-2e4473faf563?q=80&w=2070&auto=format&fit=crop",
+                                "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop",
+                                "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop",
                             ],
                         },
                     }

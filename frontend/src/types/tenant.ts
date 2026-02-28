@@ -6,18 +6,27 @@ export interface HeroBlockContent {
   ctaText: string;
   ctaLink: string;
   badge?: string;
-  trustPartners?: string[]; // e.g., ["DHL", "FedEx", "DTDC"]
+  trustPartners?: string[];
+  // 🔥 NEW: Data-driven UI controls for the Hero
+  layoutVariant?: "saas" | "logistics_bento";
+  images?: string[];
 }
 
 export interface PageBlock {
   type: "HERO" | "FEATURES" | "TRUST_BAR";
-  content: HeroBlockContent;
+  content: HeroBlockContent | unknown;
 }
 
 export interface TenantSettings {
   brand?: {
     primary_color: string;
-    logo_url?: string; // Optional logo image
+    secondary_color?: string; // 🔥 NEW: For Logismart's Navy Blue
+    logo_url?: string;
+  };
+  // 🔥 NEW: Controls the top header bar dynamically
+  announcement_bar?: {
+    is_active: boolean;
+    text: string;
   };
   contact?: {
     phones?: string[];

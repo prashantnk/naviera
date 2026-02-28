@@ -20,6 +20,7 @@ export default async function MarketingLayout({
 
   // Extract theme and contact info from the DB
   const primaryColor = tenant?.settings?.brand?.primary_color;
+  const secondaryColor = tenant?.settings?.brand?.secondary_color;
   const whatsappNumber = tenant?.settings?.contact?.whatsapp;
 
   // Next 15: Await the headers API to extract our middleware injection
@@ -28,7 +29,7 @@ export default async function MarketingLayout({
 
   return (
     <div className="flex min-h-screen flex-col relative">
-      <ThemeProvider primaryColor={primaryColor} />
+      <ThemeProvider primaryColor={primaryColor} secondaryColor={secondaryColor} />
       <TenantProvider tenant={tenant} routingMode={routingMode}>
 
         {/* Global Header */}
