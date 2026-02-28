@@ -29,7 +29,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 const { data: { session } } = await supabase.auth.getSession();
 
                 if (!session) {
-                    router.push(routeTo("/login"));
+                    // 🔥 NEW: Capture current URL using window.location for safe client-side reading
+                    const currentPath = window.location.pathname + window.location.search;
+                    router.push(`${routeTo("/login")}?next=${encodeURIComponent(currentPath)}`);
                     return;
                 }
 
@@ -37,7 +39,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 setUser(profile);
             } catch (error) {
                 console.error("Auth check failed:", error);
-                router.push(routeTo("/login"));
+                const currentPath = window.location.pathname + window.location.search;
+                router.push(`${routeTo("/login")}?next=${encodeURIComponent(currentPath)}`);
             } finally {
                 setIsChecking(false);
             }

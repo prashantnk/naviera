@@ -1,32 +1,107 @@
-// src/types/tenant.ts
+// frontend/src/types/tenant.ts
 
-// 1. The specific content inside a Hero block
 export interface HeroBlockContent {
   title: string;
   subtitle: string;
   ctaText: string;
   ctaLink: string;
   badge?: string;
+  trustPartners?: string[];
+  layoutVariant?: "saas" | "logistics_bento";
+  images?: string[];
 }
 
-// 2. A generic block on the page. 
-// As we add features (like a Trust Bar or Pricing), we will expand this union type.
+export interface ClientLogo {
+  name: string;
+  color: string; // Dynamic hex code for the brand
+}
+
+// 🔥 NEW: Structure for the Features Section
+export interface FeatureItem {
+  title: string;
+  description: string;
+  icon: string;
+  bullets?: string[];
+}
+
+export interface FeaturesBlockContent {
+  badge?: string;
+  headline: string;
+  subheadline?: string;
+  features: FeatureItem[];
+  clientsHeadline?: string;
+  clientsSubheadline?: string;
+  clientLogos?: ClientLogo[];
+}
+
 export interface PageBlock {
   type: "HERO" | "FEATURES" | "TRUST_BAR";
-  content: HeroBlockContent; // Will become a Union type later as we add more blocks
+  content: HeroBlockContent | FeaturesBlockContent | object;
 }
 
-// 3. The settings JSON object that lives inside the DB
+// NEW: Structure for About Page
+export interface AboutPageConfig {
+  headline: string;
+  paragraphs: string[];
+  offersHeadline: string;
+  offers: { title: string; description: string }[];
+}
+
+//  NEW: Structure for Services Page
+export interface ServiceItem {
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export interface ServicesPageConfig {
+  headline: string;
+  description: string;
+  services: ServiceItem[];
+  valueAddHeadline: string;
+  valueAddDescription: string;
+  valueAdds: string[];
+}
+
+//  NEW: Structure for Contact Page Escalation
+export interface EscalationLevel {
+  level: string;
+  email: string;
+}
+
+// Now add them to the main TenantSettings interface:
 export interface TenantSettings {
   brand?: {
     primary_color: string;
+    secondary_color?: string;
+    logo_url?: string;
+  };
+  announcement_bar?: {
+    is_active: boolean;
+    text: string;
+  };
+  contact?: {
+    toll_free?: string; // 🔥 NEW
+    phones?: string[];
+    emails?: string[];
+    whatsapp?: string;
+    address?: string; // 🔥 NEW
+    socials?: {
+      facebook?: string;
+      instagram?: string;
+      linkedin?: string;
+      youtube?: string;
+    };
   };
   landing_page?: {
     blocks: PageBlock[];
   };
+  // THE NEW DB INJECTIONS
+  about_page?: AboutPageConfig;
+  services_page?: ServicesPageConfig;
+  escalation_matrix?: EscalationLevel[];
 }
 
-// 4. The Master Tenant Model (Mirrors TenantRead in FastAPI)
 export interface Tenant {
   id: string;
   name: string;

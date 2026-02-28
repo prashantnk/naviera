@@ -1,4 +1,4 @@
-// src/app/[tenant_slug]/(auth)/login/login-form.tsx
+// frontend/src/app/[tenant_slug]/(auth)/login/login-form.tsx
 "use client";
 
 import { useTenant } from '@/components/providers/tenant-provider';
@@ -6,21 +6,35 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getSupabaseClient } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { tenantSlug, routeTo } = useTenant();
     const supabase = getSupabaseClient(tenantSlug);
 
-    // UI State Management
-    const [step, setStep] = useState<1 | 2>(1); // 1 = Email, 2 = Code
+    // 🔥 NEW: Extract the 'next' intent
+    const nextUrl = searchParams.get("next") || "/dashboard";
+
+    const [step, setStep] = useState<1 | 2>(1);
     const [email, setEmail] = useState("");
     const [otp, setOtp] = useState("");
     const [loading, setLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
+    useEffect(() => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                // Instantly bounce authenticated users to their intended destination!
+                router.replace(routeTo(nextUrl));
+            }
+        };
+        checkSession();
+    }, [supabase, router, routeTo, nextUrl]);
 
     // --- METHOD 1: GOOGLE OAUTH ---
     const handleOAuthLogin = async (provider: 'google') => {
@@ -28,13 +42,15 @@ export function LoginForm() {
         setError(null);
         try {
             const origin = window.location.origin;
+            // 🔥 NEW: Pass the nextUrl into the OAuth callback so it remembers!
+            const callbackUrl = `${origin}${routeTo('/callback')}?next=${encodeURIComponent(nextUrl)}`;
             const { error: authError } = await supabase.auth.signInWithOAuth({
                 provider,
-                options: { redirectTo: `${origin}${routeTo('/callback')}` },
+                options: { redirectTo: callbackUrl },
             });
             if (authError) throw new Error(authError.message);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : "Failed to sign in with OAuth");
             setLoading(null);
         }
     };
@@ -47,18 +63,13 @@ export function LoginForm() {
         setSuccess(null);
 
         try {
-            const { error: authError } = await supabase.auth.signInWithOtp({
-                email,
-            });
-
+            const { error: authError } = await supabase.auth.signInWithOtp({ email });
             if (authError) throw new Error(authError.message);
-
-            // Transition the UI to ask for the code
             setStep(2);
             setSuccess("We sent a 6-digit code to your email. Please enter it below.");
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.message);
+            setError(err instanceof Error ? err.message : "Failed to send OTP. Please try again.");
         } finally {
             setLoading(null);
         }
@@ -71,25 +82,14 @@ export function LoginForm() {
         setError(null);
 
         try {
-            // 1. Verify the code with Supabase
-            const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
-                email,
-                token: otp,
-                type: 'email',
-            });
-
+            const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' });
             if (verifyError) throw new Error("Invalid or expired code. Please try again.");
             if (!authData.session) throw new Error("No session returned");
 
             const jwt = authData.session.access_token;
-
-            // 2. Just-In-Time (JIT) Provisioning to FastAPI
             const res = await fetch("/api/v1/users/onboard", {
                 method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${jwt}`,
-                    "X-Tenant-Slug": tenantSlug,
-                },
+                headers: { "Authorization": `Bearer ${jwt}`, "X-Tenant-Slug": tenantSlug },
             });
 
             if (!res.ok) {
@@ -97,12 +97,12 @@ export function LoginForm() {
                 throw new Error(errData.detail || "Failed to sync user with backend");
             }
 
-            // 3. Success! Unlock the gates.
-            router.push(routeTo(`/dashboard`));
+            // 🔥 NEW: Redirect to intended destination instead of hardcoded dashboard
+            router.push(routeTo(nextUrl));
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.message);
+            setError(err instanceof Error ? err.message : "Failed to verify OTP and sync user with backend");
         } finally {
             setLoading(null);
         }
@@ -110,7 +110,6 @@ export function LoginForm() {
 
     return (
         <div className="space-y-6">
-            {/* Alert Messages */}
             {error && (
                 <div className="p-3 text-sm text-red-500 bg-red-50 rounded-md border border-red-200">
                     {error}
@@ -122,7 +121,6 @@ export function LoginForm() {
                 </div>
             )}
 
-            {/* --- UI FOR STEP 1: ASK FOR EMAIL --- */}
             {step === 1 && (
                 <>
                     <form onSubmit={handleSendOtp} className="space-y-4">
@@ -143,7 +141,6 @@ export function LoginForm() {
                         </Button>
                     </form>
 
-                    {/* Visual Divider */}
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center">
                             <span className="w-full border-t border-slate-200" />
@@ -153,7 +150,6 @@ export function LoginForm() {
                         </div>
                     </div>
 
-                    {/* Google Button */}
                     <Button
                         type="button"
                         variant="outline"
@@ -172,7 +168,6 @@ export function LoginForm() {
                 </>
             )}
 
-            {/* --- UI FOR STEP 2: ASK FOR OTP CODE --- */}
             {step === 2 && (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
                     <div className="space-y-2">
