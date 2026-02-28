@@ -1,26 +1,26 @@
-// src/app/[tenant_slug]/(auth)/callback/page.tsx
+// frontend/src/app/[tenant_slug]/(auth)/callback/page.tsx
 "use client";
 
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { getSupabaseClient } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 
-export default function AuthCallbackPage() {
+// 🔥 Extract logic into a Handler to support Suspense
+function CallbackHandler() {
     const router = useRouter();
-
-    // Teacher's Note: In Client Components in Next.js 15, we use the `useParams` hook 
-    // to safely extract the dynamic folder names from the URL.
     const params = useParams();
+    const searchParams = useSearchParams();
+    
     const tenantSlug = params.tenant_slug as string;
     const { routeTo } = useTenant();
+    
+    // 🔥 NEW: Read the 'next' parameter from the URL
+    const nextUrl = searchParams.get("next") || "/dashboard";
 
     const [error, setError] = useState<string | null>(null);
-
-    // React 18+ runs useEffect twice in development mode. 
-    // We use a ref to ensure we only call our backend API once.
     const hasAttemptedSync = useRef(false);
     const supabase = getSupabaseClient(tenantSlug);
 
@@ -30,8 +30,6 @@ export default function AuthCallbackPage() {
 
         const syncUserWithBackend = async () => {
             try {
-                // 1. Supabase JS automatically parses the hidden tokens in the URL 
-                // that Google sent back and establishes a secure local session.
                 const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
                 if (sessionError) throw sessionError;
@@ -39,8 +37,6 @@ export default function AuthCallbackPage() {
 
                 const jwt = session.access_token;
 
-                // 2. Just-In-Time (JIT) Provisioning
-                // Send the secure token to our FastAPI backend to create/sync the user profile
                 const res = await fetch("/api/v1/users/onboard", {
                     method: "POST",
                     headers: {
@@ -54,8 +50,8 @@ export default function AuthCallbackPage() {
                     throw new Error(errData.detail || "Failed to sync user with backend");
                 }
 
-                // 3. Success! Unlock the gates and send them to the App Zone
-                router.push(routeTo(`/dashboard`));
+                // 🔥 NEW: Push the user back to where they came from!
+                router.push(routeTo(nextUrl));
 
             } catch (err: any) {
                 console.error("Auth sync error:", err);
@@ -64,9 +60,8 @@ export default function AuthCallbackPage() {
         };
 
         syncUserWithBackend();
-    }, [router, tenantSlug, routeTo]);
+    }, [router, tenantSlug, routeTo, supabase, nextUrl]);
 
-    // --- UI State ---
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 max-w-md bg-white rounded-xl shadow-sm border">
@@ -83,5 +78,14 @@ export default function AuthCallbackPage() {
             <h2 className="text-xl font-semibold text-slate-700">Securing your session...</h2>
             <p className="text-sm text-slate-500">Please wait while we log you into {tenantSlug}.</p>
         </div>
+    );
+}
+
+// Wrap it in Suspense!
+export default function AuthCallbackPage() {
+    return (
+        <Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+            <CallbackHandler />
+        </Suspense>
     );
 }

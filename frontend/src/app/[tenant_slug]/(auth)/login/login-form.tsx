@@ -6,15 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getSupabaseClient } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { tenantSlug, routeTo } = useTenant();
     const supabase = getSupabaseClient(tenantSlug);
 
-    // UI State Management
+    // 🔥 NEW: Extract the 'next' intent
+    const nextUrl = searchParams.get("next") || "/dashboard";
+
     const [step, setStep] = useState<1 | 2>(1);
     const [email, setEmail] = useState("");
     const [otp, setOtp] = useState("");
@@ -22,17 +25,16 @@ export function LoginForm() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
-    // 🔥 THE FIX: Bounce Authenticated Users!
     useEffect(() => {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                // Instantly redirect to dashboard if they are already logged in
-                router.replace(routeTo("/dashboard"));
+                // Instantly bounce authenticated users to their intended destination!
+                router.replace(routeTo(nextUrl));
             }
         };
         checkSession();
-    }, [supabase, router, routeTo]);
+    }, [supabase, router, routeTo, nextUrl]);
 
     // --- METHOD 1: GOOGLE OAUTH ---
     const handleOAuthLogin = async (provider: 'google') => {
@@ -40,9 +42,11 @@ export function LoginForm() {
         setError(null);
         try {
             const origin = window.location.origin;
+            // 🔥 NEW: Pass the nextUrl into the OAuth callback so it remembers!
+            const callbackUrl = `${origin}${routeTo('/callback')}?next=${encodeURIComponent(nextUrl)}`;
             const { error: authError } = await supabase.auth.signInWithOAuth({
                 provider,
-                options: { redirectTo: `${origin}${routeTo('/callback')}` },
+                options: { redirectTo: callbackUrl },
             });
             if (authError) throw new Error(authError.message);
         } catch (err: unknown) {
@@ -59,12 +63,8 @@ export function LoginForm() {
         setSuccess(null);
 
         try {
-            const { error: authError } = await supabase.auth.signInWithOtp({
-                email,
-            });
-
+            const { error: authError } = await supabase.auth.signInWithOtp({ email });
             if (authError) throw new Error(authError.message);
-
             setStep(2);
             setSuccess("We sent a 6-digit code to your email. Please enter it below.");
         } catch (err: unknown) {
@@ -82,23 +82,14 @@ export function LoginForm() {
         setError(null);
 
         try {
-            const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
-                email,
-                token: otp,
-                type: 'email',
-            });
-
+            const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' });
             if (verifyError) throw new Error("Invalid or expired code. Please try again.");
             if (!authData.session) throw new Error("No session returned");
 
             const jwt = authData.session.access_token;
-
             const res = await fetch("/api/v1/users/onboard", {
                 method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${jwt}`,
-                    "X-Tenant-Slug": tenantSlug,
-                },
+                headers: { "Authorization": `Bearer ${jwt}`, "X-Tenant-Slug": tenantSlug },
             });
 
             if (!res.ok) {
@@ -106,7 +97,8 @@ export function LoginForm() {
                 throw new Error(errData.detail || "Failed to sync user with backend");
             }
 
-            router.push(routeTo(`/dashboard`));
+            // 🔥 NEW: Redirect to intended destination instead of hardcoded dashboard
+            router.push(routeTo(nextUrl));
 
         } catch (err: unknown) {
             console.error(err);
