@@ -39,6 +39,37 @@ export interface PageBlock {
   content: HeroBlockContent | FeaturesBlockContent | object;
 }
 
+// NEW: Structure for About Page
+export interface AboutPageConfig {
+  headline: string;
+  paragraphs: string[];
+  offersHeadline: string;
+  offers: { title: string; description: string }[];
+}
+
+//  NEW: Structure for Services Page
+export interface ServiceItem {
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export interface ServicesPageConfig {
+  headline: string;
+  description: string;
+  services: ServiceItem[];
+  valueAddHeadline: string;
+  valueAddDescription: string;
+  valueAdds: string[];
+}
+
+//  NEW: Structure for Contact Page Escalation
+export interface EscalationLevel {
+  level: string;
+  email: string;
+}
+
+// Now add them to the main TenantSettings interface:
 export interface TenantSettings {
   brand?: {
     primary_color: string;
@@ -50,9 +81,11 @@ export interface TenantSettings {
     text: string;
   };
   contact?: {
+    toll_free?: string; // 🔥 NEW
     phones?: string[];
     emails?: string[];
     whatsapp?: string;
+    address?: string; // 🔥 NEW
     socials?: {
       facebook?: string;
       instagram?: string;
@@ -63,6 +96,10 @@ export interface TenantSettings {
   landing_page?: {
     blocks: PageBlock[];
   };
+  // THE NEW DB INJECTIONS
+  about_page?: AboutPageConfig;
+  services_page?: ServicesPageConfig;
+  escalation_matrix?: EscalationLevel[];
 }
 
 export interface Tenant {
