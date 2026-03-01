@@ -12,7 +12,7 @@ from app.services.tenants import TenantService, get_tenant_service
 router = APIRouter()
 
 
-@router.get("/", response_model=List[TenantRead])
+@router.get("", response_model=List[TenantRead])
 async def list_tenants(
     *,
     tenant_service: TenantService = Depends(get_tenant_service),
@@ -27,7 +27,7 @@ async def list_tenants(
     return tenants
 
 
-@router.get("/{tenant_id}/users/", response_model=List[UserRead])
+@router.get("/{tenant_id}/users", response_model=List[UserRead])
 async def list_users_for_tenant(
     *,
     tenant_id: uuid.UUID,

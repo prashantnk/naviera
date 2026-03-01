@@ -32,6 +32,8 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { useUser } from "@/components/auth/auth-guard";
+import { Users } from "lucide-react";
 
 export function AppHeader() {
   const { routeTo, tenantSlug, tenant } = useTenant();
@@ -47,13 +49,21 @@ export function AppHeader() {
     router.push(routeTo("/login"));
   };
 
-  const navItems = [
+  const { isAdmin } = useUser();
+
+  const baseNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Shipments", href: "/shipments", icon: Package },
     { name: "Create Booking", href: "/shipments/new", icon: PlusCircle },
     { name: "Address Book", href: "/address-book", icon: MapPin },
+  ];
+
+  const adminNavItems = [
+    { name: "Team & Access", href: "/team", icon: Users },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
+
+  const navItems = isAdmin ? [...baseNavItems, ...adminNavItems] : baseNavItems;
 
   const checkIsActive = (href: string) => {
     const resolvedHref = routeTo(href);

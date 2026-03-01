@@ -21,7 +21,7 @@ export class TenantsService {
     ): CancelablePromise<Array<TenantRead>> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/tenants/',
+            url: '/api/v1/tenants',
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },
@@ -44,7 +44,7 @@ export class TenantsService {
     ): CancelablePromise<Array<UserRead>> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/tenants/{tenant_id}/users/',
+            url: '/api/v1/tenants/{tenant_id}/users',
             path: {
                 'tenant_id': tenantId,
             },

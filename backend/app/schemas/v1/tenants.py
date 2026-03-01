@@ -28,3 +28,8 @@ class UserRead(SQLModel):
 class TenantUpdate(SQLModel):
     name: Optional[str] = None
     settings: Optional[dict] = None
+
+
+class UserUpdate(SQLModel):
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None

@@ -6,15 +6,15 @@ export type PackageRead = {
     /**
      * Length in CM
      */
-    length: number;
+    length?: number;
     /**
      * Breadth in CM
      */
-    breadth: number;
+    breadth?: number;
     /**
      * Height in CM
      */
-    height: number;
+    height?: number;
     /**
      * Weight in KG
      */

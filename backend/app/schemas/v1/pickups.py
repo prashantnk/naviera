@@ -72,6 +72,20 @@ class PickupDocumentBase(SQLModel):
 class AddressCreate(AddressBase):
     pass
 
+class AddressUpdate(SQLModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    company_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    landmark: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: Optional[str] = None
+    address_type: Optional[AddressType] = None
+
 
 class PackageCreate(PackageBase):
     pass

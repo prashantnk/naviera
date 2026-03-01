@@ -46,3 +46,7 @@ class AddressRepository:
         await self.session.commit()
         await self.session.refresh(address)
         return address
+
+    async def get_address_by_id(self, address_id: uuid.UUID) -> Address | None:
+        """Retrieves a single address by ID."""
+        return await self.session.get(Address, address_id)

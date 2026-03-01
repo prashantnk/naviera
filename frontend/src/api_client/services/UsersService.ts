@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { UserRead } from '../models/UserRead';
+import type { UserUpdate } from '../models/UserUpdate';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -42,7 +43,7 @@ export class UsersService {
     ): CancelablePromise<Array<UserRead>> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/users/',
+            url: '/api/v1/users',
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },
@@ -67,6 +68,36 @@ export class UsersService {
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update User Role
+     * Update a user's role or active status (Admin only).
+     * @param userId
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns UserRead Successful Response
+     * @throws ApiError
+     */
+    public static updateUserRole(
+        userId: string,
+        requestBody: UserUpdate,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<UserRead> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/users/{user_id}',
+            path: {
+                'user_id': userId,
+            },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

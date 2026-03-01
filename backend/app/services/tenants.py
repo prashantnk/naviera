@@ -9,6 +9,7 @@ from app.core.security import TokenPayload
 from app.exceptions.definitions import TenantNotFoundException
 from app.models.tenants import Tenant, User, UserRole
 from app.repositories.tenants import TenantRepository
+from app.schemas.v1.tenants import UserUpdate
 
 
 class TenantService:
@@ -117,6 +118,35 @@ class TenantService:
         tenant.settings = self._deep_merge(current_settings, settings_payload)
 
         return await self.tenant_repo.update_tenant(tenant)
+
+    async def update_user(
+        self,
+        user_id: uuid.UUID,
+        payload: UserUpdate,
+        current_user: User,
+        tenant_id: uuid.UUID,
+    ) -> User:
+        if current_user.role not in [UserRole.admin, UserRole.owner]:
+            raise HTTPException(status_code=403, detail="Only Admins can modify users")
+
+        target_user = await self.tenant_repo.get_user_by_id(user_id)
+        if not target_user or target_user.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if (
+            target_user.role == UserRole.owner
+            and payload.role is not None
+            and payload.role != UserRole.owner
+        ):
+            raise HTTPException(
+                status_code=400, detail="Cannot demote the Tenant Owner"
+            )
+
+        update_data = payload.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(target_user, key, value)
+
+        return await self.tenant_repo.create_user(target_user)
 
 
 # This is a factory function that FastAPI will use for dependency injection.

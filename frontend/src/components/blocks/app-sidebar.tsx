@@ -17,6 +17,8 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useUser } from "@/components/auth/auth-guard";
+import { Users } from "lucide-react"; // add Users to lucide-react import
 
 export function AppSidebar() {
   const { tenant, routeTo } = useTenant();
@@ -28,14 +30,21 @@ export function AppSidebar() {
 
   // Sidebar is expanded if it's NOT collapsed, OR if the user is hovering over it.
   const isExpanded = !isCollapsed || isHovered;
+  const { isAdmin } = useUser();
 
-  const navItems = [
+  const baseNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Shipments", href: "/shipments", icon: Package },
     { name: "Create Booking", href: "/shipments/new", icon: PlusCircle },
     { name: "Address Book", href: "/address-book", icon: MapPin },
+  ];
+
+  const adminNavItems = [
+    { name: "Team & Access", href: "/team", icon: Users },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
+
+  const navItems = isAdmin ? [...baseNavItems, ...adminNavItems] : baseNavItems;
 
   const checkIsActive = (href: string) => {
     const resolvedHref = routeTo(href);
