@@ -3,10 +3,12 @@
 
 import { PickupRead, PickupStatus } from "@/api_client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button"; // 🔥 Imported Button
 import { cn } from "@/lib/utils";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowRight,
+  ArrowUpDown,
   Box,
   Calendar,
   MessageSquare,
@@ -14,9 +16,8 @@ import {
   Repeat,
   Truck,
   Zap,
-} from "lucide-react";
+} from "lucide-react"; // 🔥 Imported ArrowUpDown
 
-// Robust status color mapper
 const getStatusColor = (status: PickupStatus) => {
   switch (status) {
     case PickupStatus.DRAFT:
@@ -40,8 +41,21 @@ const getStatusColor = (status: PickupStatus) => {
 
 export const columns: ColumnDef<PickupRead>[] = [
   {
-    id: "identifiers",
-    header: "Order / Tracking ID",
+    // 🔥 Changed to accessorKey so TanStack knows how to sort it alphabetically!
+    accessorKey: "order_reference_id",
+    header: ({ column }) => {
+      return (
+        // 🔥 Turn the header into a clickable button!
+        <Button
+          variant="ghost"
+          className="-ml-4 hover:bg-slate-100/50 font-bold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Order / Tracking ID
+          <ArrowUpDown className="ml-2 h-4 w-4 text-slate-400" />
+        </Button>
+      );
+    },
     cell: ({ row }) => {
       const refId = row.original.order_reference_id;
       const trackingId = row.original.tracking_id;
@@ -64,7 +78,6 @@ export const columns: ColumnDef<PickupRead>[] = [
     cell: ({ row }) => {
       const name = row.original.pickup_address?.name || "Unknown";
       const phone = row.original.pickup_address?.phone || "N/A";
-
       return (
         <div className="flex flex-col">
           <span className="font-semibold text-slate-700 text-sm">{name}</span>
@@ -91,7 +104,7 @@ export const columns: ColumnDef<PickupRead>[] = [
               <Zap className="h-3.5 w-3.5 text-amber-500" />
             ) : (
               <Truck className="h-3.5 w-3.5 text-slate-400" />
-            )}
+            )}{" "}
             {service}
           </div>
           <div
@@ -104,7 +117,7 @@ export const columns: ColumnDef<PickupRead>[] = [
               <Repeat className="h-3.5 w-3.5" />
             ) : (
               <Box className="h-3.5 w-3.5" />
-            )}
+            )}{" "}
             {type}
           </div>
         </div>
@@ -127,13 +140,23 @@ export const columns: ColumnDef<PickupRead>[] = [
     },
   },
   {
-    id: "status_date",
-    header: "Status & Date",
+    // 🔥 Change to accessorKey so it can sort chronologically by date!
+    accessorKey: "created_at",
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          className="-ml-4 hover:bg-slate-100/50 font-bold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Status & Date
+          <ArrowUpDown className="ml-2 h-4 w-4 text-slate-400" />
+        </Button>
+      );
+    },
     cell: ({ row }) => {
       const status = row.original.status;
-      // The Date requested for the pickup
       const dateStr = row.original.requested_pickup_date;
-      // Handle edge cases if date string comes in weirdly formatted
       const formattedDate = dateStr
         ? new Date(dateStr).toLocaleDateString("en-US", {
             month: "short",
@@ -165,11 +188,8 @@ export const columns: ColumnDef<PickupRead>[] = [
     header: "Latest Note",
     cell: ({ row }) => {
       const comment = row.original.latest_status_comment;
-
-      if (!comment) {
+      if (!comment)
         return <span className="text-xs text-slate-400 italic">No notes</span>;
-      }
-
       return (
         <div className="flex items-start gap-1.5 max-w-[200px]">
           <MessageSquare className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />

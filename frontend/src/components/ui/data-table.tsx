@@ -15,14 +15,16 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  getSortedRowModel,
+  SortingState, // 🔥 NEW IMPORTS
 } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
+import * as React from "react";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   onRowClick?: (row: TData) => void;
-  // 🔥 NEW: Pagination Props
   pageCount?: number;
   pageIndex?: number;
   onNextPage?: () => void;
@@ -42,11 +44,20 @@ export function DataTable<TData, TValue>({
   canNextPage = false,
   canPreviousPage = false,
 }: DataTableProps<TData, TValue>) {
+  // 🔥 NEW: State to track which column is currently sorted
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    manualPagination: true, // Tells TanStack we handle pagination on the server
+    // 🔥 NEW: Hooking up the sorting engine
+    onSortingChange: setSorting,
+    getSortedRowModel: getSortedRowModel(),
+    state: {
+      sorting,
+    },
+    manualPagination: true,
     pageCount: pageCount,
   });
 
@@ -124,7 +135,6 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* 🔥 NEW: Enterprise Pagination Footer */}
       {onNextPage && onPreviousPage && (
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50/50 rounded-b-xl">
           <div className="text-sm font-medium text-slate-500">
