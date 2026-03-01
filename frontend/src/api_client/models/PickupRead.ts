@@ -16,6 +16,7 @@ export type PickupRead = {
     id: string;
     tracking_id: (string | null);
     status: PickupStatus;
+    latest_status_comment?: (string | null);
     order_reference_id: string;
     shipment_type: ShipmentType;
     service_type: ServiceType;

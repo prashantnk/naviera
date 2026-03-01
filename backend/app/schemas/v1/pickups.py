@@ -185,6 +185,7 @@ class PickupRead(SQLModel):
     id: UUID
     tracking_id: Optional[str]
     status: PickupStatus
+    latest_status_comment: Optional[str] = None
     order_reference_id: str
     shipment_type: ShipmentType
     service_type: ServiceType

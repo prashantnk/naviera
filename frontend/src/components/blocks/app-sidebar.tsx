@@ -23,7 +23,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const brand = tenant?.settings?.brand;
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
 
   // Sidebar is expanded if it's NOT collapsed, OR if the user is hovering over it.
