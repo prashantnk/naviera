@@ -1,8 +1,9 @@
 import uuid
 
-from app.models.tenants import Tenant, User
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.models.tenants import Tenant, User
 
 
 class TenantRepository:
@@ -66,3 +67,12 @@ class TenantRepository:
         await self.session.commit()
         await self.session.refresh(user)
         return user
+
+    async def update_tenant(self, tenant: Tenant) -> Tenant:
+        """
+        Saves changes to an existing tenant record.
+        """
+        self.session.add(tenant)
+        await self.session.commit()
+        await self.session.refresh(tenant)
+        return tenant

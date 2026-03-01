@@ -35,6 +35,7 @@ export { ServiceType } from './models/ServiceType';
 export type { ShipmentActivityRead } from './models/ShipmentActivityRead';
 export { ShipmentType } from './models/ShipmentType';
 export type { TenantRead } from './models/TenantRead';
+export type { TenantUpdate } from './models/TenantUpdate';
 export type { UserRead } from './models/UserRead';
 export { UserRole } from './models/UserRole';
 export type { ValidationError } from './models/ValidationError';

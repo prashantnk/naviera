@@ -2,11 +2,12 @@
 import uuid
 from typing import List
 
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.core.dependencies import get_current_active_user
 from app.models.tenants import User
-from app.schemas.v1.tenants import TenantRead, UserRead
+from app.schemas.v1.tenants import TenantRead, TenantUpdate, UserRead
 from app.services.tenants import TenantService, get_tenant_service
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
 
@@ -42,11 +43,10 @@ async def list_users_for_tenant(
     users = await tenant_service.list_users_for_tenant(tenant_id=tenant_id)
     return users
 
+
 @router.get("/{slug}/public", response_model=TenantRead)
 async def get_public_tenant(
-    *,
-    slug: str,
-    tenant_service: TenantService = Depends(get_tenant_service)
+    *, slug: str, tenant_service: TenantService = Depends(get_tenant_service)
 ):
     """
     Public endpoint to fetch tenant branding and landing page config.
@@ -56,3 +56,24 @@ async def get_public_tenant(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return tenant
+
+
+@router.patch("/{tenant_id}", response_model=TenantRead)
+async def update_tenant(
+    *,
+    tenant_id: uuid.UUID,
+    payload: TenantUpdate,
+    tenant_service: TenantService = Depends(get_tenant_service),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Update tenant details (specifically the settings JSON).
+    Requires Admin privileges.
+    """
+    if payload.settings is None:
+        raise HTTPException(status_code=400, detail="Settings payload is required.")
+
+    updated_tenant = await tenant_service.update_tenant_settings(
+        tenant_id=tenant_id, user=current_user, settings_payload=payload.settings
+    )
+    return updated_tenant
