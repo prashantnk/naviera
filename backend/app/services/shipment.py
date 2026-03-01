@@ -621,6 +621,21 @@ class ShipmentService:
         if payload.order_reference_id:
             current.order_reference_id = payload.order_reference_id
 
+        # Sync Financials / Payment Details
+        if payload.payment_details:
+            if current.payment_details:
+                # Update existing payment record
+                for k, v in payload.payment_details.model_dump(exclude_unset=True).items():
+                    setattr(current.payment_details, k, v)
+            else:
+                # Create new payment record if it didn't exist
+                current.payment_details = PaymentDetails(
+                    pickup_id=current.id, 
+                    **payload.payment_details.model_dump(exclude_unset=True)
+                )
+                self.shipment_repo.session.add(current.payment_details)
+            diff["payment_details"] = "Updated Financials"
+
         # 8. Create Activity Log
         activity_type = ActivityType.INFO_UPDATE
         if "status" in diff:

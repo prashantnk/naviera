@@ -142,27 +142,35 @@ export default function CreateShipmentWizard() {
       try {
         const parsed = JSON.parse(savedDraft);
         if (parsed.step !== undefined) setCurrentStep(parsed.step);
-        
+
         if (parsed.values) {
-            const currentDefaults = form.getValues();
-            const mergedValues = { ...currentDefaults, ...parsed.values };
+          const currentDefaults = form.getValues();
+          const mergedValues = { ...currentDefaults, ...parsed.values };
 
-            // 🔥 THE ANTIDOTE: If the draft contains "", null, or undefined, force it back to a valid Enum!
-            if (!Object.values(ShipmentType).includes(mergedValues.shipment_type)) {
-                mergedValues.shipment_type = ShipmentType.FORWARD;
-            }
-            if (!Object.values(ServiceType).includes(mergedValues.service_type)) {
-                mergedValues.service_type = ServiceType.SURFACE;
-            }
-            if (!Object.values(PaymentMode).includes(mergedValues.payment_details?.payment_mode)) {
-                if (!mergedValues.payment_details) mergedValues.payment_details = currentDefaults.payment_details;
-                mergedValues.payment_details.payment_mode = PaymentMode.PREPAID;
-            }
+          // 🔥 THE ANTIDOTE: If the draft contains "", null, or undefined, force it back to a valid Enum!
+          if (
+            !Object.values(ShipmentType).includes(mergedValues.shipment_type)
+          ) {
+            mergedValues.shipment_type = ShipmentType.FORWARD;
+          }
+          if (!Object.values(ServiceType).includes(mergedValues.service_type)) {
+            mergedValues.service_type = ServiceType.SURFACE;
+          }
+          if (
+            !Object.values(PaymentMode).includes(
+              mergedValues.payment_details?.payment_mode
+            )
+          ) {
+            if (!mergedValues.payment_details)
+              mergedValues.payment_details = currentDefaults.payment_details;
+            mergedValues.payment_details.payment_mode = PaymentMode.PREPAID;
+          }
 
-            // Safely inject the perfectly sanitized data
-            form.reset(mergedValues);
+          // Safely inject the perfectly sanitized data
+          form.reset(mergedValues);
         }
-        if (parsed.step > 0) toast.info("Recovered your unsaved booking draft.");
+        if (parsed.step > 0)
+          toast.info("Recovered your unsaved booking draft.");
       } catch (e) {
         console.error("Failed to restore draft", e);
       }
@@ -327,6 +335,10 @@ export default function CreateShipmentWizard() {
       payload.pickup_address_id = payload.pickup_address_id || undefined;
       payload.delivery_address_id = payload.delivery_address_id || undefined;
 
+      // 🔥 FIX: Secretly inject the calculated shipping amount into the payload!
+      if (!payload.payment_details) payload.payment_details = {};
+      payload.payment_details.amount = rateQuote?.total_amount || 0;
+
       await ShipmentsService.createShipment(payload);
       localStorage.removeItem(DRAFT_KEY);
       toast.success("Shipment booked successfully!");
@@ -343,11 +355,11 @@ export default function CreateShipmentWizard() {
 
   if (!isDraftLoaded) {
     return (
-        <div className="flex h-[60vh] items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
-}
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
@@ -638,6 +650,22 @@ export default function CreateShipmentWizard() {
                             <FormLabel>Invoice Number</FormLabel>
                             <FormControl>
                               <Input {...field} value={field.value || ""} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="payment_details.invoice_date"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Invoice Date</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="date"
+                                {...field}
+                                value={field.value || ""}
+                              />
                             </FormControl>
                           </FormItem>
                         )}

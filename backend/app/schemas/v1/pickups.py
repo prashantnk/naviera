@@ -195,7 +195,6 @@ class PickupRead(SQLModel):
     """
     Output schema.
     """
-
     id: UUID
     tracking_id: Optional[str]
     status: PickupStatus
@@ -204,6 +203,12 @@ class PickupRead(SQLModel):
     shipment_type: ShipmentType
     service_type: ServiceType
     requested_pickup_date: date
+
+    product_category: Optional[str] = None
+    shipment_description: Optional[str] = None
+    reason_for_return: Optional[str] = None
+    created_by_user_id: UUID
+    creator_email: Optional[str] = None
 
     # Nested Objects
     pickup_address: AddressRead
