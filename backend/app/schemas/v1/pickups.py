@@ -38,9 +38,9 @@ class AddressBase(SQLModel):
 
 
 class PackageBase(SQLModel):
-    length: float = Field(gt=0, description="Length in CM")
-    breadth: float = Field(gt=0, description="Breadth in CM")
-    height: float = Field(gt=0, description="Height in CM")
+    length: float = Field(default=0.0, ge=0, description="Length in CM")
+    breadth: float = Field(default=0.0, ge=0, description="Breadth in CM")
+    height: float = Field(default=0.0, ge=0, description="Height in CM")
     weight: float = Field(gt=0, description="Weight in KG")
     box_count: int = Field(default=1, gt=0)
     description: Optional[str] = None

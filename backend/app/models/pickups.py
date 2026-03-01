@@ -128,7 +128,7 @@ class PaymentDetails(SQLModel, table=True):
     payment_mode: PaymentMode = Field(default=PaymentMode.PREPAID)
 
     # Tax & Compliance
-    declared_value: float = Field(default=0.0, description="Total shipment value")
+    declared_value: float = Field(default=0.0, ge=0, description="Total shipment value")
     tax_amount: float = Field(default=0.0)
     hsn_code: Optional[str] = Field(
         default=None, description="Harmonized System Nomenclature"
