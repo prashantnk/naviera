@@ -11,6 +11,7 @@ export { ActivityType } from './models/ActivityType';
 export type { AddressCreate } from './models/AddressCreate';
 export type { AddressRead } from './models/AddressRead';
 export { AddressType } from './models/AddressType';
+export type { AddressUpdate } from './models/AddressUpdate';
 export { DocumentType } from './models/DocumentType';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { PackageCreate } from './models/PackageCreate';
@@ -35,8 +36,10 @@ export { ServiceType } from './models/ServiceType';
 export type { ShipmentActivityRead } from './models/ShipmentActivityRead';
 export { ShipmentType } from './models/ShipmentType';
 export type { TenantRead } from './models/TenantRead';
+export type { TenantUpdate } from './models/TenantUpdate';
 export type { UserRead } from './models/UserRead';
 export { UserRole } from './models/UserRole';
+export type { UserUpdate } from './models/UserUpdate';
 export type { ValidationError } from './models/ValidationError';
 
 export { AddressesService } from './services/AddressesService';

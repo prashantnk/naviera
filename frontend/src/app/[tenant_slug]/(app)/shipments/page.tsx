@@ -1,89 +1,282 @@
-// src/app/[tenant_slug]/(app)/shipments/page.tsx
+// frontend/src/app/[tenant_slug]/(app)/shipments/page.tsx
 "use client";
 
-import { PickupRead, ShipmentsService } from "@/api_client";
+import { PickupRead, PickupStatus, ShipmentsService } from "@/api_client";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { ArrowRight, Loader2, MapPin, PackageSearch } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Filter, Loader2, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { columns } from "./columns";
 
 export default function ShipmentsPage() {
-    const router = useRouter();
-    const { routeTo } = useTenant();
-    const [data, setData] = useState<PickupRead[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const { routeTo } = useTenant();
 
-    useEffect(() => {
-        const fetchShipments = async () => {
-            try {
-                const response = await ShipmentsService.listShipments(1, 50);
-                setData(response.items);
-            } catch (err: any) {
-                console.error(err);
-                setError(err.message || "Failed to fetch shipments.");
-            } finally {
-                setLoading(false);
-            }
-        };
+  const [data, setData] = useState<PickupRead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-        fetchShipments();
-    }, []);
+  // Pagination State
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
 
-    return (
-        <div className="space-y-8 max-w-6xl mx-auto pb-12">
-            <div>
-                <h1 className="text-3xl font-bold text-slate-900">Shipments</h1>
-                <p className="text-slate-500 mt-1">Manage and track all your deliveries.</p>
-            </div>
+  // 🔥 NEW: Explicit Faceted Filter States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("ALL");
+  const [serviceFilter, setServiceFilter] = useState("ALL"); // "ALL", "EXPRESS", "SURFACE"
+  const [statusFilter, setStatusFilter] = useState("ALL"); // "ALL", "OPEN", "IN_TRANSIT", etc.
 
-            {/* 🔥 NEW: Customer-Friendly Tracking Banner */}
-            <div className="bg-slate-900 rounded-2xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-                {/* Decorative Icon */}
-                <div className="absolute right-0 top-0 opacity-5 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
-                    <PackageSearch className="h-64 w-64 text-white" />
-                </div>
+  useEffect(() => {
+    const fetchShipments = async () => {
+      setLoading(true);
+      try {
+        const response = await ShipmentsService.listShipments(
+          pageIndex + 1,
+          pageSize
+        );
+        setData(response.items);
+        setTotalCount(response.total);
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message || "Failed to fetch shipments.");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-                <div className="flex flex-col md:flex-row items-center md:items-start gap-4 text-center md:text-left relative z-10">
-                    <div className="h-14 w-14 bg-primary/20 rounded-full flex items-center justify-center shrink-0">
-                        <MapPin className="h-7 w-7 text-primary" />
-                    </div>
-                    <div>
-                        <h2 className="text-xl md:text-2xl font-bold text-white tracking-tight">Need to track a specific package?</h2>
-                        <p className="text-slate-400 mt-1 text-sm md:text-base max-w-xl">Use our public portal to get real-time location and status updates instantly. No login required.</p>
-                    </div>
-                </div>
+    fetchShipments();
+  }, [pageIndex, pageSize]);
 
-                <div className="w-full md:w-auto relative z-10">
-                    <Button size="lg" asChild className="w-full md:w-auto shadow-md text-md px-8 h-12">
-                        <Link href={routeTo("/track")}>
-                            Open Tracker <ArrowRight className="ml-2 h-5 w-5" />
-                        </Link>
-                    </Button>
-                </div>
-            </div>
+  // 🔥 UPGRADED: The Triage Engine now respects explicit dropdowns!
+  const filteredData = useMemo(() => {
+    return data.filter((shipment) => {
+      // 1. Base Tab Filter
+      let tabMatch = true;
+      if (activeTab === "ACTIVE")
+        tabMatch = [
+          PickupStatus.OPEN,
+          PickupStatus.ASSIGNED,
+          PickupStatus.IN_TRANSIT,
+        ].includes(shipment.status);
+      else if (activeTab === "COMPLETED")
+        tabMatch = shipment.status === PickupStatus.COMPLETED;
+      else if (activeTab === "EXCEPTIONS")
+        tabMatch = [
+          PickupStatus.CANCELLED,
+          PickupStatus.RTO_INITIATED,
+        ].includes(shipment.status);
 
-            {error && (
-                <div className="p-4 text-red-600 bg-red-50 rounded-md border border-red-200">
-                    Error: {error}
-                </div>
-            )}
+      // 2. Explicit Service Filter
+      let serviceMatch = true;
+      if (serviceFilter !== "ALL")
+        serviceMatch = shipment.service_type === serviceFilter;
 
-            {loading ? (
-                <div className="flex h-64 items-center justify-center border rounded-xl bg-white border-dashed">
-                    <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-                </div>
-            ) : (
-                <DataTable
-                    columns={columns}
-                    data={data}
-                    onRowClick={(row) => router.push(routeTo(`/shipments/${row.id}`))}
-                />
-            )}
+      // 3. Explicit Status Filter (overrides base tab if selected)
+      let exactStatusMatch = true;
+      if (statusFilter !== "ALL")
+        exactStatusMatch = shipment.status === statusFilter;
+
+      // 4. Omni-Search Text Filter
+      let searchMatch = true;
+      if (searchQuery.trim() !== "") {
+        const q = searchQuery.toLowerCase().trim();
+        const searchableString = `
+                    ${shipment.tracking_id || ""} ${
+          shipment.order_reference_id
+        } 
+                    ${shipment.pickup_address?.name || ""} ${
+          shipment.pickup_address?.phone || ""
+        } 
+                    ${shipment.pickup_address?.city || ""} ${
+          shipment.delivery_address?.city || ""
+        } 
+                    ${shipment.status.replace("_", " ")} ${
+          shipment.service_type
+        } ${shipment.shipment_type}
+                `.toLowerCase();
+        searchMatch = searchableString.includes(q);
+      }
+
+      return tabMatch && serviceMatch && exactStatusMatch && searchMatch;
+    });
+  }, [data, activeTab, serviceFilter, statusFilter, searchQuery]);
+
+  const pageCount = Math.ceil(totalCount / pageSize);
+  const canNextPage = pageIndex < pageCount - 1;
+  const canPreviousPage = pageIndex > 0;
+
+  const handleNextPage = () => {
+    if (canNextPage) setPageIndex((prev) => prev + 1);
+  };
+
+  const handlePreviousPage = () => {
+    if (canPreviousPage) setPageIndex((prev) => prev - 1);
+  };
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Shipments
+          </h1>
+          <p className="text-slate-500 mt-1">
+            Manage and track all your delivery operations.
+          </p>
         </div>
-    );
+        <Button
+          asChild
+          className="rounded-lg shadow-sm h-10 px-4 font-semibold"
+        >
+          <Link href={routeTo("/shipments/new")}>
+            <Plus className="mr-2 h-4 w-4" /> Book New Shipment
+          </Link>
+        </Button>
+      </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="p-4 text-red-600 bg-red-50 rounded-lg border border-red-200 text-sm font-medium">
+          {error}
+        </div>
+      )}
+
+      {/* Toolbar Area */}
+      <div className="flex flex-col gap-4">
+        {/* Top Row: Tabs & Count */}
+        <div className="flex items-center justify-between">
+          <Tabs
+            defaultValue="ALL"
+            value={activeTab}
+            onValueChange={(v) => {
+              setActiveTab(v);
+              setStatusFilter("ALL");
+            }}
+            className="w-full sm:w-auto"
+          >
+            <TabsList className="bg-slate-100/80 border border-slate-200">
+              <TabsTrigger value="ALL" className="text-xs font-semibold px-4">
+                All
+              </TabsTrigger>
+              <TabsTrigger
+                value="ACTIVE"
+                className="text-xs font-semibold px-4"
+              >
+                Active
+              </TabsTrigger>
+              <TabsTrigger
+                value="COMPLETED"
+                className="text-xs font-semibold px-4"
+              >
+                Completed
+              </TabsTrigger>
+              <TabsTrigger
+                value="EXCEPTIONS"
+                className="text-xs font-semibold px-4 text-red-600 data-[state=active]:text-red-700"
+              >
+                Exceptions
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {!loading && (
+            <span className="hidden md:inline-flex text-xs font-medium text-slate-500 bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm">
+              Showing{" "}
+              <strong className="text-slate-900 mx-1">
+                {totalCount === 0 ? 0 : pageIndex * pageSize + 1}
+              </strong>
+              to{" "}
+              <strong className="text-slate-900 mx-1">
+                {Math.min((pageIndex + 1) * pageSize, totalCount)}
+              </strong>
+              of <strong className="text-slate-900 mx-1">{totalCount}</strong>
+            </span>
+          )}
+        </div>
+
+        {/* Bottom Row: Search & Filters */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search current page..."
+              className="pl-9 bg-white border-slate-200 shadow-sm rounded-lg"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {/* 🔥 NEW: Explicit Dropdown Filters */}
+          <div className="flex gap-3">
+            <Select value={serviceFilter} onValueChange={setServiceFilter}>
+              <SelectTrigger className="w-[140px] bg-white border-slate-200 shadow-sm">
+                <Filter className="w-3 h-3 mr-2 text-slate-400" />
+                <SelectValue placeholder="Service" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Services</SelectItem>
+                <SelectItem value="EXPRESS">Express</SelectItem>
+                <SelectItem value="SURFACE">Surface</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[160px] bg-white border-slate-200 shadow-sm">
+                <Filter className="w-3 h-3 mr-2 text-slate-400" />
+                <SelectValue placeholder="Exact Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value={PickupStatus.DRAFT}>Draft</SelectItem>
+                <SelectItem value={PickupStatus.OPEN}>Open</SelectItem>
+                <SelectItem value={PickupStatus.ASSIGNED}>Assigned</SelectItem>
+                <SelectItem value={PickupStatus.IN_TRANSIT}>
+                  In Transit
+                </SelectItem>
+                <SelectItem value={PickupStatus.COMPLETED}>
+                  Completed
+                </SelectItem>
+                <SelectItem value={PickupStatus.CANCELLED}>
+                  Cancelled
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Data Grid */}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 relative min-h-[400px]">
+        {loading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-[1px] rounded-xl border border-slate-200">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        )}
+        <DataTable
+          columns={columns}
+          data={filteredData}
+          onRowClick={(row) => router.push(routeTo(`/shipments/${row.id}`))}
+          pageCount={pageCount}
+          pageIndex={pageIndex}
+          onNextPage={handleNextPage}
+          onPreviousPage={handlePreviousPage}
+          canNextPage={canNextPage}
+          canPreviousPage={canPreviousPage}
+        />
+      </div>
+    </div>
+  );
 }

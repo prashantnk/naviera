@@ -121,7 +121,7 @@ def create_shipment():
     with httpx.Client(timeout=30.0) as client:
         try:
             response = client.post(
-                f"{API_BASE_URL}{settings.API_V1_STR}/shipments/",
+                f"{API_BASE_URL}{settings.API_V1_STR}/shipments",
                 headers=headers,
                 json=payload,
             )
@@ -143,4 +143,5 @@ def create_shipment():
 
 
 if __name__ == "__main__":
-    create_shipment()
+    for _ in range(1):
+        create_shipment()

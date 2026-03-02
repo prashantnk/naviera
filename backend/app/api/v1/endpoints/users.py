@@ -1,3 +1,4 @@
+import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, status
@@ -9,7 +10,7 @@ from app.core.dependencies import (
 )
 from app.core.security import TokenPayload
 from app.models.tenants import Tenant, User
-from app.schemas.v1.tenants import UserRead
+from app.schemas.v1.tenants import UserRead, UserUpdate
 from app.services.tenants import TenantService, get_tenant_service
 
 router = APIRouter()
@@ -32,7 +33,7 @@ async def onboard_new_user(
     return user
 
 
-@router.get("/", response_model=List[UserRead])
+@router.get("", response_model=List[UserRead])
 async def list_users_in_tenant(
     *,
     current_user: User = Depends(get_current_active_user),
@@ -52,3 +53,16 @@ async def get_my_profile(current_user: User = Depends(get_current_active_user)):
     Returns the currently authenticated user's profile (including their role).
     """
     return current_user
+
+
+@router.patch("/{user_id}", response_model=UserRead)
+async def update_user_role(
+    user_id: uuid.UUID,
+    payload: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    tenant_service: TenantService = Depends(get_tenant_service),
+):
+    """Update a user's role or active status (Admin only)."""
+    return await tenant_service.update_user(
+        user_id, payload, current_user, current_user.tenant_id
+    )

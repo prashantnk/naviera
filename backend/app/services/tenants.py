@@ -1,12 +1,15 @@
+import copy
 import uuid
+
+from fastapi import Depends, HTTPException
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import TokenPayload
 from app.exceptions.definitions import TenantNotFoundException
 from app.models.tenants import Tenant, User, UserRole
 from app.repositories.tenants import TenantRepository
-from fastapi import Depends
-from sqlmodel.ext.asyncio.session import AsyncSession
+from app.schemas.v1.tenants import UserUpdate
 
 
 class TenantService:
@@ -17,6 +20,25 @@ class TenantService:
 
     def __init__(self, tenant_repo: TenantRepository):
         self.tenant_repo = tenant_repo
+
+    def _deep_merge(self, base_dict: dict, update_dict: dict) -> dict:
+        """
+        Recursively merges update_dict into base_dict.
+        Preserves existing keys in base_dict that are not present in update_dict.
+        """
+        merged = copy.deepcopy(base_dict)
+        for key, value in update_dict.items():
+            # If both are dictionaries, recurse
+            if (
+                isinstance(value, dict)
+                and key in merged
+                and isinstance(merged[key], dict)
+            ):
+                merged[key] = self._deep_merge(merged[key], value)
+            else:
+                # Otherwise, overwrite or add the value
+                merged[key] = copy.deepcopy(value)
+        return merged
 
     async def get_or_create_user(
         self, *, token_data: TokenPayload, tenant: Tenant
@@ -64,6 +86,67 @@ class TenantService:
         if not tenant:
             raise TenantNotFoundException()
         return await self.tenant_repo.list_users_for_tenant(tenant_id=tenant_id)
+
+    async def update_tenant_settings(
+        self, tenant_id: uuid.UUID, user: User, settings_payload: dict
+    ) -> Tenant:
+        """
+        Updates the JSON settings for a tenant using a Deep Merge.
+        Strictly requires Admin or Owner privileges.
+        """
+        # 1. Role-Based Access Control (RBAC)
+        if user.role not in [UserRole.admin, UserRole.owner]:
+            raise HTTPException(
+                status_code=403,
+                detail="Only Admins or Owners can update platform settings.",
+            )
+
+        # 2. Tenant Isolation Check
+        if user.tenant_id != tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You cannot modify settings for a different workspace.",
+            )
+
+        # 3. Fetch current tenant
+        tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
+        if not tenant:
+            raise TenantNotFoundException()
+
+        # 4. 🔥 Apply DEEP MERGE to settings to prevent data loss!
+        current_settings = tenant.settings or {}
+        tenant.settings = self._deep_merge(current_settings, settings_payload)
+
+        return await self.tenant_repo.update_tenant(tenant)
+
+    async def update_user(
+        self,
+        user_id: uuid.UUID,
+        payload: UserUpdate,
+        current_user: User,
+        tenant_id: uuid.UUID,
+    ) -> User:
+        if current_user.role not in [UserRole.admin, UserRole.owner]:
+            raise HTTPException(status_code=403, detail="Only Admins can modify users")
+
+        target_user = await self.tenant_repo.get_user_by_id(user_id)
+        if not target_user or target_user.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if (
+            target_user.role == UserRole.owner
+            and payload.role is not None
+            and payload.role != UserRole.owner
+        ):
+            raise HTTPException(
+                status_code=400, detail="Cannot demote the Tenant Owner"
+            )
+
+        update_data = payload.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(target_user, key, value)
+
+        return await self.tenant_repo.create_user(target_user)
 
 
 # This is a factory function that FastAPI will use for dependency injection.

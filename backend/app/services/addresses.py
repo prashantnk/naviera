@@ -1,14 +1,15 @@
 # backend/app/services/addresses.py
+import uuid
 from typing import List, Optional
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
 from app.models.pickups import Address, AddressType
 from app.models.tenants import Tenant, User
 from app.repositories.addresses import AddressRepository
-from app.schemas.v1.pickups import AddressCreate
+from app.schemas.v1.pickups import AddressCreate, AddressUpdate
 
 
 class AddressService:
@@ -43,6 +44,31 @@ class AddressService:
             is_saved=True,  # Force it to be a permanent address book entry
         )
         return await self.address_repo.create_address(new_address)
+
+    async def update_saved_address(
+        self, address_id: uuid.UUID, payload: AddressUpdate, user: User, tenant: Tenant
+    ) -> Address:
+        address = await self.address_repo.get_address_by_id(address_id)
+        if not address or address.tenant_id != tenant.id or address.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Address not found")
+
+        update_data = payload.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(address, key, value)
+
+        return await self.address_repo.create_address(address)  # Reuses add/commit
+
+    async def delete_saved_address(
+        self, address_id: uuid.UUID, user: User, tenant: Tenant
+    ) -> dict:
+        address = await self.address_repo.get_address_by_id(address_id)
+        if not address or address.tenant_id != tenant.id or address.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Address not found")
+
+        # Soft delete: Unmark as saved so historical shipments don't break!
+        address.is_saved = False
+        await self.address_repo.create_address(address)
+        return {"detail": "Address removed successfully"}
 
 
 # --- Factory for Dependency Injection ---

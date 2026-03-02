@@ -5,7 +5,9 @@ from typing import List
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db import get_session
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
 from app.schemas.v1.common import PaginatedResponse
@@ -159,15 +161,27 @@ async def get_shipment_details(
     current_user: User = Depends(get_current_active_user),
     current_tenant: Tenant = Depends(get_tenant_from_header),
     shipment_service: ShipmentService = Depends(get_shipment_service),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Get full details of a specific shipment.
     - **Admins**: Can view any shipment.
     - **Customers**: Can only view their own.
     """
-    return await shipment_service.get_shipment_details(
+    # 1. Fetch the raw shipment from the service
+    shipment = await shipment_service.get_shipment_details(
         shipment_id=shipment_id, user=current_user, tenant_id=current_tenant.id
     )
+
+    # 2. Convert the SQLModel into our Pydantic Response Schema
+    response = PickupRead.model_validate(shipment)
+
+    # 3. 🔥 NEW: Fetch the creator's email and attach it!
+    creator = await session.get(User, shipment.created_by_user_id)
+    if creator:
+        response.creator_email = creator.email
+
+    return response
 
 
 @router.get("/{shipment_id}/label")

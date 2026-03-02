@@ -1,12 +1,14 @@
-// src/lib/validations/shipment.ts
+// frontend/src/lib/validations/shipment.ts
+import {
+  DocumentType,
+  PaymentMode,
+  ServiceType,
+  ShipmentType,
+} from "@/api_client";
 import * as z from "zod";
 
 const addressSchema = z.object({
-  name: z
-    .string()
-    .min(2, "Name must be at least 2 characters")
-    .optional()
-    .or(z.literal("")),
+  name: z.string().min(2, "Name is required").optional().or(z.literal("")),
   phone: z
     .string()
     .min(10, "Phone number must be at least 10 digits")
@@ -14,9 +16,11 @@ const addressSchema = z.object({
     .or(z.literal("")),
   address_line1: z
     .string()
-    .min(5, "Please enter a complete address")
+    .min(5, "Complete address required")
     .optional()
     .or(z.literal("")),
+  address_line2: z.string().optional(),
+  landmark: z.string().optional(),
   city: z.string().min(2, "City is required").optional().or(z.literal("")),
   state: z.string().min(2, "State is required").optional().or(z.literal("")),
   pincode: z
@@ -27,27 +31,77 @@ const addressSchema = z.object({
 });
 
 const packageSchema = z.object({
-  length: z.number().min(0.1, "Length must be > 0"),
-  breadth: z.number().min(0.1, "Breadth must be > 0"),
-  height: z.number().min(0.1, "Height must be > 0"),
-  weight: z.number().min(0.1, "Weight must be > 0"),
+  length: z.number().min(0, "Cannot be negative").default(0),
+  breadth: z.number().min(0, "Cannot be negative").default(0),
+  height: z.number().min(0, "Cannot be negative").default(0),
+  weight: z.number().min(0.1, "Weight is required"),
+  box_count: z.number().min(1).default(1),
+  is_fragile: z.boolean().default(false),
   description: z.string().optional(),
 });
 
-export const shipmentFormSchema = z.object({
-  order_reference_id: z.string().min(3, "Order Reference is required"),
-  requested_pickup_date: z.string().min(1, "Please select a pickup date"),
-
-  // Add Service Type
-  service_type: z.enum(["SURFACE", "EXPRESS"]).default("SURFACE"),
-
-  pickup_address_id: z.string().optional(),
-  new_pickup_address: addressSchema.optional(),
-
-  delivery_address_id: z.string().optional(),
-  new_delivery_address: addressSchema.optional(),
-
-  packages: z.array(packageSchema).min(1, "At least one package is required"),
+const documentSchema = z.object({
+  document_type: z.nativeEnum(DocumentType),
+  file_url: z.string(),
+  file_name: z.string(),
 });
+
+export const shipmentFormSchema = z
+  .object({
+    order_reference_id: z.string().min(3, "Order Reference is required"),
+    requested_pickup_date: z.string().min(1, "Please select a pickup date"),
+
+    // We keep nativeEnum, but we will strictly control the default values in the page.tsx file
+    service_type: z.nativeEnum(ServiceType),
+    shipment_type: z.nativeEnum(ShipmentType),
+    reason_for_return: z.string().optional(),
+
+    product_category: z.string().optional(),
+    shipment_description: z.string().optional(),
+
+    payment_details: z.object({
+      payment_mode: z.nativeEnum(PaymentMode),
+      // 🔥 FIX: Corrected error message to match min(0)
+      declared_value: z.number().min(0, "Cargo value cannot be negative"),
+      tax_amount: z.number().default(0),
+      hsn_code: z.string().optional(),
+      invoice_number: z.string().optional(),
+      invoice_date: z.string().optional(),
+      eway_bill_number: z.string().optional(),
+    }),
+
+    pickup_address_id: z.string().optional(),
+    new_pickup_address: addressSchema.optional(),
+    delivery_address_id: z.string().optional(),
+    new_delivery_address: addressSchema.optional(),
+
+    packages: z.array(packageSchema).min(1, "At least one package is required"),
+    documents: z.array(documentSchema).optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Reverse shipments need a reason
+    if (
+      data.shipment_type === ShipmentType.REVERSE &&
+      (!data.reason_for_return || data.reason_for_return.length < 3)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Reason is required for reverse pickups",
+        path: ["reason_for_return"],
+      });
+    }
+    // E-Way Bill is only mandatory for FORWARD shipments > 50k
+    if (
+      data.shipment_type === ShipmentType.FORWARD &&
+      data.payment_details.declared_value > 50000 &&
+      !data.payment_details.eway_bill_number
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "E-Way Bill is mandatory for values over ₹50,000",
+        path: ["payment_details", "eway_bill_number"],
+      });
+    }
+  });
 
 export type ShipmentFormValues = z.infer<typeof shipmentFormSchema>;

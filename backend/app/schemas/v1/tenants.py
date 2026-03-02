@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 
 from sqlmodel import SQLModel
 
@@ -22,3 +23,13 @@ class UserRead(SQLModel):
     is_active: bool
     role: UserRole
     tenant_id: uuid.UUID
+
+
+class TenantUpdate(SQLModel):
+    name: Optional[str] = None
+    settings: Optional[dict] = None
+
+
+class UserUpdate(SQLModel):
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None

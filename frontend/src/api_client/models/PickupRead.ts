@@ -16,10 +16,16 @@ export type PickupRead = {
     id: string;
     tracking_id: (string | null);
     status: PickupStatus;
+    latest_status_comment?: (string | null);
     order_reference_id: string;
     shipment_type: ShipmentType;
     service_type: ServiceType;
     requested_pickup_date: string;
+    product_category?: (string | null);
+    shipment_description?: (string | null);
+    reason_for_return?: (string | null);
+    created_by_user_id: string;
+    creator_email?: (string | null);
     pickup_address: AddressRead;
     delivery_address: AddressRead;
     packages: Array<PackageRead>;
