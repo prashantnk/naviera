@@ -1,0 +1,9 @@
+# frontend/.env.example
+
+# --- Supabase Configuration ---
+# You can find these in your Supabase Dashboard -> Project Settings -> API
+NEXT_PUBLIC_SUPABASE_URL="https://your-project-id.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-api-key"
+
+REACT_EDITOR=atom
+RUST_BACKTRACE=1
