@@ -54,8 +54,8 @@
             if command -v starship &> /dev/null; then eval "$(starship init bash)"; fi
             if [ -f /etc/bash_completion ]; then . /etc/bash_completion; fi
             alias reload="source ~/.bashrc && echo 'Bash configuration reloaded!'"
-            alias run-backend="export LD_LIBRARY_PATH=\$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib && cd ~/naviera/backend && poetry run uvicorn app.main:app --host 0.0.0.0 --reload"
-            alias run-frontend="cd ~/naviera/frontend && npm run dev" 
+            alias run-backend="unset LD_LIBRARY_PATH && export LD_LIBRARY_PATH=\$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib && cd ~/naviera/backend && poetry run uvicorn app.main:app --host 0.0.0.0 --reload"
+            alias run-frontend="unset LD_LIBRARY_PATH && cd ~/naviera/frontend && npm run dev" 
             alias ls='lsd -l --icon=auto'
             alias ll='lsd -al --icon=auto'
             alias rebase='git pull; git merge origin/master; git push;'
