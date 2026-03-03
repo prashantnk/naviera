@@ -1,37 +1,68 @@
-// src/lib/api.ts
+// frontend/src/lib/api.ts
 import { Tenant } from "@/types/tenant";
 import { getSupabaseClient } from "./supabase";
-
-const BASE_URL = "http://127.0.0.1:8000/api/v1";
+import { getBackendUrl } from "./config";
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   try {
-    const res = await fetch(`${BASE_URL}/tenants/${slug}/public`, {
-      cache: "no-store",
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+    const res = await fetch(
+      `${getBackendUrl()}/api/v1/tenants/${slug}/public`,
+      {
+        next: { revalidate: 3600 },
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    // 1. Valid 404 (Workspace doesn't exist)
+    if (res.status === 404) return null;
+
+    // 2. The server is AWAKE, but broken (e.g. 500 DB Error). THROW IT!
     if (!res.ok) {
-      throw new Error(`Backend responded with status: ${res.status}`);
+      throw new Error(`Server Error: ${res.status}`);
     }
 
-    // We cast the JSON response to our strict TypeScript interface
     const tenant: Tenant = await res.json();
     return tenant;
-  } catch (error) {
-    console.error("API Error fetching tenant:", error);
-    return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    // 3. Mask only Cold Starts: AbortError (timeout) or fetch failed (Render completely down)
+    if (
+      error.name === "AbortError" ||
+      error.message.includes("fetch failed") ||
+      error.code === "ECONNREFUSED"
+    ) {
+      console.warn(`[Fallback] Server asleep. Returning Naviera fallback.`);
+      return {
+        id: "naviera-fallback-id",
+        name: "Naviera",
+        slug: "naviera",
+        settings: {
+          brand: { primary_color: "#2563eb", secondary_color: "#1e40af" },
+        },
+      } as Tenant;
+    }
+
+    // 4. If it failed for any other reason, LET IT THROW so the Error Boundary catches it!
+    throw error;
   }
 }
+
 export async function downloadShippingLabel(
   tenantSlug: string,
   shipmentId: string,
-  trackingId: string,
+  trackingId: string
 ) {
   const supabase = getSupabaseClient(tenantSlug);
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
+  // This runs on the browser, so it safely relies on the relative proxy path!
   const response = await fetch(`/api/v1/shipments/${shipmentId}/label`, {
     headers: {
       Authorization: `Bearer ${session?.access_token}`,

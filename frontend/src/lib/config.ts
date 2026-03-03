@@ -26,3 +26,9 @@ export const APP_CONFIG = {
     CODESPACE_SUFFIX: ".app.github.dev",
   },
 } as const;
+
+export function getBackendUrl() {
+  return (
+    process.env.BACKEND_API_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000"
+  );
+}
