@@ -1,3 +1,4 @@
+# backend/app/core/logging.py
 import logging
 
 import logfire
@@ -5,31 +6,37 @@ import logfire
 from app.core.config import settings
 
 
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/health") == -1
+
+
 def setup_logging():
     """
-    Configures Pydantic Logfire for the application.
+    Configures Pydantic Logfire for the application and sets up Uvicorn logging rules.
     This should be called once at application startup.
     """
+    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
     if settings.LOGFIRE_TOKEN:
         logfire.configure(
             token=settings.LOGFIRE_TOKEN,
             service_name=settings.PROJECT_NAME,
             console=settings.CONSOLE_LOG,
         )
-        print("✅ Logfire configured successfully.")
+        print("✅ Logfire configured successfully (Console output silenced).")
 
-        # --- FIX 1: Suppress the warning ---
+        # 🔥 FIX: Target specific business logic modules instead of the whole "app" folder.
+        # This completely stops the middleware from generating empty "auto-tracing" spans!
         logfire.install_auto_tracing(
-            modules=["app"], min_duration=0, check_imported_modules="ignore"
+            modules=["app.api", "app.services", "app.repositories"],
+            min_duration=0,
+            check_imported_modules="ignore",
         )
 
-        # --- FIX 2: Force-attach the handler ---
-        # Uvicorn sets up logging before we do, so basicConfig() is ignored.
-        # We must manually add the Logfire handler to the root logger.
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
 
-        # Prevent adding the handler multiple times during reloads
         if not any(
             isinstance(h, logfire.LogfireLoggingHandler) for h in root_logger.handlers
         ):
