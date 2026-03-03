@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
         destination: `${backendUrl}/api/:path*`,
       },
       {
+        source: "/health",
+        destination: `${backendUrl}/health`,
+      },
+      {
         // Supabase ISP Block Bypass Proxy
         source: "/supabase-proxy/:path*",
         destination: `${supabaseUrl}/:path*`,
