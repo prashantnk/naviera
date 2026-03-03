@@ -4,29 +4,33 @@ from app.core.logging import setup_logging
 setup_logging()
 
 import logfire
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.routing import APIRoute
 
 # Import our application's high-level components
 from app.api.v1.router import api_router as api_router_v1
 from app.core.config import settings
 from app.exceptions.handlers import register_exception_handlers
 from app.middleware import register_middleware
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
-from fastapi.routing import APIRoute
+
 
 def custom_generate_unique_id(route: APIRoute) -> str:
     """
-    Forces OpenAPI to use the clean Python function name 
+    Forces OpenAPI to use the clean Python function name
     (e.g., 'list_shipments') instead of a verbose path-based name.
     """
     return f"{route.name}"
 
+
 # Create the FastAPI app
-app = FastAPI(title=settings.PROJECT_NAME, generate_unique_id_function=custom_generate_unique_id)
+app = FastAPI(
+    title=settings.PROJECT_NAME, generate_unique_id_function=custom_generate_unique_id
+)
 
 # Instrument the app with Logfire
 # (This sets up HTTP traffic monitoring)
-logfire.instrument_fastapi(app)
+logfire.instrument_fastapi(app, excluded_urls=["/health"])
 
 # --- Register Components ---
 # Register all custom exception handlers
@@ -40,6 +44,7 @@ app.include_router(api_router_v1, prefix=settings.API_V1_STR)
 # --- End Component Registration ---
 
 # --- System Endpoints ---
+
 
 @app.get("/", include_in_schema=False)
 async def root():
