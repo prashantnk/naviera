@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # It's a boolean that defaults to False if not set in the .env file
     DB_ECHO_LOG: bool = False
 
+    CONSOLE_LOG: bool = False
+
     # --- Authentication ---
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

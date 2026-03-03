@@ -1,6 +1,7 @@
 import logging
 
 import logfire
+
 from app.core.config import settings
 
 
@@ -13,6 +14,7 @@ def setup_logging():
         logfire.configure(
             token=settings.LOGFIRE_TOKEN,
             service_name=settings.PROJECT_NAME,
+            console=settings.CONSOLE_LOG,
         )
         print("✅ Logfire configured successfully.")
 
@@ -37,5 +39,3 @@ def setup_logging():
     else:
         print("⚠️ LOGFIRE_TOKEN not set. Logging will be local only.")
         logging.basicConfig(level=logging.INFO)
-
-
