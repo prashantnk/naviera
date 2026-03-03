@@ -154,3 +154,9 @@ If you run `poetry run alembic current`, you should see the current revision num
 1.  Go to the Supabase dashboard and use the **Table Editor** to **delete the `alembic_version` table**. Also, delete any other application tables (`tenant`, `user`) if they are in an incorrect state.
 2.  Delete the incorrect/empty migration script file from your local `alembic/versions/` folder.
 3.  Re-run the `alembic revision --autogenerate` command again. It will now correctly generate the script.
+
+
+### 🚀 Production Deployment Quick Reference (Render)
+* **Runtime & Commands:** Python 3 environment. Build Command: `pip install poetry && poetry install`. Start Command: `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT` & we can use `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log` if we don't want to log any requests from uvicorn.
+* **Database Connection:** `DATABASE_URL` must use the Supabase Connection Pooler (Port `6543`), and special characters in the database password must be URL-encoded (e.g., `$` becomes `%24`). `DB_ECHO_LOG` must be `"False"`.
+* **Telemetry (Logfire):** Auto-tracing is strictly limited to `["app.api", "app.services", "app.repositories"]`, and the `/health` endpoint is filtered from Uvicorn logs to prevent quota drain on the free tier.
