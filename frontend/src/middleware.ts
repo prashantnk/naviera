@@ -3,7 +3,7 @@ import { APP_CONFIG } from "@/lib/config";
 import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|health).*)"],
 };
 
 export default function middleware(req: NextRequest) {
@@ -32,12 +32,12 @@ export default function middleware(req: NextRequest) {
     requestHeaders.set("x-routing-mode", "subdomain");
 
     const rewriteUrl = url.clone(); // Clone preserves query params (?code=xxx)
-    
+
     // Prevent double-prefixing if Next.js makes an internal data fetch
     if (!url.pathname.startsWith(`/${subdomain}`)) {
-        rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
+      rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
     }
-    
+
     return NextResponse.rewrite(rewriteUrl, {
       request: { headers: requestHeaders },
     });
@@ -51,7 +51,11 @@ export default function middleware(req: NextRequest) {
   const possibleSlug = pathSegments[0];
 
   // If they hit the root (/) or a generic path without a slug (/login), force Naviera
-  if (!possibleSlug || possibleSlug === "login" || possibleSlug === "dashboard") {
+  if (
+    !possibleSlug ||
+    possibleSlug === "login" ||
+    possibleSlug === "dashboard"
+  ) {
     const rewriteUrl = url.clone();
     rewriteUrl.pathname = `/naviera${url.pathname}`;
     return NextResponse.rewrite(rewriteUrl, {
