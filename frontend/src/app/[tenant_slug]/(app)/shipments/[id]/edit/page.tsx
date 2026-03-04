@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/app/[tenant_slug]/(app)/shipments/[id]/edit/page.tsx
 "use client";
 
@@ -88,7 +89,7 @@ export default function EditShipmentPage() {
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
 
   const form = useForm<EditShipmentValues>({
-    resolver: zodResolver(editShipmentSchema),
+    resolver: zodResolver(editShipmentSchema) as any,
     defaultValues: {
       order_reference_id: "",
       requested_pickup_date: "",
