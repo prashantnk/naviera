@@ -92,7 +92,8 @@ export default function CreateShipmentWizard() {
   }, []);
 
   const form = useForm<ShipmentFormValues>({
-    resolver: zodResolver(shipmentFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(shipmentFormSchema) as any,
     mode: "onChange",
     defaultValues: {
       order_reference_id: "",
