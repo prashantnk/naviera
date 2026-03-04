@@ -71,6 +71,7 @@ export interface EscalationLevel {
 
 // Now add them to the main TenantSettings interface:
 export interface TenantSettings {
+  oAuthSignInEnabled?: boolean;
   brand?: {
     primary_color: string;
     secondary_color?: string;
