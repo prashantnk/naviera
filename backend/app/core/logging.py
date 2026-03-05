@@ -22,6 +22,7 @@ def setup_logging():
         logfire.configure(
             token=settings.LOGFIRE_TOKEN,
             service_name=settings.PROJECT_NAME,
+            environment=settings.ENVIRONMENT,
             console=settings.CONSOLE_LOG,
         )
         print("✅ Logfire configured successfully (Console output silenced).")
