@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Add the Supabase Issuer URL
     JWT_ISSUER: str
 
+    ENVIRONMENT: str
+
     # --- Logging ---
     LOGFIRE_TOKEN: str = ""
 
