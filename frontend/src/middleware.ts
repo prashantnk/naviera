@@ -3,7 +3,10 @@ import { APP_CONFIG } from "@/lib/config";
 import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|health).*)"],
+  matcher: [
+    // Added a regex group at the end to ignore all common image files
+    "/((?!api|_next/static|_next/image|favicon.ico|health|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
 
 export default function middleware(req: NextRequest) {
