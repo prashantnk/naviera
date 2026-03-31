@@ -14,7 +14,7 @@ Naviera is an enterprise-grade, multi-tenant logistics SaaS platform. It is buil
 This repository is pre-configured for instant development in the cloud. You do not need to install Python, Node, or Postgres locally.
 
 - **GitHub Codespaces:** Open this repo in a Codespace. The `.devcontainer` will automatically install Node, Poetry, and all VS Code extensions.
-- **Google Project IDX:** Open this repo in IDX. The `.idx/dev.nix` file will provision a NixOS container with all necessary system dependencies.
+- **Google Project IDX:** Open this repo in IDX. The `.idx/dev.nix` file will provision a NixOS container with all necessary system dependencies and commands.
 
 _Once your cloud environment starts, open two terminals:_
 
