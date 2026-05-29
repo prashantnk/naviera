@@ -58,8 +58,25 @@
             alias run-frontend="unset LD_LIBRARY_PATH && cd ~/naviera/frontend && npm run dev" 
             alias ls='lsd -l --icon=auto'
             alias ll='lsd -al --icon=auto'
-            alias rebase='git pull; git merge origin/master; git push;'
-            alias cat='bat'
+            alias rebase='unset && git config --global alias.sync-dev "!git checkout master && git pull && git checkout dev && git reset --hard master" && git sync-dev && git push -f origin dev'
+            if command -v batcat &> /dev/null; then
+                alias cat='batcat'
+            elif command -v bat &> /dev/null; then
+                alias cat='bat'
+            fi
+
+            # --- Naviera Workspace Local Replicator Shortcuts ---
+            export-changes() {
+                "~/naviera/scripts/bundle-local-changes.sh"
+                echo -e "\n\033[0;32m📋 Double-click and copy the entire block below, then paste it on the target machine:\033[0m\n"
+                command cat "~/naviera/apply-changes.sh"
+                rm "~/naviera/apply-changes.sh"
+            }
+
+            import-changes() {
+                echo -e "\033[0;32m📋 Please paste the replication script content below and press Ctrl+D when finished:\033[0m\n"
+                command cat | bash
+            }
             EOF
           fi
         '';
