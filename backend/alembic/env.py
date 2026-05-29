@@ -1,7 +1,7 @@
 import asyncio
 import sys
-from pathlib import Path
 from logging.config import fileConfig
+from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -19,11 +19,12 @@ if config.config_file_name is not None:
 
 # --- CUSTOM SETUP FOR OUR PROJECT ---
 from sqlmodel import SQLModel
-# Explicitly import the modules containing your models. This is the most robust way.
-from app.models import tenants, pickups
 
 # We will add future model files here, e.g., from app.models import pickup_models
 from app.core.config import settings
+
+# Explicitly import the modules containing your models. This is the most robust way.
+from app.models import pickups, tenants  # noqa: F401
 
 target_metadata = SQLModel.metadata
 
@@ -32,8 +33,8 @@ print("--- DEBUGGING METADATA ---")
 print(f"Tables found in SQLModel.metadata: {SQLModel.metadata.tables.keys()}")
 print("--------------------------")
 
-if settings.DATABASE_URL:
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+if settings.ALEMBIC_DATABASE_URL:
+    config.set_main_option("sqlalchemy.url", settings.ALEMBIC_DATABASE_URL)
 # --- END CUSTOM SETUP ---
 
 
