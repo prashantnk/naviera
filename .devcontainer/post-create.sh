@@ -10,8 +10,7 @@ sudo apt-get update
 sudo apt-get install -y git-lfs bat bash-completion curl netcat-openbsd
 
 # --- 2. Install Tools Manually ---
-echo "Installing Starship, and LSD manually..."
-curl -sS https://starship.rs/install.sh | sh -s -- --yes
+echo "Installing LSD manually..."
 curl -Lo lsd.deb https://github.com/lsd-rs/lsd/releases/download/v1.1.2/lsd_1.1.2_amd64.deb
 sudo dpkg -i lsd.deb
 rm lsd.deb
@@ -36,7 +35,6 @@ if ! grep -q "# --- Shell Enhancements & Aliases ---" /home/vscode/.bashrc; then
   cat <<'EOF' >> /home/vscode/.bashrc
 
 # --- Shell Enhancements & Aliases ---
-eval "$(starship init bash)"
 if [ -f /etc/bash_completion ]; then . /etc/bash_completion; fi
 alias reload="source ~/.bashrc && echo 'Bash configuration reloaded!'"
 alias run-backend="cd /workspaces/naviera/backend && poetry run uvicorn app.main:app --host 0.0.0.0 --reload"
@@ -50,14 +48,31 @@ alias cat='batcat'
 # --- Naviera Workspace Local Replicator Shortcuts ---
 export-changes() {
     "/workspaces/naviera/scripts/bundle-local-changes.sh"
-    echo -e "\n\033[0;32m📋 Double-click and copy the entire block below, then paste it on the target machine:\033[0m\n"
-    command cat "/workspaces/naviera/apply-changes.sh"
-    rm "/workspaces/naviera/apply-changes.sh"
+    if [ -f "/workspaces/naviera/apply-changes.sh" ]; then
+        # Encode the replication script to base64 and output OSC 52 copy sequence
+        local b64_payload
+        b64_payload=\$(base64 -w 0 "/workspaces/naviera/apply-changes.sh" 2>/dev/null || base64 "/workspaces/naviera/apply-changes.sh")
+        printf "\033]52;c;%s\a" "\$b64_payload"
+        echo -e "\n\033[0;32m✅ Replication script has been AUTOMATICALLY copied to your clipboard! (via OSC 52)\033[0m"
+        echo -e "\033[0;32m   Go to the target machine and run 'import-changes' (then press Cmd+V and Ctrl+D).\033[0m\n"
+        rm "/workspaces/naviera/apply-changes.sh"
+    fi
 }
 
 import-changes() {
-    echo -e "\033[0;32m📋 Please paste the replication script content below and press Ctrl+D when finished:\033[0m\n"
+    echo -e "\033[0;33m🔄 Syncing dev branch with remote origin/master first...\033[0m"
+    git checkout master && git pull && git checkout dev && git reset --hard master
+    echo -e "\n\033[0;32m📋 Please paste the replication script content below and press Ctrl+D when finished:\033[0m\n"
     command cat | bash
+}
+
+refresh-workspace() {
+    echo -e "\033[0;33m🧹 Wiping all local modifications and untracked files...\033[0m"
+    git reset --hard HEAD
+    git clean -fd
+    echo -e "\n🔄 Pulling latest master and resetting dev..."
+    git checkout master && git pull && git checkout dev && git reset --hard master
+    echo -e "\n\033[0;32m✅ Workspace refreshed! Clean slate on branch dev.\033[0m"
 }
 EOF
 fi

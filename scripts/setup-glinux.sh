@@ -53,13 +53,6 @@ else
     echo -e "${YELLOW}⚠️ Non-Debian environment detected. Please ensure git-lfs, bat, and lsd are installed manually.${NC}"
 fi
 
-# Install Starship Prompt if not already present (install to user-local bin to bypass sudo prompt)
-if ! command -v starship &> /dev/null; then
-    echo -e "Installing Starship Prompt (Visual shell layout) to ~/.local/bin...${NC}"
-    curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
-else
-    echo -e "Starship prompt already installed. Skipping."
-fi
 
 # --- 2. Initialize Backend Environment ---
 echo -e "\n${GREEN}[2/5] Setting up Backend Dependencies (FastAPI)...${NC}"
@@ -147,7 +140,8 @@ else
 
 $shortcut_comment
 if [ -d "\$HOME/.local/bin" ]; then export PATH="\$HOME/.local/bin:\$PATH"; fi
-if command -v starship &> /dev/null; then eval "\$(starship init bash)"; fi
+
+
 alias run-backend="export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring && cd ${WORKSPACE_DIR}/backend && ${poetry_bin} run uvicorn app.main:app --host 0.0.0.0 --reload"
 alias run-frontend="export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && \. \"\$NVM_DIR/nvm.sh\" && nvm use 20 && cd ${WORKSPACE_DIR}/frontend && npm run dev"
 alias ls='lsd -l --icon=auto'
@@ -161,14 +155,31 @@ fi
 # --- Naviera Workspace Local Replicator Shortcuts ---
 export-changes() {
     "${WORKSPACE_DIR}/scripts/bundle-local-changes.sh"
-    echo -e "\n\033[0;32m📋 Double-click and copy the entire block below, then paste it on the target machine:\033[0m\n"
-    command cat "${WORKSPACE_DIR}/apply-changes.sh"
-    rm "${WORKSPACE_DIR}/apply-changes.sh"
+    if [ -f "${WORKSPACE_DIR}/apply-changes.sh" ]; then
+        # Encode the replication script to base64 and output OSC 52 copy sequence
+        local b64_payload
+        b64_payload=\$(base64 -w 0 "${WORKSPACE_DIR}/apply-changes.sh" 2>/dev/null || base64 "${WORKSPACE_DIR}/apply-changes.sh")
+        printf "\033]52;c;%s\a" "\$b64_payload"
+        echo -e "\n\033[0;32m✅ Replication script has been AUTOMATICALLY copied to your clipboard! (via OSC 52)\033[0m"
+        echo -e "\033[0;32m   Go to the target machine and run 'import-changes' (then press Cmd+V and Ctrl+D).\033[0m\n"
+        rm "${WORKSPACE_DIR}/apply-changes.sh"
+    fi
 }
 
 import-changes() {
-    echo -e "\033[0;32m📋 Please paste the replication script content below and press Ctrl+D when finished:\033[0m\n"
+    echo -e "\033[0;33m🔄 Syncing dev branch with remote origin/master first...\033[0m"
+    git checkout master && git pull && git checkout dev && git reset --hard master
+    echo -e "\n\033[0;32m📋 Please paste the replication script content below and press Ctrl+D when finished:\033[0m\n"
     command cat | bash
+}
+
+refresh-workspace() {
+    echo -e "\033[0;33m🧹 Wiping all local modifications and untracked files...\033[0m"
+    git reset --hard HEAD
+    git clean -fd
+    echo -e "\n🔄 Pulling latest master and resetting dev..."
+    git checkout master && git pull && git checkout dev && git reset --hard master
+    echo -e "\n\033[0;32m✅ Workspace refreshed! Clean slate on branch dev.\033[0m"
 }
 EOF
 
