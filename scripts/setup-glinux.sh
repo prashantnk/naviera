@@ -53,13 +53,6 @@ else
     echo -e "${YELLOW}⚠️ Non-Debian environment detected. Please ensure git-lfs, bat, and lsd are installed manually.${NC}"
 fi
 
-# Install Starship Prompt if not already present (install to user-local bin to bypass sudo prompt)
-if ! command -v starship &> /dev/null; then
-    echo -e "Installing Starship Prompt (Visual shell layout) to ~/.local/bin...${NC}"
-    curl -sS https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
-else
-    echo -e "Starship prompt already installed. Skipping."
-fi
 
 # --- 2. Initialize Backend Environment ---
 echo -e "\n${GREEN}[2/5] Setting up Backend Dependencies (FastAPI)...${NC}"
@@ -147,7 +140,8 @@ else
 
 $shortcut_comment
 if [ -d "\$HOME/.local/bin" ]; then export PATH="\$HOME/.local/bin:\$PATH"; fi
-if command -v starship &> /dev/null; then eval "\$(starship init bash)"; fi
+
+
 alias run-backend="export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring && cd ${WORKSPACE_DIR}/backend && ${poetry_bin} run uvicorn app.main:app --host 0.0.0.0 --reload"
 alias run-frontend="export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && \. \"\$NVM_DIR/nvm.sh\" && nvm use 20 && cd ${WORKSPACE_DIR}/frontend && npm run dev"
 alias ls='lsd -l --icon=auto'

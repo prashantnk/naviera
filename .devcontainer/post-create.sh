@@ -10,8 +10,7 @@ sudo apt-get update
 sudo apt-get install -y git-lfs bat bash-completion curl netcat-openbsd
 
 # --- 2. Install Tools Manually ---
-echo "Installing Starship, and LSD manually..."
-curl -sS https://starship.rs/install.sh | sh -s -- --yes
+echo "Installing LSD manually..."
 curl -Lo lsd.deb https://github.com/lsd-rs/lsd/releases/download/v1.1.2/lsd_1.1.2_amd64.deb
 sudo dpkg -i lsd.deb
 rm lsd.deb
@@ -36,7 +35,6 @@ if ! grep -q "# --- Shell Enhancements & Aliases ---" /home/vscode/.bashrc; then
   cat <<'EOF' >> /home/vscode/.bashrc
 
 # --- Shell Enhancements & Aliases ---
-eval "$(starship init bash)"
 if [ -f /etc/bash_completion ]; then . /etc/bash_completion; fi
 alias reload="source ~/.bashrc && echo 'Bash configuration reloaded!'"
 alias run-backend="cd /workspaces/naviera/backend && poetry run uvicorn app.main:app --host 0.0.0.0 --reload"
