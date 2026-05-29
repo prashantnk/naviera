@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # The database URL, which Pydantic will automatically load from the .env file
     DATABASE_URL: str
 
+    ALEMBIC_DATABASE_URL: str
+
     # New setting to control SQL query logging
     # It's a boolean that defaults to False if not set in the .env file
     DB_ECHO_LOG: bool = False
