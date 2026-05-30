@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
+  "python.defaultInterpreterPath": "backend/.venv/bin/python",
   "workbench.colorTheme": "Atom One Dark",
   "editor.formatOnSave": true,
   "editor.wordWrap": "on",

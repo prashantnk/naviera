@@ -106,7 +106,7 @@ class PickupCreate(SQLModel):
 
     order_reference_id: str
     shipment_type: ShipmentType = ShipmentType.FORWARD
-    service_type: ServiceType = ServiceType.SURFACE
+    service_type: ServiceType = ServiceType.SURFACE_ROAD
     requested_pickup_date: date
 
     product_category: Optional[str] = None

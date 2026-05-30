@@ -46,7 +46,7 @@ def generate_dummy_payload():
     return {
         "order_reference_id": f"ORD-{random_id}",
         "shipment_type": "FORWARD",
-        "service_type": "SURFACE",
+        "service_type": "SURFACE_ROAD",
         "requested_pickup_date": str(date.today() + timedelta(days=1)),  # Tomorrow
         "product_category": "Electronics",
         "shipment_description": "Laptop and Accessories",

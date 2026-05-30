@@ -20,8 +20,9 @@ class ShipmentType(str, Enum):
 
 
 class ServiceType(str, Enum):
-    SURFACE = "SURFACE"
-    EXPRESS = "EXPRESS"
+    SURFACE_ROAD = "SURFACE_ROAD"
+    SURFACE_TRAIN = "SURFACE_TRAIN"
+    AIR = "AIR"
 
 
 class PaymentMode(str, Enum):
@@ -183,7 +184,7 @@ class PickupRequest(SQLModel, table=True):
 
     # Shipment Overview (From Screenshot)
     shipment_type: ShipmentType = Field(default=ShipmentType.FORWARD)
-    service_type: ServiceType = Field(default=ServiceType.SURFACE)
+    service_type: ServiceType = Field(default=ServiceType.SURFACE_ROAD)
     status: PickupStatus = Field(default=PickupStatus.DRAFT)
 
     latest_status_comment: Optional[str] = Field(default=None)

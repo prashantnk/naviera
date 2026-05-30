@@ -38,12 +38,16 @@ class PricingEngine:
 
         # 3. Apply Service Type Multipliers
         service_surcharge = 0.0
-        estimated_days = 5  # Default surface delivery
+        estimated_days = 5  # Default surface road delivery
 
-        if request.service_type == ServiceType.EXPRESS:
-            # Express costs 50% more and delivers in 2 days
-            service_surcharge = base_charge * 0.5
-            estimated_days = 2
+        if request.service_type == ServiceType.SURFACE_TRAIN:
+            # Rail logistics has a minor surcharge but is faster than road
+            service_surcharge = base_charge * 0.15
+            estimated_days = 3
+        elif request.service_type == ServiceType.AIR:
+            # Air freight delivers in 1 day with a 60% premium
+            service_surcharge = base_charge * 0.60
+            estimated_days = 1
 
         # 4. Calculate Taxes & Total
         subtotal = base_charge + service_surcharge

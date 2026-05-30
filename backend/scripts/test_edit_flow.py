@@ -34,7 +34,7 @@ def test_edit_flow():
         create_payload = {
             "order_reference_id": f"TEST-{str(uuid.uuid4())[:4]}",
             "shipment_type": "FORWARD",
-            "service_type": "SURFACE",
+            "service_type": "SURFACE_ROAD",
             "requested_pickup_date": str(date.today()),
             "new_pickup_address": {
                 "name": "Warehouse A",
@@ -63,7 +63,7 @@ def test_edit_flow():
             ],
         }
         res = client.post(
-            f"{settings.API_V1_STR}/shipments/", json=create_payload, headers=headers
+            f"{settings.API_V1_STR}/shipments", json=create_payload, headers=headers
         )
         if res.status_code != 201:
             print(f"❌ Creation Failed: {res.text}")

@@ -16,6 +16,7 @@ import {
   Repeat,
   Truck,
   Zap,
+  Train,
 } from "lucide-react"; // 🔥 Imported ArrowUpDown
 
 const getStatusColor = (status: PickupStatus) => {
@@ -94,18 +95,23 @@ export const columns: ColumnDef<PickupRead>[] = [
     cell: ({ row }) => {
       const service = row.original.service_type;
       const type = row.original.shipment_type;
-      const isExpress = service === "EXPRESS";
       const isReverse = type === "REVERSE";
+
+      const renderServiceIcon = () => {
+        if (service === "AIR") {
+          return <Zap className="h-3.5 w-3.5 text-amber-500" />;
+        }
+        if (service === "SURFACE_TRAIN") {
+          return <Train className="h-3.5 w-3.5 text-indigo-600" />;
+        }
+        return <Truck className="h-3.5 w-3.5 text-slate-400" />;
+      };
 
       return (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            {isExpress ? (
-              <Zap className="h-3.5 w-3.5 text-amber-500" />
-            ) : (
-              <Truck className="h-3.5 w-3.5 text-slate-400" />
-            )}{" "}
-            {service}
+            {renderServiceIcon()}
+            {service.replace("_", " ")}
           </div>
           <div
             className={cn(
