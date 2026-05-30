@@ -194,18 +194,20 @@ class ShipmentRepository:
 
         # 2. Sync Packages
         for pkg in packages_to_add:
-            pkg.pickup_id = shipment.id
-            self.session.add(pkg)
+            shipment.packages.append(pkg)
 
         for pkg in packages_to_delete:
+            if pkg in shipment.packages:
+                shipment.packages.remove(pkg)
             await self.session.delete(pkg)
 
         # 3. Sync Documents
         for doc in documents_to_add:
-            doc.pickup_id = shipment.id
-            self.session.add(doc)
+            shipment.documents.append(doc)
 
         for doc in documents_to_delete:
+            if doc in shipment.documents:
+                shipment.documents.remove(doc)
             await self.session.delete(doc)
 
         # 4. Save Shipment Header (Updates existing fields)

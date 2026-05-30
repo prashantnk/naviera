@@ -99,7 +99,7 @@ export default function CreateShipmentWizard() {
       order_reference_id: "",
       requested_pickup_date: "",
       // 🔥 CRITICAL FIX 1: Explicitly defining defaults so the UI never starts blank
-      service_type: ServiceType.SURFACE,
+      service_type: ServiceType.SURFACE_ROAD,
       shipment_type: ShipmentType.FORWARD,
       product_category: "",
       shipment_description: "",
@@ -155,7 +155,7 @@ export default function CreateShipmentWizard() {
             mergedValues.shipment_type = ShipmentType.FORWARD;
           }
           if (!Object.values(ServiceType).includes(mergedValues.service_type)) {
-            mergedValues.service_type = ServiceType.SURFACE;
+            mergedValues.service_type = ServiceType.SURFACE_ROAD;
           }
           if (
             !Object.values(PaymentMode).includes(
@@ -445,11 +445,14 @@ export default function CreateShipmentWizard() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value={ServiceType.SURFACE}>
-                              Surface Cargo
+                            <SelectItem value={ServiceType.SURFACE_ROAD}>
+                              Surface Road (Truck)
                             </SelectItem>
-                            <SelectItem value={ServiceType.EXPRESS}>
-                              Air Express
+                            <SelectItem value={ServiceType.SURFACE_TRAIN}>
+                              Surface Train (Rail)
+                            </SelectItem>
+                            <SelectItem value={ServiceType.AIR}>
+                              Air Cargo (Flight)
                             </SelectItem>
                           </SelectContent>
                         </Select>

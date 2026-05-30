@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export enum ServiceType {
-    SURFACE = 'SURFACE',
-    EXPRESS = 'EXPRESS',
+    SURFACE_ROAD = 'SURFACE_ROAD',
+    SURFACE_TRAIN = 'SURFACE_TRAIN',
+    AIR = 'AIR',
 }

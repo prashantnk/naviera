@@ -33,7 +33,7 @@ def test_read_flow():
         create_payload = {
             "order_reference_id": f"READ-TEST-{str(uuid.uuid4())[:4]}",
             "shipment_type": "FORWARD",
-            "service_type": "EXPRESS",
+            "service_type": "AIR",
             "requested_pickup_date": str(date.today()),
             "new_pickup_address": {
                 "name": "Warehouse Read",
@@ -54,7 +54,7 @@ def test_read_flow():
             "packages": [{"length": 10, "breadth": 10, "height": 10, "weight": 1.0}],
         }
         res = client.post(
-            f"{settings.API_V1_STR}/shipments/", json=create_payload, headers=headers
+            f"{settings.API_V1_STR}/shipments", json=create_payload, headers=headers
         )
         if res.status_code != 201:
             print(f"❌ Setup Failed: {res.text}")
@@ -125,7 +125,7 @@ def test_read_flow():
         print("\n📋 5. Testing List Shipments (GET /shipments/)...")
         # Request Page 1 with size 5
         res = client.get(
-            f"{settings.API_V1_STR}/shipments/?page=1&size=5", headers=headers
+            f"{settings.API_V1_STR}/shipments?page=1&size=5", headers=headers
         )
 
         if res.status_code == 200:

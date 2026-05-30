@@ -33,7 +33,7 @@ def test_full_flow():
         create_payload = {
             "order_reference_id": f"VAL-TEST-{str(uuid.uuid4())[:4]}",
             "shipment_type": "FORWARD",
-            "service_type": "EXPRESS",
+            "service_type": "AIR",
             "requested_pickup_date": str(date.today()),
             "new_pickup_address": {
                 "name": "Warehouse Val",
@@ -54,7 +54,7 @@ def test_full_flow():
             "packages": [{"length": 10, "breadth": 10, "height": 10, "weight": 1.0}],
         }
         res = client.post(
-            f"{settings.API_V1_STR}/shipments/", json=create_payload, headers=headers
+            f"{settings.API_V1_STR}/shipments", json=create_payload, headers=headers
         )
         if res.status_code != 201:
             print(f"❌ Setup Failed: {res.text}")

@@ -19,3 +19,6 @@ __pypackages__/
 # OS
 .DS_Store
 Thumbs.db
+
+# LLM Resource documents
+llm_resources/

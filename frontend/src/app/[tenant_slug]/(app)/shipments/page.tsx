@@ -36,7 +36,7 @@ export default function ShipmentsPage() {
   // 🔥 NEW: Explicit Faceted Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("ALL");
-  const [serviceFilter, setServiceFilter] = useState("ALL"); // "ALL", "EXPRESS", "SURFACE"
+  const [serviceFilter, setServiceFilter] = useState("ALL"); // "ALL", "SURFACE_ROAD", "SURFACE_TRAIN", "AIR"
   const [statusFilter, setStatusFilter] = useState("ALL"); // "ALL", "OPEN", "IN_TRANSIT", etc.
 
   useEffect(() => {
@@ -228,8 +228,9 @@ export default function ShipmentsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All Services</SelectItem>
-                <SelectItem value="EXPRESS">Express</SelectItem>
-                <SelectItem value="SURFACE">Surface</SelectItem>
+                <SelectItem value="SURFACE_ROAD">Surface Road (Truck)</SelectItem>
+                <SelectItem value="SURFACE_TRAIN">Surface Train (Rail)</SelectItem>
+                <SelectItem value="AIR">Air Cargo (Flight)</SelectItem>
               </SelectContent>
             </Select>
 

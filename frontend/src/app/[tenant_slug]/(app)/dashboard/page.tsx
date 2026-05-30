@@ -101,11 +101,14 @@ export default function TenantDashboard() {
   const recentShipments = shipments.slice(0, 5);
 
   // Quick stats for the new card
-  const expressCount = shipments.filter(
-    (s) => s.service_type === "EXPRESS"
+  const roadCount = shipments.filter(
+    (s) => s.service_type === "SURFACE_ROAD"
   ).length;
-  const surfaceCount = shipments.filter(
-    (s) => s.service_type === "SURFACE"
+  const trainCount = shipments.filter(
+    (s) => s.service_type === "SURFACE_TRAIN"
+  ).length;
+  const airCount = shipments.filter(
+    (s) => s.service_type === "AIR"
   ).length;
 
   return (
@@ -308,31 +311,52 @@ export default function TenantDashboard() {
               </p>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
+              {/* Surface Road */}
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-600">
-                  Surface Deliveries
+                  Surface Road (Truck)
                 </span>
-                <span className="font-bold text-slate-900">{surfaceCount}</span>
+                <span className="font-bold text-slate-900">{roadCount}</span>
               </div>
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                {/* Fixed Math: Divide by shipments.length, not totalShipments! */}
                 <div
                   className="bg-slate-800 h-full"
                   style={{
                     width: `${
                       shipments.length > 0
-                        ? (surfaceCount / shipments.length) * 100
+                        ? (roadCount / shipments.length) * 100
                         : 0
                     }%`,
                   }}
                 />
               </div>
 
+              {/* Surface Train */}
               <div className="flex items-center justify-between pt-2">
                 <span className="text-sm font-medium text-slate-600">
-                  Express Air
+                  Surface Train (Rail)
                 </span>
-                <span className="font-bold text-slate-900">{expressCount}</span>
+                <span className="font-bold text-slate-900">{trainCount}</span>
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-indigo-600 h-full"
+                  style={{
+                    width: `${
+                      shipments.length > 0
+                        ? (trainCount / shipments.length) * 100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+
+              {/* Express Air */}
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-sm font-medium text-slate-600">
+                  Air Cargo (Flight)
+                </span>
+                <span className="font-bold text-slate-900">{airCount}</span>
               </div>
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                 <div
@@ -340,7 +364,7 @@ export default function TenantDashboard() {
                   style={{
                     width: `${
                       shipments.length > 0
-                        ? (expressCount / shipments.length) * 100
+                        ? (airCount / shipments.length) * 100
                         : 0
                     }%`,
                   }}
