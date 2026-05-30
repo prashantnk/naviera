@@ -48,6 +48,7 @@ def generate_dummy_payload():
         "shipment_type": "FORWARD",
         "service_type": "SURFACE_ROAD",
         "requested_pickup_date": str(date.today() + timedelta(days=1)),  # Tomorrow
+        "pickup_time_slot": "06:00 - 10:00",
         "product_category": "Electronics",
         "shipment_description": "Laptop and Accessories",
         # --- SCENARIO: Creating NEW Addresses (Snapshotting) ---

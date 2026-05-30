@@ -3,6 +3,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import List, Optional
 
+from sqlalchemy import Enum as sa_Enum
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
 # --- 1. Enums (The Rules) ---
@@ -58,6 +59,13 @@ class ActivityType(str, Enum):
     INFO_UPDATE = "INFO_UPDATE"  # Address, Package details changed
     COMMENT = "COMMENT"  # Just a note, no data change
     EXCEPTION = "EXCEPTION"  # Delivery Attempt Failed, etc.
+
+
+class PickupTimeSlot(str, Enum):
+    MORNING_06_10 = "06:00 - 10:00"
+    MIDDAY_10_14 = "10:00 - 14:00"
+    AFTERNOON_14_18 = "14:00 - 18:00"
+    EVENING_18_22 = "18:00 - 22:00"
 
 
 # --- 2. Modular Tables ---
@@ -179,7 +187,7 @@ class PickupRequest(SQLModel, table=True):
     created_by_user_id: uuid.UUID = Field(nullable=False)
 
     # Reference
-    order_reference_id: str = Field(index=True, max_length=100)
+    order_reference_id: Optional[str] = Field(default=None, index=True, max_length=100)
     tracking_id: Optional[str] = Field(default=None, index=True)
 
     # Shipment Overview (From Screenshot)
@@ -188,6 +196,13 @@ class PickupRequest(SQLModel, table=True):
     status: PickupStatus = Field(default=PickupStatus.DRAFT)
 
     latest_status_comment: Optional[str] = Field(default=None)
+    pickup_time_slot: Optional[PickupTimeSlot] = Field(
+        default=None,
+        sa_column=Column(
+            sa_Enum(PickupTimeSlot, name="pickuptimeslot"),
+            nullable=True,
+        ),
+    )
 
     # The "Shipment Details" section from UI
     product_category: Optional[str] = Field(

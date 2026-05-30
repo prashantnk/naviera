@@ -35,7 +35,7 @@ import * as z from "zod";
 
 // 1. The Expanded Edit Schema
 const editShipmentSchema = z.object({
-  order_reference_id: z.string().min(3, "Order Reference is required"),
+  order_reference_id: z.string().optional().or(z.literal("")),
   requested_pickup_date: z.string().min(1, "Pickup date is required"),
 
   // Cargo & Value
@@ -114,7 +114,7 @@ export default function EditShipmentPage() {
         setShipmentType(data.shipment_type);
 
         form.reset({
-          order_reference_id: data.order_reference_id,
+          order_reference_id: data.order_reference_id || "",
           requested_pickup_date: data.requested_pickup_date,
           product_category: data.product_category || "",
           shipment_description: data.shipment_description || "",

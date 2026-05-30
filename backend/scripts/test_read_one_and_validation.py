@@ -35,6 +35,7 @@ def test_full_flow():
             "shipment_type": "FORWARD",
             "service_type": "AIR",
             "requested_pickup_date": str(date.today()),
+            "pickup_time_slot": "06:00 - 10:00",
             "new_pickup_address": {
                 "name": "Warehouse Val",
                 "phone": "9999999999",

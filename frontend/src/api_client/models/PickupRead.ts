@@ -7,6 +7,7 @@ import type { PackageRead } from './PackageRead';
 import type { PaymentDetailsRead } from './PaymentDetailsRead';
 import type { PickupDocumentRead } from './PickupDocumentRead';
 import type { PickupStatus } from './PickupStatus';
+import type { PickupTimeSlot } from './PickupTimeSlot';
 import type { ServiceType } from './ServiceType';
 import type { ShipmentType } from './ShipmentType';
 /**
@@ -17,10 +18,11 @@ export type PickupRead = {
     tracking_id: (string | null);
     status: PickupStatus;
     latest_status_comment?: (string | null);
-    order_reference_id: string;
+    order_reference_id?: (string | null);
     shipment_type: ShipmentType;
     service_type: ServiceType;
     requested_pickup_date: string;
+    pickup_time_slot?: (PickupTimeSlot | null);
     product_category?: (string | null);
     shipment_description?: (string | null);
     reason_for_return?: (string | null);
