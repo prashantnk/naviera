@@ -177,9 +177,14 @@ refresh-workspace() {
     echo -e "\033[0;33m🧹 Wiping all local modifications and untracked files...\033[0m"
     git reset --hard HEAD
     git clean -fd
-    echo -e "\n🔄 Pulling latest master and resetting dev..."
-    git checkout master && git pull && git checkout dev && git reset --hard master
-    echo -e "\n\033[0;32m✅ Workspace refreshed! Clean slate on branch dev.\033[0m"
+    echo -e "\n🔄 Switching to master and pulling latest changes..."
+    git checkout master
+    git pull
+    echo -e "\n🗑️ Deleting old dev branch..."
+    git branch -D dev || true
+    echo -e "\n🌱 Re-creating dev branch from master..."
+    git checkout -b dev
+    echo -e "\n\033[0;32m✅ Workspace refreshed! Fresh dev branch created from master.\033[0m"
 }
 EOF
 
