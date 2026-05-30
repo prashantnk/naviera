@@ -7,6 +7,7 @@ import {
   AddressType,
   DocumentType,
   PaymentMode,
+  PickupTimeSlot,
   RateCalculationResponse,
   ServiceType,
   ShipmentsService,
@@ -39,6 +40,7 @@ import {
   shipmentFormSchema,
   ShipmentFormValues,
 } from "@/lib/validations/shipment";
+import { formatTimeSlot } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ArrowLeft,
@@ -98,6 +100,7 @@ export default function CreateShipmentWizard() {
     defaultValues: {
       order_reference_id: "",
       requested_pickup_date: "",
+      pickup_time_slot: undefined,
       // 🔥 CRITICAL FIX 1: Explicitly defining defaults so the UI never starts blank
       service_type: ServiceType.SURFACE_ROAD,
       shipment_type: ShipmentType.FORWARD,
@@ -236,6 +239,7 @@ export default function CreateShipmentWizard() {
       fieldsToValidate = [
         "order_reference_id",
         "requested_pickup_date",
+        "pickup_time_slot",
         "shipment_type",
         "reason_for_return",
         "service_type",
@@ -460,13 +464,13 @@ export default function CreateShipmentWizard() {
                     )}
                   />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <FormField
                     control={form.control}
                     name="order_reference_id"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Channel Order ID / Ref</FormLabel>
+                        <FormLabel>Order ID / Ref (Optional)</FormLabel>
                         <FormControl>
                           <Input placeholder="ORD-123" {...field} />
                         </FormControl>
@@ -483,6 +487,33 @@ export default function CreateShipmentWizard() {
                         <FormControl>
                           <Input type="date" {...field} />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="pickup_time_slot"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Preferred Pickup Window</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="bg-white">
+                              <SelectValue placeholder="Select time slot" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {Object.values(PickupTimeSlot).map((slot) => (
+                              <SelectItem key={slot} value={slot}>
+                                {formatTimeSlot(slot)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

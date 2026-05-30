@@ -2,6 +2,7 @@
 import {
   DocumentType,
   PaymentMode,
+  PickupTimeSlot,
   ServiceType,
   ShipmentType,
 } from "@/api_client";
@@ -48,8 +49,11 @@ const documentSchema = z.object({
 
 export const shipmentFormSchema = z
   .object({
-    order_reference_id: z.string().min(3, "Order Reference is required"),
+    order_reference_id: z.string().optional().or(z.literal("")),
     requested_pickup_date: z.string().min(1, "Please select a pickup date"),
+    pickup_time_slot: z.nativeEnum(PickupTimeSlot, {
+      message: "Please select a pickup time slot",
+    }),
 
     // We keep nativeEnum, but we will strictly control the default values in the page.tsx file
     service_type: z.nativeEnum(ServiceType),

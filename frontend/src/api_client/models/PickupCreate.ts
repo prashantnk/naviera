@@ -6,16 +6,18 @@ import type { AddressCreate } from './AddressCreate';
 import type { PackageCreate } from './PackageCreate';
 import type { PaymentDetailsCreate } from './PaymentDetailsCreate';
 import type { PickupDocumentCreate } from './PickupDocumentCreate';
+import type { PickupTimeSlot } from './PickupTimeSlot';
 import type { ServiceType } from './ServiceType';
 import type { ShipmentType } from './ShipmentType';
 /**
  * The Master Input for Creating a Shipment.
  */
 export type PickupCreate = {
-    order_reference_id: string;
+    order_reference_id?: (string | null);
     shipment_type?: ShipmentType;
     service_type?: ServiceType;
     requested_pickup_date: string;
+    pickup_time_slot: PickupTimeSlot;
     product_category?: (string | null);
     shipment_description?: (string | null);
     reason_for_return?: (string | null);

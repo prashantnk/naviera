@@ -19,19 +19,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { downloadShippingLabel } from "@/lib/api";
 import { getSupabaseClient } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, formatTimeSlot } from "@/lib/utils";
 import {
   ArrowLeft,
-  ArrowRight,
   Box,
   Calendar,
+  Copy,
   CreditCard,
   FileText,
   Info,
   Loader2,
   MapPin,
   MessageSquare,
-  PackageSearch,
   Pencil,
   Printer,
   ShieldCheck,
@@ -72,6 +71,12 @@ export default function ShipmentDetailsPage() {
   const [timeline, setTimeline] = useState<ShipmentActivityRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPrinting, setIsPrinting] = useState(false);
+
+  const handleCopyTrackingId = () => {
+    if (!shipment?.tracking_id) return;
+    navigator.clipboard.writeText(shipment.tracking_id);
+    toast.success("Tracking ID copied to clipboard!");
+  };
 
   const fetchDetails = async () => {
     if (!shipmentId) return;
@@ -148,7 +153,22 @@ export default function ShipmentDetailsPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-              {shipment.tracking_id || "Pending Tracking ID"}
+              <span
+                onClick={handleCopyTrackingId}
+                className="cursor-pointer hover:opacity-80 active:scale-95 transition-all flex items-center gap-2 group select-none"
+                title="Click to copy Tracking ID"
+              >
+                {shipment.tracking_id || "Pending Tracking ID"}
+                {shipment.tracking_id && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] py-0.5 px-2 text-slate-500 bg-slate-100 border border-slate-200 font-semibold flex items-center gap-1 shadow-none group-hover:bg-primary/10 group-hover:text-primary group-hover:border-primary/20"
+                  >
+                    <Copy className="h-3 w-3 text-slate-400 group-hover:text-primary" />
+                    Copy
+                  </Badge>
+                )}
+              </span>
               <Badge
                 variant="outline"
                 className={cn(
@@ -160,7 +180,7 @@ export default function ShipmentDetailsPage() {
               </Badge>
             </h1>
             <p className="text-slate-500 text-sm mt-1">
-              Ref: {shipment.order_reference_id}
+              Ref: {shipment.order_reference_id || "N/A"}
             </p>
           </div>
         </div>
@@ -377,6 +397,14 @@ export default function ShipmentDetailsPage() {
                   ).toLocaleDateString()}
                 </span>
               </div>
+              {shipment.pickup_time_slot && (
+                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                  <span className="text-slate-500 font-medium">Pickup Window</span>
+                  <span className="font-bold text-slate-900">
+                    {formatTimeSlot(shipment.pickup_time_slot)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center border-b border-slate-50 pb-3">
                 <span className="text-slate-500 font-medium">Created On</span>
                 <span className="font-bold text-slate-900">

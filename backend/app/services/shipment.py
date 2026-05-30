@@ -321,6 +321,7 @@ class ShipmentService:
             shipment_type=payload.shipment_type,
             service_type=payload.service_type,
             requested_pickup_date=payload.requested_pickup_date,
+            pickup_time_slot=payload.pickup_time_slot,
             product_category=payload.product_category,
             shipment_description=payload.shipment_description,
             reason_for_return=payload.reason_for_return,
@@ -369,6 +370,8 @@ class ShipmentService:
         fields_to_check = [
             "status",
             "requested_pickup_date",
+            "pickup_time_slot",
+            "order_reference_id",
             "product_category",
             "shipment_description",
             "reason_for_return",
@@ -613,12 +616,14 @@ class ShipmentService:
             current.status = payload.status
         if payload.requested_pickup_date:
             current.requested_pickup_date = payload.requested_pickup_date
+        if payload.pickup_time_slot:
+            current.pickup_time_slot = payload.pickup_time_slot
 
         # Denormalization: Update latest comment on header if status changed
         if payload.comment and payload.status:
             current.latest_status_comment = payload.comment
 
-        if payload.order_reference_id:
+        if payload.order_reference_id is not None:
             current.order_reference_id = payload.order_reference_id
 
         # Sync Financials / Payment Details

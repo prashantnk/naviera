@@ -27,6 +27,7 @@ export type { PickupDocumentRead } from './models/PickupDocumentRead';
 export type { PickupDocumentUpdate } from './models/PickupDocumentUpdate';
 export type { PickupRead } from './models/PickupRead';
 export { PickupStatus } from './models/PickupStatus';
+export { PickupTimeSlot } from './models/PickupTimeSlot';
 export type { PickupUpdate } from './models/PickupUpdate';
 export type { PublicActivityRead } from './models/PublicActivityRead';
 export type { PublicTrackingRead } from './models/PublicTrackingRead';

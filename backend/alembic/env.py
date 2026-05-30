@@ -57,13 +57,18 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    ini_section = config.get_section(config.config_ini_section)
-    if ini_section is None:
-        raise ValueError("Alembic config section not found")
-    connectable = async_engine_from_config(
-        ini_section,
-        prefix="sqlalchemy.",
+    import uuid
+    from sqlalchemy.ext.asyncio import create_async_engine
+    url = config.get_main_option("sqlalchemy.url")
+    if not url:
+        raise ValueError("Alembic database URL not set")
+    connectable = create_async_engine(
+        url,
         poolclass=pool.NullPool,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4().hex}__",
+        },
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

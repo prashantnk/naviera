@@ -12,6 +12,7 @@ from app.models.pickups import (
     DocumentType,
     PaymentMode,
     PickupStatus,
+    PickupTimeSlot,
     ServiceType,
     ShipmentType,
 )
@@ -104,10 +105,11 @@ class PickupCreate(SQLModel):
     The Master Input for Creating a Shipment.
     """
 
-    order_reference_id: str
+    order_reference_id: Optional[str] = None
     shipment_type: ShipmentType = ShipmentType.FORWARD
     service_type: ServiceType = ServiceType.SURFACE_ROAD
     requested_pickup_date: date
+    pickup_time_slot: PickupTimeSlot
 
     product_category: Optional[str] = None
     shipment_description: Optional[str] = None
@@ -199,10 +201,11 @@ class PickupRead(SQLModel):
     tracking_id: Optional[str]
     status: PickupStatus
     latest_status_comment: Optional[str] = None
-    order_reference_id: str
+    order_reference_id: Optional[str] = None
     shipment_type: ShipmentType
     service_type: ServiceType
     requested_pickup_date: date
+    pickup_time_slot: Optional[PickupTimeSlot] = None
 
     product_category: Optional[str] = None
     shipment_description: Optional[str] = None
@@ -256,6 +259,7 @@ class PickupUpdate(SQLModel):
     # --- 2. Scheduling & Reference ---
     requested_pickup_date: Optional[date] = None
     order_reference_id: Optional[str] = None
+    pickup_time_slot: Optional[PickupTimeSlot] = None
 
     # --- 3. Cargo Details ---
     product_category: Optional[str] = None

@@ -24,8 +24,13 @@ You must strictly follow this step-by-step incremental delivery loop:
 1. **Analyze (Rigorous Investigation):** Before writing any proposal or plan, perform a rigorous, deep analysis of the codebase. Search thoroughly for all occurrences, dependencies, side-effects, and integrations across both the backend (models, endpoints, services, migrations, scripts) and frontend (components, grids, pages, styles, config) to gain absolute, crystal-clear context. Always check project READMEs, configurations, and the `scripts/` directory (e.g. `scripts/setup-glinux` or setup scripts) to discover custom shell parameters, commands, and ports.
 2. **Propose Plan & Test Strategy:** Create a detailed, step-by-step **Implementation Plan** (write to `implementation_plan.md` inside the brain's conversation directory for complex tasks). **Mandatory Request:** In your proposal response, you must explicitly ask the user if they also want a rigorous, visual UI-journey and API-coverage **Testing Plan** generated to assure high-confidence delivery.
 3. **STOP AND ASK FOR APPROVAL:** You must ask the user: *"Does this implementation plan look good? Please approve so I can begin coding."*
-4. **Implement Incrementally:** Once approved, write code in small, logical, incremental steps. Highlight additions (`🟢 ADD`) and deletions (`🔴 DELETE`). Offer complete files for smaller files/major refactors, and localized diffs for larger files to save token space.
-5. **Teach & Explain:** Accompany each implementation step with structural explanations, underlying mechanics, and design choices.
+4. **DATABASE MIGRATION APPROVAL:** BEFORE executing any Alembic migration or schema-altering command (e.g., `alembic upgrade`, `alembic revision`), you MUST explicitly explain to the user:
+   * Exactly what changes are being made to the database schema.
+   * Why these changes are required for the feature.
+   * Any potential side effects or pooling constraints.
+   You must obtain the user's explicit, separate approval to proceed with the migration.
+5. **Implement Incrementally:** Once approved, write code in small, logical, incremental steps. Highlight additions (`🟢 ADD`) and deletions (`🔴 DELETE`). Offer complete files for smaller files/major refactors, and localized diffs for larger files to save token space.
+6. **Teach & Explain:** Accompany each implementation step with structural explanations, underlying mechanics, and design choices.
 
 ---
 
