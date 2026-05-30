@@ -69,10 +69,10 @@
                 if [ -f "~/naviera/apply-changes.sh" ]; then
                     # Encode the replication script to base64 and output OSC 52 copy sequence
                     local b64_payload
-                    b64_payload=\$(base64 -w 0 "~/naviera/apply-changes.sh" 2>/dev/null || base64 "~/naviera/apply-changes.sh")
-                    printf "\033]52;c;%s\a" "\$b64_payload"
+                    b64_payload=$(base64 -w 0 "~/naviera/apply-changes.sh" 2>/dev/null || base64 "~/naviera/apply-changes.sh")
+                    printf "\033]52;c;%s\a" "$b64_payload"
                     echo -e "\n\033[0;32m✅ Replication script has been AUTOMATICALLY copied to your clipboard! (via OSC 52)\033[0m"
-                    echo -e "\033[0;32m   Go to the target machine and run 'import-changes' (then press Cmd+V and Ctrl+D).\033[0m\n"
+                    echo -e "\n\033[0;32m   Go to the target machine and run 'import-changes' (then press Cmd+V and Ctrl+D).\033[0m\n"
                     rm "~/naviera/apply-changes.sh"
                 fi
             }
@@ -88,9 +88,14 @@
                 echo -e "\033[0;33m🧹 Wiping all local modifications and untracked files...\033[0m"
                 git reset --hard HEAD
                 git clean -fd
-                echo -e "\n🔄 Pulling latest master and resetting dev..."
-                git checkout master && git pull && git checkout dev && git reset --hard master
-                echo -e "\n\033[0;32m✅ Workspace refreshed! Clean slate on branch dev.\033[0m"
+                echo -e "\n🔄 Switching to master and pulling latest changes..."
+                git checkout master
+                git pull
+                echo -e "\n🗑️ Deleting old dev branch..."
+                git branch -D dev || true
+                echo -e "\n🌱 Re-creating dev branch from master..."
+                git checkout -b dev
+                echo -e "\n\033[0;32m✅ Workspace refreshed! Fresh dev branch created from master.\033[0m"
             }
             EOF
           fi
