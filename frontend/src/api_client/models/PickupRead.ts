@@ -8,6 +8,7 @@ import type { PaymentDetailsRead } from './PaymentDetailsRead';
 import type { PickupDocumentRead } from './PickupDocumentRead';
 import type { PickupStatus } from './PickupStatus';
 import type { PickupTimeSlot } from './PickupTimeSlot';
+import type { ProductCategory } from './ProductCategory';
 import type { ServiceType } from './ServiceType';
 import type { ShipmentType } from './ShipmentType';
 /**
@@ -23,8 +24,8 @@ export type PickupRead = {
     service_type: ServiceType;
     requested_pickup_date: string;
     pickup_time_slot?: (PickupTimeSlot | null);
-    product_category?: (string | null);
-    shipment_description?: (string | null);
+    product_category: ProductCategory;
+    other_category_description?: (string | null);
     reason_for_return?: (string | null);
     created_by_user_id: string;
     creator_email?: (string | null);

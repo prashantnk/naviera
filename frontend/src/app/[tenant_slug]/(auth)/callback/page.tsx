@@ -53,9 +53,10 @@ function CallbackHandler() {
                 // 🔥 NEW: Push the user back to where they came from!
                 router.push(routeTo(nextUrl));
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Auth sync error:", err);
-                setError(err.message);
+                const errorObj = err as { message?: string };
+                setError(errorObj.message || "Failed to sync session.");
             }
         };
 

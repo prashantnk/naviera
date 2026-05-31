@@ -3,11 +3,17 @@
 
 import {
   AddressesService,
+  AddressCreate,
   AddressRead,
   AddressType,
+  ApiError,
   DocumentType,
+  PackageCreate,
   PaymentMode,
+  PickupCreate,
+  PickupDocumentCreate,
   PickupTimeSlot,
+  ProductCategory,
   RateCalculationResponse,
   ServiceType,
   ShipmentsService,
@@ -44,19 +50,16 @@ import { formatTimeSlot } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ArrowLeft,
-  ArrowRight,
   CheckCircle2,
   CloudUpload,
   FileText,
   Loader2,
-  Save,
-  UploadCloud,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { Path, Resolver, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 const STEPS = [
@@ -66,6 +69,17 @@ const STEPS = [
   { id: 3, name: "Packages & Docs" },
   { id: 4, name: "Review Booking" },
 ];
+
+export const CATEGORY_LABELS: Record<ProductCategory, string> = {
+  [ProductCategory.HOUSEHOLD_PERSONAL]: "Household / Personal",
+  [ProductCategory.VEHICLE]: "Vehicle (Automotive)",
+  [ProductCategory.DOCUMENTS]: "Documents / Letters",
+  [ProductCategory.HAZARDOUS]: "Hazardous Material (HAZMAT)",
+  [ProductCategory.COMMERCIAL]: "Commercial Goods / B2B",
+  [ProductCategory.ELECTRONICS]: "Electronics & Gadgets",
+  [ProductCategory.APPAREL]: "Apparel & Clothing",
+  [ProductCategory.OTHER]: "Other (Custom Category)",
+};
 
 export default function CreateShipmentWizard() {
   const { routeTo, tenantSlug } = useTenant();
@@ -94,8 +108,7 @@ export default function CreateShipmentWizard() {
   }, []);
 
   const form = useForm<ShipmentFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(shipmentFormSchema) as any,
+    resolver: zodResolver(shipmentFormSchema) as unknown as Resolver<ShipmentFormValues>,
     mode: "onChange",
     defaultValues: {
       order_reference_id: "",
@@ -104,8 +117,9 @@ export default function CreateShipmentWizard() {
       // 🔥 CRITICAL FIX 1: Explicitly defining defaults so the UI never starts blank
       service_type: ServiceType.SURFACE_ROAD,
       shipment_type: ShipmentType.FORWARD,
-      product_category: "",
-      shipment_description: "",
+      product_category: undefined as unknown as ProductCategory,
+      other_category_description: "",
+
       reason_for_return: "",
       payment_details: {
         payment_mode: PaymentMode.PREPAID, // 🔥 CRITICAL FIX 1
@@ -193,7 +207,7 @@ export default function CreateShipmentWizard() {
     );
 
     // Save when any form field changes
-    const subscription = form.watch((value) => {
+    const subscription = form.watch(() => {
       localStorage.setItem(
         DRAFT_KEY,
         JSON.stringify({ step: currentStep, values: form.getValues() })
@@ -226,15 +240,16 @@ export default function CreateShipmentWizard() {
         file_url: filePath,
       });
       toast.success("Document safely encrypted and uploaded");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to upload document");
+    } catch (error) {
+      const err = error as Error;
+      toast.error(err.message || "Failed to upload document");
     } finally {
       setIsUploading(false);
     }
   };
 
   const nextStep = async () => {
-    let fieldsToValidate: any[] = [];
+    let fieldsToValidate: Array<Path<ShipmentFormValues>> = [];
     if (currentStep === 0)
       fieldsToValidate = [
         "order_reference_id",
@@ -247,7 +262,6 @@ export default function CreateShipmentWizard() {
     if (currentStep === 1)
       fieldsToValidate = [
         "product_category",
-        "shipment_description",
         "payment_details",
       ];
     if (currentStep === 2)
@@ -305,20 +319,21 @@ export default function CreateShipmentWizard() {
         const quote = await ShipmentsService.calculateShippingRate({
           pickup_pincode: pPincode,
           delivery_pincode: dPincode,
-          packages: values.packages as any,
+          packages: values.packages as PackageCreate[],
           service_type: values.service_type,
         });
         setRateQuote(quote);
         setCurrentStep((prev) => prev + 1);
-      } catch (error: any) {
-        let msg = error.message || "Failed to calculate rates.";
-        if (error.body?.detail) {
-          if (Array.isArray(error.body.detail)) {
-            msg = error.body.detail
-              .map((err: any) => `${err.loc.at(-1)}: ${err.msg}`)
+      } catch (error) {
+        const apiError = error as ApiError;
+        let msg = apiError.message || "Failed to calculate rates.";
+        if (apiError.body?.detail) {
+          if (Array.isArray(apiError.body.detail)) {
+            msg = apiError.body.detail
+              .map((err: { loc: string[]; msg: string }) => `${err.loc.at(-1)}: ${err.msg}`)
               .join(" | ");
-          } else if (typeof error.body.detail === "string") {
-            msg = error.body.detail;
+          } else if (typeof apiError.body.detail === "string") {
+            msg = apiError.body.detail;
           }
         }
         toast.error(msg);
@@ -334,22 +349,45 @@ export default function CreateShipmentWizard() {
   const onSubmit = async (data: ShipmentFormValues) => {
     setIsSubmitting(true);
     try {
-      const payload: any = { ...data };
-      if (payload.pickup_address_id) delete payload.new_pickup_address;
-      if (payload.delivery_address_id) delete payload.new_delivery_address;
-      payload.pickup_address_id = payload.pickup_address_id || undefined;
-      payload.delivery_address_id = payload.delivery_address_id || undefined;
+      const payload: PickupCreate = {
+        order_reference_id: data.order_reference_id || undefined,
+        shipment_type: data.shipment_type,
+        service_type: data.service_type,
+        requested_pickup_date: data.requested_pickup_date,
+        pickup_time_slot: data.pickup_time_slot,
+        product_category: data.product_category,
+        other_category_description: data.other_category_description || undefined,
 
-      // 🔥 FIX: Secretly inject the calculated shipping amount into the payload!
-      if (!payload.payment_details) payload.payment_details = {};
-      payload.payment_details.amount = rateQuote?.total_amount || 0;
+        reason_for_return: data.reason_for_return || undefined,
+        pickup_address_id: data.pickup_address_id || undefined,
+        new_pickup_address: data.pickup_address_id
+          ? undefined
+          : (data.new_pickup_address as unknown as AddressCreate),
+        delivery_address_id: data.delivery_address_id || undefined,
+        new_delivery_address: data.delivery_address_id
+          ? undefined
+          : (data.new_delivery_address as unknown as AddressCreate),
+        packages: data.packages as PackageCreate[],
+        payment_details: data.payment_details
+          ? {
+              ...data.payment_details,
+              amount: rateQuote?.total_amount || 0,
+              hsn_code: data.payment_details.hsn_code || undefined,
+              invoice_number: data.payment_details.invoice_number || undefined,
+              invoice_date: data.payment_details.invoice_date || undefined,
+              eway_bill_number: data.payment_details.eway_bill_number || undefined,
+            }
+          : undefined,
+        documents: data.documents ? (data.documents as PickupDocumentCreate[]) : undefined,
+      };
 
       await ShipmentsService.createShipment(payload);
       localStorage.removeItem(DRAFT_KEY);
       toast.success("Shipment booked successfully!");
       router.push(routeTo("/shipments"));
-    } catch (error: any) {
-      toast.error(error.body?.detail || "Failed to create shipment.");
+    } catch (error) {
+      const apiError = error as ApiError;
+      toast.error(apiError.body?.detail || "Failed to create shipment.");
     } finally {
       setIsSubmitting(false);
     }
@@ -357,6 +395,7 @@ export default function CreateShipmentWizard() {
 
   const watchValue = form.watch("payment_details.declared_value");
   const isReverse = form.watch("shipment_type") === ShipmentType.REVERSE;
+  const productCategoryValue = form.watch("product_category");
 
   if (!isDraftLoaded) {
     return (
@@ -552,35 +591,48 @@ export default function CreateShipmentWizard() {
                     name="product_category"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Product Category (Optional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g. Electronics"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
+                        <FormLabel>Product Category <span className="text-red-500">*</span></FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="bg-white">
+                              <SelectValue placeholder="Select a category..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {Object.values(ProductCategory).map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {CATEGORY_LABELS[cat]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="shipment_description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description (Optional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g. 2 Laptops"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {productCategoryValue === ProductCategory.OTHER && (
+                    <FormField
+                      control={form.control}
+                      name="other_category_description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Custom Category Description <span className="text-red-500">*</span></FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g. Vintage Grandfather Clock"
+                              {...field}
+                              value={field.value || ""}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
                 </div>
 
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 space-y-6">

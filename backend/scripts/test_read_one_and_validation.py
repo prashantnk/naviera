@@ -36,6 +36,7 @@ def test_full_flow():
             "service_type": "AIR",
             "requested_pickup_date": str(date.today()),
             "pickup_time_slot": "06:00 - 10:00",
+            "product_category": "ELECTRONICS",
             "new_pickup_address": {
                 "name": "Warehouse Val",
                 "phone": "9999999999",
@@ -59,7 +60,7 @@ def test_full_flow():
         )
         if res.status_code != 201:
             print(f"❌ Setup Failed: {res.text}")
-            return
+            assert False, f"Setup failed: {res.text}"
 
         shipment_id = res.json()["id"]
         print(f"   -> ID: {shipment_id}")
@@ -77,6 +78,7 @@ def test_full_flow():
                 print("   -> Can see sensitive internal data (Payment/Address IDs)")
         else:
             print(f"❌ Failed: {res.status_code} {res.text}")
+            assert False, f"Detail view failed: {res.text}"
 
         # --- 3. TEST: Valid State Transition (DRAFT -> OPEN) ---
         print("\n✅ 3. Testing VALID Status Move (DRAFT -> OPEN)...")
@@ -89,6 +91,7 @@ def test_full_flow():
             print("✅ Transition Allowed.")
         else:
             print(f"❌ Failed Valid Move: {res.text}")
+            assert False, f"Valid status move failed: {res.text}"
 
         # --- 4. TEST: Invalid State Transition (OPEN -> COMPLETED) ---
         print("\n🛡️  4. Testing INVALID Status Move (OPEN -> COMPLETED)...")
@@ -106,6 +109,7 @@ def test_full_flow():
             print(
                 f"❌ Security Failed! Server allowed illegal move. Status: {res.status_code}"
             )
+            assert False, f"Security check failed! Server allowed illegal move: {res.status_code}"
 
 
 if __name__ == "__main__":

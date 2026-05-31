@@ -4,10 +4,12 @@
 import {
   PickupRead,
   PickupStatus,
+  ProductCategory,
   ShipmentActivityRead,
   ShipmentsService,
   ShipmentType,
 } from "@/api_client";
+import { CATEGORY_LABELS } from "../new/page";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -427,21 +429,13 @@ export default function ShipmentDetailsPage() {
               <div className="flex justify-between items-center border-b border-slate-50 pb-3">
                 <span className="text-slate-500 font-medium">Category</span>
                 <span className="font-bold text-slate-900">
-                  {shipment.product_category || "N/A"}
+                  {shipment.product_category === ProductCategory.OTHER
+                    ? `Other (${shipment.other_category_description || "N/A"})`
+                    : CATEGORY_LABELS[shipment.product_category] || "N/A"}
                 </span>
               </div>
 
-              {/* 🔥 NOW WORKING: Description */}
-              {shipment.shipment_description && (
-                <div className="space-y-1 pb-2">
-                  <span className="text-slate-500 font-medium block">
-                    Description
-                  </span>
-                  <span className="font-bold text-slate-900 block bg-slate-50 p-2.5 rounded-md border border-slate-100">
-                    {shipment.shipment_description}
-                  </span>
-                </div>
-              )}
+
 
               {/* 🔥 NOW WORKING: Return Reason */}
               {isReverse && shipment.reason_for_return && (

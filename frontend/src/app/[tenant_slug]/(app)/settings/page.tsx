@@ -1,14 +1,13 @@
 // frontend/src/app/[tenant_slug]/(app)/settings/page.tsx
 "use client";
 
-import { TenantsService } from "@/api_client";
+import { TenantsService, ApiError } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -35,11 +34,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Building2,
   FileText,
-  Globe,
   LayoutTemplate,
   Loader2,
   Paintbrush,
-  PhoneCall,
   Plus,
   Save,
   ShieldAlert,
@@ -287,10 +284,10 @@ export default function SettingsPage() {
       await TenantsService.updateTenant(tenant.id, updatePayload);
       toast.success("Settings saved successfully!");
       setTimeout(() => window.location.reload(), 1000);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error.body?.detail || "Failed to update settings.");
+      const apiError = error as ApiError;
+      toast.error(apiError.body?.detail || "Failed to update settings.");
     } finally {
       setIsSubmitting(false);
     }

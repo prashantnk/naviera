@@ -1,7 +1,7 @@
 // frontend/src/app/[tenant_slug]/(app)/team/page.tsx
 "use client";
 
-import { UserRead, UserRole, UsersService } from "@/api_client";
+import { UserRead, UserRole, UsersService, UserUpdate, ApiError } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ export default function TeamManagementPage() {
     try {
       const data = await UsersService.listUsersInTenant();
       setUsers(data);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load team");
     } finally {
       setLoading(false);
@@ -62,11 +62,12 @@ export default function TeamManagementPage() {
 
   const changeRole = async (userId: string, newRole: UserRole) => {
     try {
-      await UsersService.updateUserRole(userId, { role: newRole } as any);
+      await UsersService.updateUserRole(userId, { role: newRole } as UserUpdate);
       toast.success("User role updated");
       fetchUsers();
-    } catch (error: any) {
-      toast.error(error.body?.detail || "Update failed");
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      toast.error(apiError.body?.detail || "Update failed");
     }
   };
 
@@ -74,11 +75,12 @@ export default function TeamManagementPage() {
     try {
       await UsersService.updateUserRole(userId, {
         is_active: !currentActive,
-      } as any);
+      } as UserUpdate);
       toast.success(currentActive ? "User deactivated" : "User activated");
       fetchUsers();
-    } catch (error: any) {
-      toast.error(error.body?.detail || "Update failed");
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      toast.error(apiError.body?.detail || "Update failed");
     }
   };
 

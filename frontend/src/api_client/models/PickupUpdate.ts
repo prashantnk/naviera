@@ -8,6 +8,7 @@ import type { PaymentDetailsCreate } from './PaymentDetailsCreate';
 import type { PickupDocumentUpdate } from './PickupDocumentUpdate';
 import type { PickupStatus } from './PickupStatus';
 import type { PickupTimeSlot } from './PickupTimeSlot';
+import type { ProductCategory } from './ProductCategory';
 /**
  * The Master Payload for Editing a Shipment.
  * Supports both User corrections and Admin operations.
@@ -20,8 +21,8 @@ export type PickupUpdate = {
     requested_pickup_date?: (string | null);
     order_reference_id?: (string | null);
     pickup_time_slot?: (PickupTimeSlot | null);
-    product_category?: (string | null);
-    shipment_description?: (string | null);
+    product_category?: (ProductCategory | null);
+    other_category_description?: (string | null);
     reason_for_return?: (string | null);
     pickup_address_id?: (string | null);
     delivery_address_id?: (string | null);

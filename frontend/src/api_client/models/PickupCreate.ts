@@ -7,6 +7,7 @@ import type { PackageCreate } from './PackageCreate';
 import type { PaymentDetailsCreate } from './PaymentDetailsCreate';
 import type { PickupDocumentCreate } from './PickupDocumentCreate';
 import type { PickupTimeSlot } from './PickupTimeSlot';
+import type { ProductCategory } from './ProductCategory';
 import type { ServiceType } from './ServiceType';
 import type { ShipmentType } from './ShipmentType';
 /**
@@ -18,8 +19,8 @@ export type PickupCreate = {
     service_type?: ServiceType;
     requested_pickup_date: string;
     pickup_time_slot: PickupTimeSlot;
-    product_category?: (string | null);
-    shipment_description?: (string | null);
+    product_category: ProductCategory;
+    other_category_description?: (string | null);
     reason_for_return?: (string | null);
     pickup_address_id?: (string | null);
     new_pickup_address?: (AddressCreate | null);

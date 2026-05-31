@@ -28,13 +28,13 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
 
     const tenant: Tenant = await res.json();
     return tenant;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
+  } catch (error: unknown) {
     // 3. Mask only Cold Starts: AbortError (timeout) or fetch failed (Render completely down)
+    const err = error as { name?: string; message?: string; code?: string };
     if (
-      error.name === "AbortError" ||
-      error.message.includes("fetch failed") ||
-      error.code === "ECONNREFUSED"
+      err.name === "AbortError" ||
+      (err.message && err.message.includes("fetch failed")) ||
+      err.code === "ECONNREFUSED"
     ) {
       console.warn(`[Fallback] Server asleep. Returning Naviera fallback.`);
       return {

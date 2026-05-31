@@ -1,7 +1,7 @@
 // src/components/forms/update-status-dialog.tsx
 "use client";
 
-import { PickupStatus, ShipmentsService } from "@/api_client";
+import { PickupStatus, ShipmentsService, ApiError } from "@/api_client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -61,9 +61,10 @@ export function UpdateStatusDialog({ shipmentId, currentStatus, onSuccess }: Upd
             setOpen(false);
             form.reset(); // Clear the form
             onSuccess();  // Trigger parent refresh
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Update error:", error);
-            toast.error(error.body?.detail || "Failed to update status. Transition may be invalid.");
+            const apiError = error as ApiError;
+            toast.error(apiError.body?.detail || "Failed to update status. Transition may be invalid.");
         } finally {
             setIsSubmitting(false);
         }

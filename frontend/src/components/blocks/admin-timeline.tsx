@@ -26,7 +26,7 @@ export function AdminTimeline({
   activities: ShipmentActivityRead[];
   trackingId?: string | null;
 }) {
-  const { user, isAdmin } = useUser();
+  const { isAdmin } = useUser();
   const { routeTo } = useTenant();
 
   const formatDate = (isoString: string) => {
@@ -53,20 +53,25 @@ export function AdminTimeline({
     }
   };
 
-  const renderHumanizedDiff = (diff: any) => {
+  const renderHumanizedDiff = (diff: Record<string, unknown> | undefined) => {
     if (!diff || Object.keys(diff).length === 0) return null;
 
     return (
       <ul className="mt-3 space-y-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-        {Object.entries(diff).map(([key, value]: [string, any]) => {
+        {Object.entries(diff).map(([key, value]) => {
           const cleanKey = key
             .replace(/_/g, " ")
             .replace(/\b\w/g, (l) => l.toUpperCase());
 
           if (key === "packages" || key === "documents") {
-            const added = value.added?.length || 0;
-            const removed = value.removed?.length || 0;
-            const modified = value.modified?.length || 0;
+            const valObj = value as {
+              added?: unknown[];
+              removed?: unknown[];
+              modified?: unknown[];
+            } | null | undefined;
+            const added = valObj?.added?.length || 0;
+            const removed = valObj?.removed?.length || 0;
+            const modified = valObj?.modified?.length || 0;
             const changes = [];
 
             if (added) changes.push(`Added ${added}`);
@@ -83,18 +88,19 @@ export function AdminTimeline({
             );
           }
 
-          if (value && value.old !== undefined && value.new !== undefined) {
+          const valOldNew = value as { old?: unknown; new?: unknown } | null | undefined;
+          if (valOldNew && valOldNew.old !== undefined && valOldNew.new !== undefined) {
             return (
               <li key={key} className="flex items-start gap-2">
                 <Pencil className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <span>
                   Changed <strong>{cleanKey}</strong> from{" "}
                   <span className="line-through text-red-400">
-                    {String(value.old)}
+                    {String(valOldNew.old)}
                   </span>{" "}
                   <ArrowRight className="inline h-3 w-3 mx-1 text-slate-400" />{" "}
                   <span className="text-green-600 font-medium">
-                    {String(value.new)}
+                    {String(valOldNew.new)}
                   </span>
                 </span>
               </li>
@@ -198,11 +204,11 @@ export function AdminTimeline({
 
               {activity.comment && (
                 <p className="text-sm text-slate-700 bg-blue-50/50 p-3 rounded-lg border border-blue-100/50 italic mb-2">
-                  "{activity.comment}"
+                  &ldquo;{activity.comment}&rdquo;
                 </p>
               )}
 
-              {renderHumanizedDiff(activity.diff)}
+              {renderHumanizedDiff(activity.diff as Record<string, unknown> | undefined)}
 
               {isAdmin &&
                 activity.diff &&

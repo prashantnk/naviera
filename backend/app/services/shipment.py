@@ -16,6 +16,7 @@ from app.models.pickups import (
     PickupDocument,
     PickupRequest,
     PickupStatus,
+    ProductCategory,
     ShipmentActivity,
 )
 from app.models.tenants import Tenant, User, UserRole
@@ -313,6 +314,14 @@ class ShipmentService:
         # --- 4. Prepare Shipment Header ---
 
         new_tracking_id = await self._generate_unique_tracking_id(tenant.slug)
+        
+        # If category is not OTHER, ignore/clear custom description
+        final_other_desc = (
+            payload.other_category_description 
+            if payload.product_category == ProductCategory.OTHER 
+            else None
+        )
+
         pickup_request = PickupRequest(
             tenant_id=tenant.id,
             created_by_user_id=user_id,
@@ -323,7 +332,8 @@ class ShipmentService:
             requested_pickup_date=payload.requested_pickup_date,
             pickup_time_slot=payload.pickup_time_slot,
             product_category=payload.product_category,
-            shipment_description=payload.shipment_description,
+            other_category_description=final_other_desc,
+
             reason_for_return=payload.reason_for_return,
             status=PickupStatus.DRAFT,
             pickup_address_id=final_pickup_id,
@@ -373,7 +383,8 @@ class ShipmentService:
             "pickup_time_slot",
             "order_reference_id",
             "product_category",
-            "shipment_description",
+            "other_category_description",
+
             "reason_for_return",
         ]
 
@@ -518,6 +529,15 @@ class ShipmentService:
         if not current or current.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Shipment not found")
 
+        # Validate other category description requirement for updates
+        resolved_category = payload.product_category if payload.product_category is not None else current.product_category
+        resolved_description = payload.other_category_description if payload.other_category_description is not None else current.other_category_description
+        if resolved_category == ProductCategory.OTHER and not resolved_description:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="other_category_description is required when product_category is OTHER",
+            )
+
         # 3. Calculate Diff
         diff = self._calculate_diff(current, payload)
 
@@ -625,6 +645,18 @@ class ShipmentService:
 
         if payload.order_reference_id is not None:
             current.order_reference_id = payload.order_reference_id
+        if payload.product_category is not None:
+            current.product_category = payload.product_category
+            
+        # Auto-clear description if category is not OTHER, otherwise update if provided
+        if current.product_category != ProductCategory.OTHER:
+            current.other_category_description = None
+        elif payload.other_category_description is not None:
+            current.other_category_description = payload.other_category_description
+            
+
+        if payload.reason_for_return is not None:
+            current.reason_for_return = payload.reason_for_return
 
         # Sync Financials / Payment Details
         if payload.payment_details:

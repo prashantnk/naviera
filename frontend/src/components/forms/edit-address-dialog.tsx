@@ -1,7 +1,7 @@
 // frontend/src/components/forms/edit-address-dialog.tsx
 "use client";
 
-import { AddressRead, AddressesService, AddressType } from "@/api_client";
+import { AddressRead, AddressesService, AddressType, AddressUpdate, ApiError } from "@/api_client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -92,12 +92,13 @@ export function EditAddressDialog({
         address_line2:
           data.address_line2 === "" ? undefined : data.address_line2,
         landmark: data.landmark === "" ? undefined : data.landmark,
-      } as any);
+      } as AddressUpdate);
       toast.success("Address updated successfully!");
       setOpen(false);
       onSuccess();
-    } catch (error: any) {
-      toast.error(error.body?.detail || "Failed to update address");
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      toast.error(apiError.body?.detail || "Failed to update address");
     } finally {
       setIsSubmitting(false);
     }

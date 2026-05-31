@@ -18,10 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ShipmentFormValues } from "@/lib/validations/shipment";
 import { BookUser, MapPinPlus } from "lucide-react";
 import { useState } from "react";
-import { Control } from "react-hook-form";
+import { Control, Path } from "react-hook-form";
+import { ShipmentFormValues } from "@/lib/validations/shipment";
 
 interface AddressFieldsetProps {
   control: Control<ShipmentFormValues>;
@@ -38,10 +38,12 @@ export function AddressFieldset({
 }: AddressFieldsetProps) {
   const [mode, setMode] = useState<"saved" | "manual">("saved");
 
-  const idField =
-    type === "pickup" ? "pickup_address_id" : "delivery_address_id";
-  const objectField =
-    type === "pickup" ? "new_pickup_address" : "new_delivery_address";
+  const idField = (
+    type === "pickup" ? "pickup_address_id" : "delivery_address_id"
+  ) as Path<ShipmentFormValues>;
+  const objectField = (
+    type === "pickup" ? "new_pickup_address" : "new_delivery_address"
+  ) as Path<ShipmentFormValues>;
 
   return (
     <div className="space-y-6 bg-slate-50/50 p-6 rounded-xl border border-slate-100">
@@ -82,7 +84,7 @@ export function AddressFieldset({
                 <FormLabel>Select a Saved Address</FormLabel>
                 <Select
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  defaultValue={field.value as string | undefined}
                 >
                   <FormControl>
                     <SelectTrigger className="bg-white">
@@ -119,7 +121,7 @@ export function AddressFieldset({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-right-4">
           <FormField
             control={control}
-            name={`${objectField}.name`}
+            name={`${objectField}.name` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Contact Name</FormLabel>
@@ -128,7 +130,7 @@ export function AddressFieldset({
                     placeholder="John Doe"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -137,7 +139,7 @@ export function AddressFieldset({
           />
           <FormField
             control={control}
-            name={`${objectField}.phone`}
+            name={`${objectField}.phone` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Phone Number</FormLabel>
@@ -146,7 +148,7 @@ export function AddressFieldset({
                     placeholder="+91 9876543210"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -156,7 +158,7 @@ export function AddressFieldset({
 
           <FormField
             control={control}
-            name={`${objectField}.address_line1`}
+            name={`${objectField}.address_line1` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem className="md:col-span-2">
                 <FormLabel>Address Line 1</FormLabel>
@@ -165,7 +167,7 @@ export function AddressFieldset({
                     placeholder="Flat, Building, Street"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -176,7 +178,7 @@ export function AddressFieldset({
           {/* 🔥 Fix 2: Added Missing Address Fields */}
           <FormField
             control={control}
-            name={`${objectField}.address_line2`}
+            name={`${objectField}.address_line2` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Address Line 2 (Optional)</FormLabel>
@@ -185,7 +187,7 @@ export function AddressFieldset({
                     placeholder="Area, Sector"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -194,7 +196,7 @@ export function AddressFieldset({
           />
           <FormField
             control={control}
-            name={`${objectField}.landmark`}
+            name={`${objectField}.landmark` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Landmark (Optional)</FormLabel>
@@ -203,7 +205,7 @@ export function AddressFieldset({
                     placeholder="Near Apollo Hospital"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -213,7 +215,7 @@ export function AddressFieldset({
 
           <FormField
             control={control}
-            name={`${objectField}.city`}
+            name={`${objectField}.city` as Path<ShipmentFormValues>}
             render={({ field }) => (
               <FormItem className="md:col-span-2">
                 <FormLabel>City</FormLabel>
@@ -222,7 +224,7 @@ export function AddressFieldset({
                     placeholder="Mumbai"
                     {...field}
                     className="bg-white"
-                    value={field.value || ""}
+                    value={(field.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -233,7 +235,7 @@ export function AddressFieldset({
           <div className="grid grid-cols-2 gap-4 md:col-span-2">
             <FormField
               control={control}
-              name={`${objectField}.state`}
+              name={`${objectField}.state` as Path<ShipmentFormValues>}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>State</FormLabel>
@@ -242,7 +244,7 @@ export function AddressFieldset({
                       placeholder="MH"
                       {...field}
                       className="bg-white"
-                      value={field.value || ""}
+                      value={(field.value as string) || ""}
                     />
                   </FormControl>
                   <FormMessage />
@@ -251,7 +253,7 @@ export function AddressFieldset({
             />
             <FormField
               control={control}
-              name={`${objectField}.pincode`}
+              name={`${objectField}.pincode` as Path<ShipmentFormValues>}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Pincode</FormLabel>
@@ -260,7 +262,7 @@ export function AddressFieldset({
                       placeholder="400001"
                       {...field}
                       className="bg-white"
-                      value={field.value || ""}
+                      value={(field.value as string) || ""}
                     />
                   </FormControl>
                   <FormMessage />

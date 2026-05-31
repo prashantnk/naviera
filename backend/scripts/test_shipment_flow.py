@@ -49,8 +49,7 @@ def generate_dummy_payload():
         "service_type": "SURFACE_ROAD",
         "requested_pickup_date": str(date.today() + timedelta(days=1)),  # Tomorrow
         "pickup_time_slot": "06:00 - 10:00",
-        "product_category": "Electronics",
-        "shipment_description": "Laptop and Accessories",
+        "product_category": "ELECTRONICS",
         # --- SCENARIO: Creating NEW Addresses (Snapshotting) ---
         "new_pickup_address": {
             "name": "Warehouse Alpha",

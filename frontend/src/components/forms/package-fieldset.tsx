@@ -11,19 +11,32 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Box, Plus, Trash2, ShieldAlert } from "lucide-react";
-import { useFieldArray } from "react-hook-form";
+import { useFieldArray, Control, ArrayPath, FieldValues, Path, FieldArray } from "react-hook-form";
+
+export interface HasPackages extends FieldValues {
+  packages: {
+    id?: string;
+    length?: number;
+    breadth?: number;
+    height?: number;
+    weight: number;
+    box_count: number;
+    is_fragile: boolean;
+    description?: string;
+  }[];
+}
 
 // 🔥 NEW: Accept isReverse prop
-export function PackageFieldset({
+export function PackageFieldset<TFieldValues extends HasPackages>({
   control,
   isReverse = false,
 }: {
-  control: any;
+  control: Control<TFieldValues>;
   isReverse?: boolean;
 }) {
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "packages",
+    name: "packages" as ArrayPath<TFieldValues>,
   });
 
   return (
@@ -57,7 +70,7 @@ export function PackageFieldset({
               <>
                 <FormField
                   control={control}
-                  name={`packages.${index}.length`}
+                  name={`packages.${index}.length` as Path<TFieldValues>}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Length (cm)</FormLabel>
@@ -67,6 +80,7 @@ export function PackageFieldset({
                           step="0.1"
                           className="bg-white"
                           {...field}
+                          value={(field.value as number) || 0}
                           onChange={(e) =>
                             field.onChange(e.target.valueAsNumber || 0)
                           }
@@ -78,7 +92,7 @@ export function PackageFieldset({
                 />
                 <FormField
                   control={control}
-                  name={`packages.${index}.breadth`}
+                  name={`packages.${index}.breadth` as Path<TFieldValues>}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Breadth (cm)</FormLabel>
@@ -88,6 +102,7 @@ export function PackageFieldset({
                           step="0.1"
                           className="bg-white"
                           {...field}
+                          value={(field.value as number) || 0}
                           onChange={(e) =>
                             field.onChange(e.target.valueAsNumber || 0)
                           }
@@ -99,7 +114,7 @@ export function PackageFieldset({
                 />
                 <FormField
                   control={control}
-                  name={`packages.${index}.height`}
+                  name={`packages.${index}.height` as Path<TFieldValues>}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Height (cm)</FormLabel>
@@ -109,6 +124,7 @@ export function PackageFieldset({
                           step="0.1"
                           className="bg-white"
                           {...field}
+                          value={(field.value as number) || 0}
                           onChange={(e) =>
                             field.onChange(e.target.valueAsNumber || 0)
                           }
@@ -120,7 +136,7 @@ export function PackageFieldset({
                 />
                 <FormField
                   control={control}
-                  name={`packages.${index}.weight`}
+                  name={`packages.${index}.weight` as Path<TFieldValues>}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Weight (kg)</FormLabel>
@@ -130,6 +146,7 @@ export function PackageFieldset({
                           step="0.1"
                           className="bg-white"
                           {...field}
+                          value={(field.value as number) || 0}
                           onChange={(e) =>
                             field.onChange(e.target.valueAsNumber || 0)
                           }
@@ -144,7 +161,7 @@ export function PackageFieldset({
 
             <FormField
               control={control}
-              name={`packages.${index}.box_count`}
+              name={`packages.${index}.box_count` as Path<TFieldValues>}
               render={({ field }) => (
                 <FormItem className={isReverse ? "col-span-2" : ""}>
                   <FormLabel>Number of Boxes</FormLabel>
@@ -153,6 +170,7 @@ export function PackageFieldset({
                       type="number"
                       className="bg-white"
                       {...field}
+                      value={(field.value as number) || 1}
                       onChange={(e) =>
                         field.onChange(e.target.valueAsNumber || 1)
                       }
@@ -165,7 +183,7 @@ export function PackageFieldset({
 
             <FormField
               control={control}
-              name={`packages.${index}.description`}
+              name={`packages.${index}.description` as Path<TFieldValues>}
               render={({ field }) => (
                 <FormItem
                   className={
@@ -178,6 +196,7 @@ export function PackageFieldset({
                       placeholder="e.g. Laptops, T-Shirts..."
                       className="bg-white"
                       {...field}
+                      value={(field.value as string) || ""}
                     />
                   </FormControl>
                   <FormMessage />
@@ -187,14 +206,14 @@ export function PackageFieldset({
 
             <FormField
               control={control}
-              name={`packages.${index}.is_fragile`}
+              name={`packages.${index}.is_fragile` as Path<TFieldValues>}
               render={({ field }) => (
                 <FormItem className="col-span-2 md:col-span-2 flex flex-row items-center space-x-3 space-y-0 p-3 mt-6 rounded-md border border-amber-200 bg-amber-50/50">
                   <FormControl>
                     <input
                       type="checkbox"
                       className="h-4 w-4 accent-amber-600"
-                      checked={field.value}
+                      checked={!!field.value}
                       onChange={field.onChange}
                     />
                   </FormControl>
@@ -221,7 +240,7 @@ export function PackageFieldset({
             box_count: 1,
             is_fragile: false,
             description: "",
-          })
+          } as FieldArray<TFieldValues, ArrayPath<TFieldValues>>)
         }
       >
         <Plus className="h-4 w-4 mr-2" /> Add Different Box Type

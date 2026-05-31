@@ -68,6 +68,17 @@ class PickupTimeSlot(str, Enum):
     EVENING_18_22 = "18:00 - 22:00"
 
 
+class ProductCategory(str, Enum):
+    HOUSEHOLD_PERSONAL = "HOUSEHOLD_PERSONAL"
+    VEHICLE = "VEHICLE"
+    DOCUMENTS = "DOCUMENTS"
+    HAZARDOUS = "HAZARDOUS"
+    COMMERCIAL = "COMMERCIAL"
+    ELECTRONICS = "ELECTRONICS"
+    APPAREL = "APPAREL"
+    OTHER = "OTHER"
+
+
 # --- 2. Modular Tables ---
 
 
@@ -205,12 +216,17 @@ class PickupRequest(SQLModel, table=True):
     )
 
     # The "Shipment Details" section from UI
-    product_category: Optional[str] = Field(
-        default=None, description="e.g. Electronics, Clothing"
+    product_category: ProductCategory = Field(
+        sa_column=Column(
+            sa_Enum(ProductCategory, name="productcategory"),
+            nullable=False,
+        ),
     )
-    shipment_description: Optional[str] = Field(
-        default=None, description="General description of goods"
+    other_category_description: Optional[str] = Field(
+        default=None,
+        description="Custom product category description if OTHER is selected",
     )
+
 
     # Return Logic
     reason_for_return: Optional[str] = Field(

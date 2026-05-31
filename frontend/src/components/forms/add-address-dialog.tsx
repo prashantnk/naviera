@@ -1,7 +1,7 @@
 // src/components/forms/add-address-dialog.tsx
 "use client";
 
-import { AddressesService, AddressType } from "@/api_client";
+import { AddressesService, AddressType, ApiError } from "@/api_client";
 import { Button } from "@/components/ui/button";
 import {
     Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
@@ -75,15 +75,24 @@ export function AddAddressDialog({ onSuccess }: AddAddressDialogProps) {
             setOpen(false);
             form.reset();
             onSuccess();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Failed to save address:", error);
 
             let errorMessage = "Failed to save address. Please check your inputs.";
-            if (error.body && error.body.detail) {
-                if (Array.isArray(error.body.detail)) {
-                    errorMessage = error.body.detail.map((err: any) => `${err.loc.at(-1)}: ${err.msg}`).join(" | ");
-                } else if (typeof error.body.detail === "string") {
-                    errorMessage = error.body.detail;
+            const apiError = error as ApiError;
+            if (apiError && typeof apiError === "object" && "body" in apiError) {
+                const body = apiError.body as { detail?: unknown } | undefined;
+                if (body && body.detail) {
+                    if (Array.isArray(body.detail)) {
+                        errorMessage = body.detail
+                            .map((err: { loc?: unknown[]; msg?: string }) => {
+                                const lastLoc = err.loc?.at(-1);
+                                return `${lastLoc ? String(lastLoc) : "field"}: ${err.msg || "invalid value"}`;
+                            })
+                            .join(" | ");
+                    } else if (typeof body.detail === "string") {
+                        errorMessage = body.detail;
+                    }
                 }
             }
             toast.error(errorMessage);
