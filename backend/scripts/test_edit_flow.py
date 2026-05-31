@@ -37,6 +37,7 @@ def test_edit_flow():
             "service_type": "SURFACE_ROAD",
             "requested_pickup_date": str(date.today()),
             "pickup_time_slot": "06:00 - 10:00",
+            "product_category": "ELECTRONICS",
             "new_pickup_address": {
                 "name": "Warehouse A",
                 "phone": "9999999999",
@@ -68,7 +69,7 @@ def test_edit_flow():
         )
         if res.status_code != 201:
             print(f"❌ Creation Failed: {res.text}")
-            return
+            assert False, f"Creation failed: {res.text}"
 
         shipment = res.json()
         shipment_id = shipment["id"]
@@ -125,6 +126,7 @@ def test_edit_flow():
         else:
             print(f"❌ Update Failed: {res.status_code}")
             print(res.text)
+            assert False, f"Update failed: {res.text}"
 
 
 if __name__ == "__main__":

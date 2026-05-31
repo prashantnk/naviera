@@ -30,7 +30,7 @@ export default function ShipmentsPage() {
 
   // Pagination State
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
 
   // 🔥 NEW: Explicit Faceted Filter States
@@ -49,9 +49,10 @@ export default function ShipmentsPage() {
         );
         setData(response.items);
         setTotalCount(response.total);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setError(err.message || "Failed to fetch shipments.");
+        const errorObj = err as { message?: string };
+        setError(errorObj.message || "Failed to fetch shipments.");
       } finally {
         setLoading(false);
       }

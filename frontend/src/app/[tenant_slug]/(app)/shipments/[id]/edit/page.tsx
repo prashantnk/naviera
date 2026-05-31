@@ -1,8 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // frontend/src/app/[tenant_slug]/(app)/shipments/[id]/edit/page.tsx
 "use client";
 
-import { PaymentMode, ShipmentsService, ShipmentType } from "@/api_client";
+import { ApiError, PaymentMode, ProductCategory, PickupUpdate, ServiceType, ShipmentsService, ShipmentType } from "@/api_client";
+import { CATEGORY_LABELS } from "../../new/page";
 import { PackageFieldset } from "@/components/forms/package-fieldset";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import { ArrowLeft, Loader2, Save } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
 
@@ -39,8 +39,12 @@ const editShipmentSchema = z.object({
   requested_pickup_date: z.string().min(1, "Pickup date is required"),
 
   // Cargo & Value
-  product_category: z.string().optional(),
-  shipment_description: z.string().optional(),
+  product_category: z.nativeEnum(ProductCategory, {
+    message: "Please select a product category",
+  }),
+  other_category_description: z.string().optional(),
+  service_type: z.nativeEnum(ServiceType).optional(),
+
   reason_for_return: z.string().optional(),
   payment_details: z
     .object({
@@ -74,6 +78,30 @@ const editShipmentSchema = z.object({
   comment: z
     .string()
     .min(5, "You must provide a reason for editing this shipment."),
+}).superRefine((data, ctx) => {
+  // Rule A: ProductCategory OTHER requires description
+  if (
+    data.product_category === ProductCategory.OTHER &&
+    (!data.other_category_description || data.other_category_description.trim() === "")
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Please specify the custom category description.",
+      path: ["other_category_description"],
+    });
+  }
+
+  // Rule B: No Vehicles in Air Cargo speed
+  if (
+    data.service_type === ServiceType.AIR &&
+    data.product_category === ProductCategory.VEHICLE
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Vehicles cannot be transported via Air Cargo. Please select a Surface service.",
+      path: ["product_category"],
+    });
+  }
 });
 
 type EditShipmentValues = z.infer<typeof editShipmentSchema>;
@@ -89,12 +117,14 @@ export default function EditShipmentPage() {
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
 
   const form = useForm<EditShipmentValues>({
-    resolver: zodResolver(editShipmentSchema) as any,
+    resolver: zodResolver(editShipmentSchema) as unknown as Resolver<EditShipmentValues>,
     defaultValues: {
       order_reference_id: "",
       requested_pickup_date: "",
-      product_category: "",
-      shipment_description: "",
+      product_category: undefined as unknown as ProductCategory,
+      other_category_description: "",
+      service_type: undefined,
+
       reason_for_return: "",
       payment_details: {
         declared_value: 0,
@@ -116,8 +146,10 @@ export default function EditShipmentPage() {
         form.reset({
           order_reference_id: data.order_reference_id || "",
           requested_pickup_date: data.requested_pickup_date,
-          product_category: data.product_category || "",
-          shipment_description: data.shipment_description || "",
+          product_category: data.product_category,
+          other_category_description: data.other_category_description || "",
+          service_type: data.service_type,
+
           reason_for_return: data.reason_for_return || "",
           payment_details: data.payment_details
             ? {
@@ -152,7 +184,7 @@ export default function EditShipmentPage() {
           })),
           comment: "",
         });
-      } catch (error) {
+      } catch {
         toast.error("Failed to load shipment details.");
       } finally {
         setLoading(false);
@@ -176,30 +208,37 @@ export default function EditShipmentPage() {
           }
         : undefined;
 
-      await ShipmentsService.updateShipment(shipmentId, {
+      const payload: PickupUpdate = {
         order_reference_id: data.order_reference_id,
         requested_pickup_date: data.requested_pickup_date,
-        product_category: data.product_category || undefined,
-        shipment_description: data.shipment_description || undefined,
+        product_category: data.product_category,
+        other_category_description: data.other_category_description || undefined,
+
         reason_for_return: data.reason_for_return || undefined,
-        payment_details: sanitizedPaymentDetails as any,
-        packages: data.packages,
+        payment_details: sanitizedPaymentDetails,
+        packages: data.packages.map((p) => ({
+          ...p,
+          id: p.id || null,
+        })),
         comment: data.comment,
         is_public: false, // Internal Edit Log
-      });
+      };
+
+      await ShipmentsService.updateShipment(shipmentId, payload);
 
       toast.success("Shipment updated successfully!");
       router.push(routeTo(`/shipments/${shipmentId}`));
-    } catch (error: any) {
+    } catch (error) {
+      const apiError = error as ApiError;
       // 🔥 FIX 2: Safely parse FastAPI 422 Error Arrays into a readable string!
       let msg = "Failed to update shipment.";
-      if (error.body?.detail) {
-        if (Array.isArray(error.body.detail)) {
-          msg = error.body.detail
-            .map((err: any) => `${err.loc.at(-1)}: ${err.msg}`)
+      if (apiError.body?.detail) {
+        if (Array.isArray(apiError.body.detail)) {
+          msg = apiError.body.detail
+            .map((err: { loc: string[]; msg: string }) => `${err.loc.at(-1)}: ${err.msg}`)
             .join(" | ");
-        } else if (typeof error.body.detail === "string") {
-          msg = error.body.detail;
+        } else if (typeof apiError.body.detail === "string") {
+          msg = apiError.body.detail;
         }
       }
       toast.error(msg);
@@ -218,6 +257,7 @@ export default function EditShipmentPage() {
 
   const isReverse = shipmentType === ShipmentType.REVERSE;
   const watchValue = form.watch("payment_details.declared_value") || 0;
+  const productCategoryValue = form.watch("product_category");
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12 animate-in fade-in">
@@ -290,25 +330,48 @@ export default function EditShipmentPage() {
                 name="product_category"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Product Category</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} />
-                    </FormControl>
+                    <FormLabel>Product Category <span className="text-red-500">*</span></FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Select a category..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.values(ProductCategory).map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {CATEGORY_LABELS[cat]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="shipment_description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description of Goods</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              {productCategoryValue === ProductCategory.OTHER && (
+                <FormField
+                  control={form.control}
+                  name="other_category_description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Custom Category Description <span className="text-red-500">*</span></FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Vintage Grandfather Clock"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
             </div>
 
             <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 space-y-6">

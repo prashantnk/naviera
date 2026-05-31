@@ -29,6 +29,7 @@ export type { PickupRead } from './models/PickupRead';
 export { PickupStatus } from './models/PickupStatus';
 export { PickupTimeSlot } from './models/PickupTimeSlot';
 export type { PickupUpdate } from './models/PickupUpdate';
+export { ProductCategory } from './models/ProductCategory';
 export type { PublicActivityRead } from './models/PublicActivityRead';
 export type { PublicTrackingRead } from './models/PublicTrackingRead';
 export type { RateCalculationRequest } from './models/RateCalculationRequest';

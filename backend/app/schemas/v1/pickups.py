@@ -13,6 +13,7 @@ from app.models.pickups import (
     PaymentMode,
     PickupStatus,
     PickupTimeSlot,
+    ProductCategory,
     ServiceType,
     ShipmentType,
 )
@@ -111,8 +112,9 @@ class PickupCreate(SQLModel):
     requested_pickup_date: date
     pickup_time_slot: PickupTimeSlot
 
-    product_category: Optional[str] = None
-    shipment_description: Optional[str] = None
+    product_category: ProductCategory
+    other_category_description: Optional[str] = None
+
     reason_for_return: Optional[str] = None
 
     # Logic: ID vs Object
@@ -170,6 +172,12 @@ class PickupCreate(SQLModel):
                 "You cannot create a WAREHOUSE address here. Please use the Settings page."
             )
 
+        # --- Rule 4: ProductCategory OTHER requires description ---
+        if self.product_category == ProductCategory.OTHER and not self.other_category_description:
+            raise ValueError(
+                "other_category_description is required when product_category is OTHER"
+            )
+
         return self
 
 
@@ -207,8 +215,9 @@ class PickupRead(SQLModel):
     requested_pickup_date: date
     pickup_time_slot: Optional[PickupTimeSlot] = None
 
-    product_category: Optional[str] = None
-    shipment_description: Optional[str] = None
+    product_category: ProductCategory
+    other_category_description: Optional[str] = None
+
     reason_for_return: Optional[str] = None
     created_by_user_id: UUID
     creator_email: Optional[str] = None
@@ -262,8 +271,9 @@ class PickupUpdate(SQLModel):
     pickup_time_slot: Optional[PickupTimeSlot] = None
 
     # --- 3. Cargo Details ---
-    product_category: Optional[str] = None
-    shipment_description: Optional[str] = None
+    product_category: Optional[ProductCategory] = None
+    other_category_description: Optional[str] = None
+
     reason_for_return: Optional[str] = None
 
     # --- 4. Address Corrections (The Snapshot Strategy) ---

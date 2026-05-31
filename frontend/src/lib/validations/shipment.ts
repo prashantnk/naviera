@@ -3,6 +3,7 @@ import {
   DocumentType,
   PaymentMode,
   PickupTimeSlot,
+  ProductCategory,
   ServiceType,
   ShipmentType,
 } from "@/api_client";
@@ -60,8 +61,11 @@ export const shipmentFormSchema = z
     shipment_type: z.nativeEnum(ShipmentType),
     reason_for_return: z.string().optional(),
 
-    product_category: z.string().optional(),
-    shipment_description: z.string().optional(),
+    product_category: z.nativeEnum(ProductCategory, {
+      message: "Please select a product category",
+    }),
+    other_category_description: z.string().optional(),
+
 
     payment_details: z.object({
       payment_mode: z.nativeEnum(PaymentMode),
@@ -104,6 +108,30 @@ export const shipmentFormSchema = z
         code: z.ZodIssueCode.custom,
         message: "E-Way Bill is mandatory for values over ₹50,000",
         path: ["payment_details", "eway_bill_number"],
+      });
+    }
+
+    // Rule A: ProductCategory OTHER requires description
+    if (
+      data.product_category === ProductCategory.OTHER &&
+      (!data.other_category_description || data.other_category_description.trim() === "")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please specify the custom category description.",
+        path: ["other_category_description"],
+      });
+    }
+
+    // Rule B: No Vehicles in Air Cargo speed
+    if (
+      data.service_type === ServiceType.AIR &&
+      data.product_category === ProductCategory.VEHICLE
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vehicles cannot be transported via Air Cargo. Please select a Surface service.",
+        path: ["product_category"],
       });
     }
   });

@@ -36,6 +36,7 @@ def test_read_flow():
             "service_type": "AIR",
             "requested_pickup_date": str(date.today()),
             "pickup_time_slot": "06:00 - 10:00",
+            "product_category": "ELECTRONICS",
             "new_pickup_address": {
                 "name": "Warehouse Read",
                 "phone": "9999999999",
@@ -59,7 +60,7 @@ def test_read_flow():
         )
         if res.status_code != 201:
             print(f"❌ Setup Failed: {res.text}")
-            return
+            assert False, f"Setup failed: {res.text}"
 
         shipment = res.json()
         shipment_id = shipment["id"]
@@ -96,6 +97,7 @@ def test_read_flow():
             )  # Should show the diff
         else:
             print(f"❌ Admin Timeline Failed: {res.status_code} {res.text}")
+            assert False, f"Admin timeline failed: {res.text}"
 
         # --- 4. TEST: Public Tracking (Unrestricted) ---
         print(
@@ -121,6 +123,7 @@ def test_read_flow():
                 print("   ⚠️ SECURITY WARNING: Diff leaked to public!")
         else:
             print(f"❌ Public Tracking Failed: {res.status_code} {res.text}")
+            assert False, f"Public tracking failed: {res.text}"
 
         # --- 5. TEST: List Shipments ---
         print("\n📋 5. Testing List Shipments (GET /shipments/)...")
@@ -139,8 +142,10 @@ def test_read_flow():
                 print(f"   Total Pages: {data['pages']}")
             else:
                 print(f"❌ Response format incorrect: {data.keys()}")
+                assert False, "Response format incorrect"
         else:
             print(f"❌ List Failed: {res.status_code}")
+            assert False, f"List failed: {res.status_code}"
 
 
 if __name__ == "__main__":
