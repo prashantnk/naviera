@@ -16,8 +16,8 @@ echo "🔍 Scanning workspace for local changes..."
 
 # Get modified, staged, and untracked files (ignoring gitignored files)
 {
-    git diff --name-only
-    git diff --cached --name-only
+    git diff --diff-filter=d --name-only
+    git diff --cached --diff-filter=d --name-only
     git ls-files --others --exclude-standard
 } | sort -u > temp_file_list.txt
 
@@ -69,11 +69,16 @@ cat << 'EOF' >> "$OUTPUT_SCRIPT"
 END_OF_ARCHIVE
 
 echo "✅ Local modifications successfully restored!"
+echo -e "\n📊 Received changes summary:"
+git diff HEAD --shortstat || true
 EOF
 
 # Make it executable
 chmod +x "$OUTPUT_SCRIPT"
 rm "$TEMP_TAR"
+
+echo -e "\n📊 Packed changes summary:"
+git diff HEAD --shortstat || true
 
 echo -e "\n🎉 Success! Your self-extracting replication script is ready at: \033[1;33m./$OUTPUT_SCRIPT\033[0m"
 echo "You can now copy this single file's contents and run it on any other machine."

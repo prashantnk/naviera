@@ -109,7 +109,7 @@ def generate_dummy_payload():
     }
 
 
-def create_shipment():
+def test_shipment_flow():
     jwt = get_auth_token()
     payload = generate_dummy_payload()
 
@@ -119,29 +119,30 @@ def create_shipment():
 
     # We use a 30s timeout because database creation might take a moment
     with httpx.Client(timeout=30.0) as client:
-        try:
-            response = client.post(
-                f"{API_BASE_URL}{settings.API_V1_STR}/shipments",
-                headers=headers,
-                json=payload,
-            )
+        response = client.post(
+            f"{API_BASE_URL}{settings.API_V1_STR}/shipments",
+            headers=headers,
+            json=payload,
+        )
 
-            if response.status_code == 201:
-                data = response.json()
-                print("\n✅ SHIPMENT CREATED SUCCESSFULLY!")
-                print(f"🆔 Shipment ID: {data['id']}")
-                print(f"📍 Status: {data['status']}")
-                print(f"🚛 Pickup Address ID: {data['pickup_address']['id']}")
-                print(f"📦 Package Count: {len(data['packages'])}")
-                print(json.dumps(data, indent=2))
-            else:
-                print(f"\n❌ Failed: {response.status_code}")
-                print(response.text)
+        assert response.status_code == 201, f"Failed to create shipment: {response.text}"
+        
+        data = response.json()
+        print("\n✅ SHIPMENT CREATED SUCCESSFULLY!")
+        print(f"🆔 Shipment ID: {data['id']}")
+        print(f"📍 Status: {data['status']}")
+        print(f"🚛 Pickup Address ID: {data['pickup_address']['id']}")
+        print(f"📦 Package Count: {len(data['packages'])}")
+        print(json.dumps(data, indent=2))
 
-        except Exception as e:
-            print(f"❌ Connection Error: {e}")
+        # Assertions
+        assert data["id"] is not None
+        assert data["status"] == "DRAFT"
+        assert data["pickup_address"]["id"] is not None
+        assert len(data["packages"]) == 2
 
 
 if __name__ == "__main__":
     for _ in range(1):
-        create_shipment()
+        test_shipment_flow()
+

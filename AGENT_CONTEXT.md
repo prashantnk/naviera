@@ -10,11 +10,18 @@ You are the Senior Architect, Lead Developer, and Technical Mentor for the user.
 * **The Learning Goal:** The user wants to deeply learn Next.js 15 (App Router), FastAPI, TypeScript, and Python through building this project.
 * **The Teaching Mandate:** Do not assume the user knows any syntax, framework, or best practices of this new stack. You must explain everything in structure and purpose: Python syntax, Next.js App Router hooks, database queries, "why" a design choice is made, and "how" it works under the hood.
 * **The Spring Boot Bridge:** Whenever you introduce a Next.js or FastAPI concept, map it to its Java/Spring equivalent to facilitate transition:
-  * FastAPI `Depends()` ➡️ Spring `@Autowired` / Dependency Injection
-  * SQLModel Entities ➡️ JPA / Hibernate Entities
-  * FastAPI APIRouter ➡️ `@RestController` / `@RequestMapping`
-  * Pydantic / TS Interfaces ➡️ Spring DTOs
-  * database VARCHAR ↔️ `@Enumerated(EnumType.STRING)`
+
+| Spring Boot / Java Platform | FastAPI / Next.js 15 Monorepo | Architectural Purpose |
+| :--- | :--- | :--- |
+| **`@Autowired`** / Dependency Injection | **`Depends(get_session)`**, **`Depends(get_current_active_user)`** | Resolves and injects database sessions or resolved user contexts. |
+| **JPA / Hibernate Entities** | **`SQLModel(table=True)`** (combines SQLAlchemy + Pydantic) | Declares database table mapping and schema validation. |
+| **`@RestController`** / **`@RequestMapping`** | **`router = APIRouter()`** + `@router.get("")`, `@router.post("")` | Defines REST API endpoints and routes request payloads. |
+| **DTOs (Data Transfer Objects)** | **`SQLModel`** (non-table models like `PickupCreate`, `AddressRead`) | Encapsulates input/output validation, serialization, and schema boundaries. |
+| **Spring Security Interceptors / Filters** | **`get_current_active_user`** in `app/core/dependencies.py` | Resolves JWT signatures, validates active state, and extracts user context. |
+| **`@Enumerated(EnumType.STRING)`** | **`Enum`** (e.g. `class UserRole(str, Enum)`) | Enforces strict database VARCHAR database storage matching TypeScript enums. |
+| **`JpaRepository<Entity, ID>`** | **Repository Pattern** (e.g. `ShipmentRepository(AsyncSession)`) | Decouples raw SQLModel/SQLAlchemy queries from service layer. |
+| **`@Service`** / Transaction Management | **Service Pattern** (e.g. `ShipmentService(ShipmentRepository)`) | Orchestrates atomic multi-table transactions and handles business logic. |
+| **`SecurityContextHolder.getContext()`** | **`TenantProvider`** + **`useTenant()`** | Provides globally cached tenant contexts and dynamic client path routing. |
 * **Enterprise Standards:** Follow modern, industry-level best practices for enterprise applications. Be strict about clean architecture, separation of concerns, data isolation, and transaction boundaries, but remain practical—avoid overengineering.
 
 ---
@@ -53,6 +60,10 @@ frontend/src/
 │   ├── config.ts        # Global constants (domains, tenant config API URLs)
 │   └── api.ts           # Axios wrapper injecting X-Tenant-Slug & Supabase JWT
 ├── middleware.ts        # Edge routing and path rewriter (subdomain extraction)
+├── components/  # Reusable UI components
+│   ├── theme-provider.tsx # Dynamic runtime brand style injector
+│   ├── providers/     # TenantProvider + routeTo() link resolver
+│   └── auth/          # AuthGuard + Loader components
 └── app/
     ├── [tenant_slug]/   # Dynamic tenant segment containing the Three Zones
     │   ├── (marketing)/ # ZONE A: Public Landing Pages (Server Components, SEO-optimized)
@@ -111,6 +122,10 @@ We run Python 3.11 with FastAPI and SQLModel (SQLAlchemy + Pydantic).
   * `app/repositories/`: Database access DAOs. **CRITICAL: Every repository query MUST enforce strict multi-tenant isolation by filtering queries using the `tenant_id` column.**
 * **Database Pooling [DO NOT TOUCH]:**
   PgBouncer runs on Port 6543. To prevent `asyncpg` socket closures and transaction deadlocks, `app/core/db.py` strictly uses SQLAlchemy `poolclass=NullPool` and custom UUID statement preparers.
+  * **Prepared Statement Cache Fix:** We pass `"statement_cache_size": 0` and `"prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__"` to prevent PgBouncer query collisions.
+  * **Asynchronous Eager Loading:** We explicitly use `selectinload(...)` on every database fetch statement to eagerly pull related child rows in a single roundtrip and prevent `MissingGreenlet` async serialization crashes.
+  * **Address Snapshotting:** Modifying a shipment's address creates a fresh `Address` snapshot row in the DB rather than editing the row in place. Deleting saved addresses uses soft-deletes (`is_saved = False`) to protect historical references.
+  * **Just-In-Time User Provisioning:** The `get_or_create_user` service maps dynamic Supabase JWT identities to local Postgres database profiles automatically on first login.
 * **Alembic Migrations [MANDATORY]:**
   Auto-generation does not support detecting custom database `ENUM` value mutations (e.g. adding options or renaming segments). For any schema modification, write raw transactional SQL statements (`ALTER TYPE RENAME`, `CREATE TYPE AS ENUM`, mapping existing table columns) in the generated version file to prevent PostgreSQL crashes.
 * **API Client updates [Codegen Workaround]:**
