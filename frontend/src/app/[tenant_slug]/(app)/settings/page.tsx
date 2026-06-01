@@ -66,6 +66,7 @@ const settingsSchema = z.object({
     address: z.string().optional(),
     phones: z.string().optional(),
     emails: z.string().optional(),
+    gstin: z.string().optional(),
   }),
   socials: z.object({
     facebook: z.string().optional(),
@@ -140,6 +141,7 @@ export default function SettingsPage() {
         address: tenant?.settings?.contact?.address || "",
         phones: tenant?.settings?.contact?.phones?.join(", ") || "",
         emails: tenant?.settings?.contact?.emails?.join(", ") || "",
+        gstin: tenant?.settings?.contact?.gstin || "",
       },
       socials: {
         facebook: tenant?.settings?.contact?.socials?.facebook || "",
@@ -260,6 +262,7 @@ export default function SettingsPage() {
             address: data.contact.address,
             phones: toArray(data.contact.phones),
             emails: toArray(data.contact.emails),
+            gstin: data.contact.gstin,
             socials: data.socials,
           },
           landing_page: { blocks: updatedBlocks },
@@ -282,6 +285,14 @@ export default function SettingsPage() {
       };
 
       await TenantsService.updateTenant(tenant.id, updatePayload);
+
+      // Dynamic on-demand cache revalidation
+      try {
+        await fetch(`/api/revalidate?secret=naviera-super-secret-key&key=${tenant.slug}`);
+      } catch (err) {
+        console.error("Failed to trigger cache revalidation:", err);
+      }
+
       toast.success("Settings saved successfully!");
       setTimeout(() => window.location.reload(), 1000);
     } catch (error: unknown) {
@@ -440,6 +451,18 @@ export default function SettingsPage() {
                         <FormLabel>Emails (Comma separated)</FormLabel>
                         <FormControl>
                           <Input {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="contact.gstin"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>GSTIN (Tax Identification Number)</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="e.g., 27AAACL9999A1Z2" className="font-mono uppercase" />
                         </FormControl>
                       </FormItem>
                     )}

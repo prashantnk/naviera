@@ -49,16 +49,30 @@ class PricingEngine:
             service_surcharge = base_charge * 0.60
             estimated_days = 1
 
-        # 4. Calculate Taxes & Total
-        subtotal = base_charge + service_surcharge
+        # 4. Calculate Auxiliary Surcharges & COD Fee
+        # Fuel surcharge is 10% of freight subtotal
+        fuel_surcharge = (base_charge + service_surcharge) * 0.10
+        # Network surcharge is flat INR 25
+        network_surcharge = 25.0
+
+        # COD Fee is 2.0% of the commercial Shipment Total Value, only if Cash on Delivery is requested
+        cod_fee = 0.0
+        if request.is_cod and request.shipment_total_value > 0:
+            cod_fee = request.shipment_total_value * 0.02
+
+        # 5. Calculate Taxes & Total Logistics Charge
+        subtotal = base_charge + service_surcharge + fuel_surcharge + network_surcharge + cod_fee
         tax_amount = subtotal * cls.TAX_RATE
         total_amount = subtotal + tax_amount
 
-        # 5. Return the "Receipt" breakdown
+        # 6. Return the complete "Receipt" breakdown
         return RateCalculationResponse(
             chargeable_weight=round(total_chargeable_weight, 2),
             base_charge=round(base_charge, 2),
             service_surcharge=round(service_surcharge, 2),
+            fuel_surcharge=round(fuel_surcharge, 2),
+            network_surcharge=round(network_surcharge, 2),
+            cod_fee=round(cod_fee, 2),
             tax_amount=round(tax_amount, 2),
             total_amount=round(total_amount, 2),
             estimated_days=estimated_days,

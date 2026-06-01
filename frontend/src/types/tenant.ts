@@ -82,11 +82,12 @@ export interface TenantSettings {
     text: string;
   };
   contact?: {
-    toll_free?: string; // 🔥 NEW
+    toll_free?: string;
     phones?: string[];
     emails?: string[];
     whatsapp?: string;
-    address?: string; // 🔥 NEW
+    address?: string;
+    gstin?: string;
     socials?: {
       facebook?: string;
       instagram?: string;

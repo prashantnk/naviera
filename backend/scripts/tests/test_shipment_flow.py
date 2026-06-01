@@ -91,12 +91,17 @@ def generate_dummy_payload():
                 "description": "Chargers",
             },
         ],
-        # --- Payment ---
         "payment_details": {
-            "amount": 1500.00,
-            "payment_mode": "PREPAID",
-            "declared_value": 50000.00,
-            "tax_amount": 270.00,
+            "freight_payment_mode": "PREPAID",
+            "is_cod": False,
+            "cod_amount": 0.0,
+            "add_shipping_to_cod": False,
+            "shipment_value": 50000.00,
+            "shipment_tax_value": 0.0,
+            "shipment_total_value": 50000.00,
+            "base_freight": 1230.00,
+            "tax_amount": 248.04,
+            "total_logistics_cost": 1626.04
         },
         # --- Documents (Optional) ---
         "documents": [

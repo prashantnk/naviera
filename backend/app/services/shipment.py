@@ -660,10 +660,14 @@ class ShipmentService:
 
         # Sync Financials / Payment Details
         if payload.payment_details:
+            payment_changed = False
             if current.payment_details:
                 # Update existing payment record
                 for k, v in payload.payment_details.model_dump(exclude_unset=True).items():
-                    setattr(current.payment_details, k, v)
+                    old_v = getattr(current.payment_details, k)
+                    if old_v != v:
+                        setattr(current.payment_details, k, v)
+                        payment_changed = True
             else:
                 # Create new payment record if it didn't exist
                 current.payment_details = PaymentDetails(
@@ -671,7 +675,10 @@ class ShipmentService:
                     **payload.payment_details.model_dump(exclude_unset=True)
                 )
                 self.shipment_repo.session.add(current.payment_details)
-            diff["payment_details"] = "Updated Financials"
+                payment_changed = True
+            
+            if payment_changed:
+                diff["payment_details"] = "Updated Financials"
 
         # 8. Create Activity Log
         activity_type = ActivityType.INFO_UPDATE

@@ -11,7 +11,7 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
     const res = await fetch(
       `${getBackendUrl()}/api/v1/tenants/${slug}/public`,
       {
-        next: { revalidate: 3600 },
+        next: { revalidate: 3600, tags: [`tenant-${slug}`] },
         signal: controller.signal,
       }
     );

@@ -2,17 +2,26 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { PaymentMode } from './PaymentMode';
+import type { CodRemittanceStatus } from './CodRemittanceStatus';
+import type { FreightPaymentMode } from './FreightPaymentMode';
 export type PaymentDetailsRead = {
-    amount?: number;
     currency?: string;
-    payment_mode?: PaymentMode;
-    declared_value?: number;
+    freight_payment_mode?: FreightPaymentMode;
+    is_cod?: boolean;
+    cod_amount?: number;
+    base_freight?: number;
     tax_amount?: number;
+    total_logistics_cost?: number;
+    add_shipping_to_cod?: boolean;
+    shipment_value?: number;
+    shipment_tax_value?: number;
+    shipment_total_value?: number;
     hsn_code?: (string | null);
     invoice_number?: (string | null);
     invoice_date?: (string | null);
     eway_bill_number?: (string | null);
     id: string;
+    cod_remittance_status: CodRemittanceStatus;
+    pricing_breakdown?: Record<string, any>;
 };
 

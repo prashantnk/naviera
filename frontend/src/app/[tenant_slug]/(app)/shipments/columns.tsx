@@ -42,17 +42,15 @@ const getStatusColor = (status: PickupStatus) => {
 
 export const columns: ColumnDef<PickupRead>[] = [
   {
-    // 🔥 Changed to accessorKey so TanStack knows how to sort it alphabetically!
-    accessorKey: "order_reference_id",
+    accessorKey: "tracking_id",
     header: ({ column }) => {
       return (
-        // 🔥 Turn the header into a clickable button!
         <Button
           variant="ghost"
           className="-ml-4 hover:bg-slate-100/50 font-bold"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Order / Tracking ID
+          Tracking / Order ID
           <ArrowUpDown className="ml-2 h-4 w-4 text-slate-400" />
         </Button>
       );
@@ -63,12 +61,18 @@ export const columns: ColumnDef<PickupRead>[] = [
 
       return (
         <div className="flex flex-col">
-          <span className="font-extrabold text-slate-900 text-sm tracking-tight">
-            {refId}
-          </span>
-          <span className="text-[11px] text-slate-500 font-mono mt-0.5 bg-slate-100 w-fit px-1.5 rounded border border-slate-200">
+          <span className="font-semibold text-slate-700 hover:text-indigo-600 hover:underline cursor-pointer text-sm font-mono tracking-wide transition-colors duration-150">
             {trackingId || "PENDING"}
           </span>
+          {refId ? (
+            <span className="text-[10px] text-slate-500 font-semibold mt-0.5 w-fit">
+              Ref: {refId}
+            </span>
+          ) : (
+            <span className="text-[10px] text-slate-400 italic mt-0.5">
+              No Reference
+            </span>
+          )}
         </div>
       );
     },

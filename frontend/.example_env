@@ -9,5 +9,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-api-key"
 # Leave blank for local development. Set this to your Render URL in Vercel!
 # BACKEND_API_URL="https://naviera-backend.onrender.com"
 
+# --- Cache Revalidation Configuration ---
+REVALIDATION_SECRET="naviera-revalidation-secret-key"
+
 REACT_EDITOR=atom
 RUST_BACKTRACE=1
