@@ -1,7 +1,7 @@
 // frontend/src/lib/validations/shipment.ts
 import {
   DocumentType,
-  PaymentMode,
+  FreightPaymentMode,
   PickupTimeSlot,
   ProductCategory,
   ServiceType,
@@ -68,10 +68,16 @@ export const shipmentFormSchema = z
 
 
     payment_details: z.object({
-      payment_mode: z.nativeEnum(PaymentMode),
-      // 🔥 FIX: Corrected error message to match min(0)
-      declared_value: z.number().min(0, "Cargo value cannot be negative"),
+      freight_payment_mode: z.nativeEnum(FreightPaymentMode),
+      is_cod: z.boolean().default(false),
+      cod_amount: z.number().min(0, "COD amount cannot be negative").default(0),
+      add_shipping_to_cod: z.boolean().default(false),
+      shipment_value: z.number().min(0, "Shipment value cannot be negative"),
+      shipment_tax_value: z.number().default(0),
+      shipment_total_value: z.number().default(0),
       tax_amount: z.number().default(0),
+      base_freight: z.number().default(0),
+      total_logistics_cost: z.number().default(0),
       hsn_code: z.string().optional(),
       invoice_number: z.string().optional(),
       invoice_date: z.string().optional(),
@@ -101,7 +107,7 @@ export const shipmentFormSchema = z
     // E-Way Bill is only mandatory for FORWARD shipments > 50k
     if (
       data.shipment_type === ShipmentType.FORWARD &&
-      data.payment_details.declared_value > 50000 &&
+      data.payment_details.shipment_total_value > 50000 &&
       !data.payment_details.eway_bill_number
     ) {
       ctx.addIssue({
@@ -132,6 +138,15 @@ export const shipmentFormSchema = z
         code: z.ZodIssueCode.custom,
         message: "Vehicles cannot be transported via Air Cargo. Please select a Surface service.",
         path: ["product_category"],
+      });
+    }
+
+    // Rule C: COD cash collection requirements
+    if (data.payment_details.is_cod === true && data.payment_details.cod_amount <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
+        path: ["payment_details", "cod_amount"],
       });
     }
   });

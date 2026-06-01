@@ -101,7 +101,14 @@ export function Footer() {
 
                 {/* Bottom Legal Bar */}
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-                    <p>© {new Date().getFullYear()} {tenant?.name || "Naviera"}. All rights reserved.</p>
+                    <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 text-center md:text-left">
+                        <p>© {new Date().getFullYear()} {tenant?.name || "Naviera"}. All rights reserved.</p>
+                        {contact?.gstin && (
+                            <span className="font-mono bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-400 select-all">
+                                GSTIN: {contact.gstin}
+                            </span>
+                        )}
+                    </div>
 
                     {/* 🔥 POWERED BY NAVIERA */}
                     <div className="flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-full border border-slate-800">

@@ -282,22 +282,25 @@ export default function ShipmentDetailsPage() {
                 </h3>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {/* 🔥 NEW: Added Shipping Charge (Amount) */}
+                {/* Dynamic Freight Cost */}
                 <div className="space-y-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                     Shipping Charge
                   </p>
                   <p className="font-semibold text-slate-900">
-                    ₹{shipment.payment_details.amount?.toFixed(2)}
+                    ₹{shipment.payment_details.total_logistics_cost?.toFixed(2)}
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Cargo Value
+                    Cargo Value (Total)
                   </p>
                   <p className="font-semibold text-slate-900">
-                    ₹{shipment.payment_details.declared_value}
+                    ₹{shipment.payment_details.shipment_total_value?.toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    (₹{shipment.payment_details.shipment_value?.toFixed(2)} net + ₹{shipment.payment_details.shipment_tax_value?.toFixed(2)} tax)
                   </p>
                 </div>
 
@@ -313,10 +316,18 @@ export default function ShipmentDetailsPage() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        Payment Mode
+                        Freight Billing
                       </p>
-                      <p className="font-semibold text-slate-900">
-                        {shipment.payment_details.payment_mode}
+                      <p className="font-semibold text-slate-900 uppercase">
+                        {shipment.payment_details.freight_payment_mode?.replace('_', ' ')}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        COD Collection
+                      </p>
+                      <p className="font-semibold text-emerald-600">
+                        {shipment.payment_details.is_cod ? `₹${shipment.payment_details.cod_amount}` : "Disabled"}
                       </p>
                     </div>
                   </>

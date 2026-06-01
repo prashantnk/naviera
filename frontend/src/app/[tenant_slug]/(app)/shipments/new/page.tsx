@@ -9,7 +9,7 @@ import {
   ApiError,
   DocumentType,
   PackageCreate,
-  PaymentMode,
+  FreightPaymentMode,
   PickupCreate,
   PickupDocumentCreate,
   PickupTimeSlot,
@@ -22,6 +22,7 @@ import {
 import { AddressFieldset } from "@/components/forms/address-fieldset";
 import { PackageFieldset } from "@/components/forms/package-fieldset";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { EWayBillBanner } from "@/components/forms/eway-bill-banner";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -53,6 +54,7 @@ import {
   CheckCircle2,
   CloudUpload,
   FileText,
+  Info,
   Loader2,
   Trash2,
 } from "lucide-react";
@@ -82,7 +84,7 @@ export const CATEGORY_LABELS: Record<ProductCategory, string> = {
 };
 
 export default function CreateShipmentWizard() {
-  const { routeTo, tenantSlug } = useTenant();
+  const { routeTo, tenantSlug, tenant } = useTenant();
   const router = useRouter();
   const supabase = getSupabaseClient(tenantSlug);
 
@@ -94,6 +96,7 @@ export default function CreateShipmentWizard() {
     null
   );
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+  const [addShippingToCod, setAddShippingToCod] = useState(false);
 
   const [warehouses, setWarehouses] = useState<AddressRead[]>([]);
   const [customers, setCustomers] = useState<AddressRead[]>([]);
@@ -122,9 +125,16 @@ export default function CreateShipmentWizard() {
 
       reason_for_return: "",
       payment_details: {
-        payment_mode: PaymentMode.PREPAID, // 🔥 CRITICAL FIX 1
-        declared_value: 0,
+        freight_payment_mode: FreightPaymentMode.PREPAID,
+        is_cod: false,
+        cod_amount: 0,
+        add_shipping_to_cod: false,
+        shipment_value: 0,
+        shipment_tax_value: 0,
+        shipment_total_value: 0,
         tax_amount: 0,
+        base_freight: 0,
+        total_logistics_cost: 0,
         invoice_number: "",
         eway_bill_number: "",
       },
@@ -160,6 +170,7 @@ export default function CreateShipmentWizard() {
       try {
         const parsed = JSON.parse(savedDraft);
         if (parsed.step !== undefined) setCurrentStep(parsed.step);
+        if (parsed.addShippingToCod !== undefined) setAddShippingToCod(parsed.addShippingToCod);
 
         if (parsed.values) {
           const currentDefaults = form.getValues();
@@ -175,13 +186,19 @@ export default function CreateShipmentWizard() {
             mergedValues.service_type = ServiceType.SURFACE_ROAD;
           }
           if (
-            !Object.values(PaymentMode).includes(
-              mergedValues.payment_details?.payment_mode
+            !Object.values(FreightPaymentMode).includes(
+              mergedValues.payment_details?.freight_payment_mode
             )
           ) {
             if (!mergedValues.payment_details)
               mergedValues.payment_details = currentDefaults.payment_details;
-            mergedValues.payment_details.payment_mode = PaymentMode.PREPAID;
+            mergedValues.payment_details.freight_payment_mode = FreightPaymentMode.PREPAID;
+          }
+          if (mergedValues.payment_details?.is_cod === undefined) {
+            if (!mergedValues.payment_details)
+              mergedValues.payment_details = currentDefaults.payment_details;
+            mergedValues.payment_details.is_cod = false;
+            mergedValues.payment_details.cod_amount = 0;
           }
 
           // Safely inject the perfectly sanitized data
@@ -198,24 +215,46 @@ export default function CreateShipmentWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Dynamic Smart Math Assist for COD & TO_PAY calculations
+  const watchedFreightMode = form.watch("payment_details.freight_payment_mode");
+  const watchedIsCod = form.watch("payment_details.is_cod");
+  const watchedShipmentValue = form.watch("payment_details.shipment_value");
+  const watchedShipmentTaxValue = form.watch("payment_details.shipment_tax_value");
+  const watchedShipmentTotalValue = form.watch("payment_details.shipment_total_value");
+
+  // Dynamic calculation of total commercial value: shipment_total_value = shipment_value + shipment_tax_value
+  useEffect(() => {
+    const base = watchedShipmentValue || 0;
+    const tax = watchedShipmentTaxValue || 0;
+    if (base > 0 || tax > 0) {
+      form.setValue("payment_details.shipment_total_value", base + tax, { shouldValidate: true });
+    }
+  }, [watchedShipmentValue, watchedShipmentTaxValue, form]);
+
   // 2. Auto-Save Draft (Reacts to form keystrokes and step changes)
   useEffect(() => {
-    // Save when the step changes
     localStorage.setItem(
       DRAFT_KEY,
-      JSON.stringify({ step: currentStep, values: form.getValues() })
+      JSON.stringify({
+        step: currentStep,
+        values: form.getValues(),
+        addShippingToCod,
+      })
     );
 
-    // Save when any form field changes
     const subscription = form.watch(() => {
       localStorage.setItem(
         DRAFT_KEY,
-        JSON.stringify({ step: currentStep, values: form.getValues() })
+        JSON.stringify({
+          step: currentStep,
+          values: form.getValues(),
+          addShippingToCod,
+        })
       );
     });
 
     return () => subscription.unsubscribe();
-  }, [currentStep, form, DRAFT_KEY]);
+  }, [currentStep, form, DRAFT_KEY, addShippingToCod]);
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -349,6 +388,11 @@ export default function CreateShipmentWizard() {
   const onSubmit = async (data: ShipmentFormValues) => {
     setIsSubmitting(true);
     try {
+      const totalItemValue = data.payment_details.shipment_total_value || 0;
+      const computedFinalCodAmount = data.payment_details.is_cod
+        ? (data.payment_details.cod_amount || 0)
+        : 0;
+
       const payload: PickupCreate = {
         order_reference_id: data.order_reference_id || undefined,
         shipment_type: data.shipment_type,
@@ -370,8 +414,16 @@ export default function CreateShipmentWizard() {
         packages: data.packages as PackageCreate[],
         payment_details: data.payment_details
           ? {
-              ...data.payment_details,
-              amount: rateQuote?.total_amount || 0,
+              freight_payment_mode: data.payment_details.freight_payment_mode,
+              is_cod: data.payment_details.is_cod,
+              cod_amount: computedFinalCodAmount,
+              add_shipping_to_cod: data.payment_details.freight_payment_mode === FreightPaymentMode.TO_PAY ? true : addShippingToCod,
+              shipment_value: data.payment_details.shipment_value,
+              shipment_tax_value: data.payment_details.shipment_tax_value,
+              shipment_total_value: totalItemValue,
+              base_freight: rateQuote?.base_charge || 0,
+              tax_amount: rateQuote?.tax_amount || 0,
+              total_logistics_cost: rateQuote?.total_amount || 0,
               hsn_code: data.payment_details.hsn_code || undefined,
               invoice_number: data.payment_details.invoice_number || undefined,
               invoice_date: data.payment_details.invoice_date || undefined,
@@ -393,7 +445,6 @@ export default function CreateShipmentWizard() {
     }
   };
 
-  const watchValue = form.watch("payment_details.declared_value");
   const isReverse = form.watch("shipment_type") === ShipmentType.REVERSE;
   const productCategoryValue = form.watch("product_category");
 
@@ -585,7 +636,7 @@ export default function CreateShipmentWizard() {
             {/* STEP 2: CARGO & VALUE */}
             {currentStep === 1 && (
               <div className="space-y-6 animate-in fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-xl border border-slate-100">
                   <FormField
                     control={form.control}
                     name="product_category"
@@ -613,12 +664,30 @@ export default function CreateShipmentWizard() {
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="payment_details.hsn_code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>HSN Code (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. 8517" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription className="text-[10px] text-slate-400">
+                          Harmonized System Nomenclature for customs & tax rates.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   {productCategoryValue === ProductCategory.OTHER && (
                     <FormField
                       control={form.control}
                       name="other_category_description"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="md:col-span-2">
                           <FormLabel>Custom Category Description <span className="text-red-500">*</span></FormLabel>
                           <FormControl>
                             <Input
@@ -632,166 +701,311 @@ export default function CreateShipmentWizard() {
                       )}
                     />
                   )}
-
                 </div>
 
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 space-y-6">
                   <h3 className="font-semibold text-slate-900 border-b pb-2">
                     Financials & Taxation
                   </h3>
+                  
+                  {/* Core Financials grid */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <FormField
                       control={form.control}
-                      name="payment_details.declared_value"
+                      name="payment_details.shipment_value"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>
-                            {isReverse ? "Package Value" : "Total Item Value"}{" "}
-                            (₹)
-                          </FormLabel>
+                          <FormLabel>Shipment Value (₹)</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
+                              min={0}
                               {...field}
-                              onChange={(e) =>
-                                field.onChange(e.target.valueAsNumber || 0)
-                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val === "" ? "" : Number(val));
+                              }}
+                              className="bg-white"
                             />
                           </FormControl>
+                          <FormDescription className="text-[10px] text-slate-400">
+                            Base net commercial cost of items.
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+
                     <FormField
                       control={form.control}
-                      name="payment_details.hsn_code"
+                      name="payment_details.shipment_tax_value"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>HSN Code (Optional)</FormLabel>
+                          <FormLabel>Tax Value (₹)</FormLabel>
                           <FormControl>
-                            <Input {...field} value={field.value || ""} />
+                            <Input
+                              type="number"
+                              min={0}
+                              {...field}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val === "" ? "" : Number(val));
+                              }}
+                              className="bg-white"
+                            />
                           </FormControl>
+                          <FormDescription className="text-[10px] text-slate-400">
+                            Commercial tax applied on items.
+                          </FormDescription>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
 
-                    {!isReverse && (
-                      <>
-                        <FormField
-                          control={form.control}
-                          name="payment_details.tax_amount"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Tax Applied (₹)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  {...field}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.valueAsNumber || 0)
-                                  }
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="payment_details.payment_mode"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Payment Mode</FormLabel>
-                              {/* 🔥 FIX: Removed || "" */}
-                              <Select
-                                onValueChange={field.onChange}
-                                value={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger className="bg-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value={PaymentMode.PREPAID}>
-                                    Prepaid
-                                  </SelectItem>
-                                  <SelectItem value={PaymentMode.COD}>
-                                    Cash on Delivery (COD)
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </FormItem>
-                          )}
-                        />
-                      </>
-                    )}
+                    <FormField
+                      control={form.control}
+                      name="payment_details.shipment_total_value"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Total Value (₹)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              className="bg-white font-bold text-slate-800 border-slate-300"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-[10px] text-slate-500 font-semibold">
+                            Shipment Value + Tax Value (auto-calculated, but editable).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
+                  {/* Payment Mode and COD Toggle */}
                   {!isReverse && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-slate-200/60 pt-6">
                       <FormField
                         control={form.control}
-                        name="payment_details.invoice_number"
+                        name="payment_details.freight_payment_mode"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Invoice Number</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="payment_details.invoice_date"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Invoice Date</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="date"
-                                {...field}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="payment_details.eway_bill_number"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel
-                              className={
-                                watchValue > 50000
-                                  ? "text-red-600 font-bold"
-                                  : ""
-                              }
+                            <FormLabel>Who pays for shipping?</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
                             >
-                              E-Way Bill Number {watchValue > 50000 && "*"}
-                            </FormLabel>
+                              <FormControl>
+                                <SelectTrigger className="bg-white">
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value={FreightPaymentMode.PREPAID}>
+                                  Prepaid (Sender pays)
+                                </SelectItem>
+                                <SelectItem value={FreightPaymentMode.POSTPAID}>
+                                  Postpaid (Sender account billing)
+                                </SelectItem>
+                                <SelectItem value={FreightPaymentMode.TO_PAY}>
+                                  To Pay (Receiver pays)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="payment_details.is_cod"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-xs">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base font-semibold text-slate-900">Cash on Delivery (COD)</FormLabel>
+                              <div className="text-xs text-slate-500">
+                                Collect cash for the item value from receiver at delivery.
+                              </div>
+                            </div>
                             <FormControl>
-                              <Input
-                                placeholder={
-                                  watchValue > 50000
-                                    ? "Mandatory for >₹50k"
-                                    : "Optional"
-                                }
-                                {...field}
-                                value={field.value || ""}
+                              <input
+                                type="checkbox"
+                                className="h-5 w-5 cursor-pointer accent-slate-900"
+                                checked={field.value}
+                                onChange={(e) => {
+                                  field.onChange(e.target.checked);
+                                  if (e.target.checked) {
+                                    const total = form.getValues("payment_details.shipment_total_value") || 0;
+                                    form.setValue("payment_details.cod_amount", total, { shouldValidate: true });
+                                  } else {
+                                    form.setValue("payment_details.cod_amount", 0);
+                                    setAddShippingToCod(false);
+                                  }
+                                }}
                               />
                             </FormControl>
-                            {watchValue > 50000 && (
-                              <FormDescription className="text-red-500 text-[10px]">
-                                Legally required for this cargo value.
-                              </FormDescription>
-                            )}
-                            <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
+                  )}
+
+                  {/* Info Banner for To Pay without COD */}
+                  {!isReverse && !watchedIsCod && watchedFreightMode === FreightPaymentMode.TO_PAY && (
+                    <div className="bg-blue-50 border border-blue-200/60 p-4 rounded-lg flex items-start space-x-3 text-blue-800 animate-in fade-in duration-200">
+                      <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                      <div className="text-xs space-y-1">
+                        <p className="font-bold">Receiver Pays Shipping Charges (To Pay Mode)</p>
+                        <p className="text-blue-700">
+                          Although Cash on Delivery (COD) is off, the receiver will still be required to pay the shipping charges at delivery.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* COD Specific Settings Card */}
+                  {!isReverse && watchedIsCod && (
+                    <div className="bg-slate-100/80 border border-slate-200/80 p-5 rounded-xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
+                        <span className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">
+                          COD Collection Configuration
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="payment_details.cod_amount"
+                          render={({ field }) => (
+                            <FormItem className="bg-white p-4 rounded-lg border border-slate-200">
+                              <FormLabel className="text-slate-800 font-medium">Collectible amount for sender (₹)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  {...field}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    field.onChange(val === "" ? "" : Number(val));
+                                  }}
+                                  className="bg-white font-semibold"
+                                />
+                              </FormControl>
+                              <FormDescription className="text-[10px] text-slate-500">
+                                Defaulted to Shipment Total Value. This amount will be collected at doorstep and sent back to the sender.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <div className="flex flex-col justify-center">
+                          <div className={`flex flex-row items-start space-x-3 rounded-lg border p-4 shadow-xs transition-all duration-150 ${
+                            watchedFreightMode === FreightPaymentMode.TO_PAY
+                              ? "bg-slate-50 border-slate-200 opacity-80 cursor-not-allowed"
+                              : "bg-white border-slate-200 hover:border-slate-300 cursor-pointer"
+                          }`}>
+                            <div className="flex items-center h-5">
+                              <input
+                                id="addShippingToCodCheckbox"
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900 disabled:cursor-not-allowed"
+                                checked={watchedFreightMode === FreightPaymentMode.TO_PAY ? true : addShippingToCod}
+                                disabled={watchedFreightMode === FreightPaymentMode.TO_PAY}
+                                onChange={(e) => setAddShippingToCod(e.target.checked)}
+                              />
+                            </div>
+                            <div className="space-y-1 leading-none">
+                              <label 
+                                htmlFor="addShippingToCodCheckbox" 
+                                className={`font-semibold text-sm text-slate-900 select-none ${
+                                  watchedFreightMode === FreightPaymentMode.TO_PAY ? "cursor-not-allowed text-slate-500" : "cursor-pointer"
+                                }`}
+                              >
+                                Add shipping charges to customer&apos;s COD
+                                {watchedFreightMode === FreightPaymentMode.TO_PAY && (
+                                  <span className="text-[10px] font-semibold text-blue-600 block mt-0.5">
+                                    Enabled automatically in &quot;To Pay&quot; mode
+                                  </span>
+                                )}
+                              </label>
+                              {watchedFreightMode !== FreightPaymentMode.TO_PAY && (
+                                <p className="text-xs text-slate-500">
+                                  Add the final dynamic freight cost to the receiver&apos;s doorstep COD collection.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Compliance and Invoicing */}
+                  {!isReverse && (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-slate-200">
+                        <FormField
+                          control={form.control}
+                          name="payment_details.invoice_number"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Invoice Number</FormLabel>
+                              <FormControl>
+                                <Input {...field} value={field.value || ""} className="bg-white" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="payment_details.invoice_date"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Invoice Date</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="date"
+                                  {...field}
+                                  value={field.value || ""}
+                                  className="bg-white"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* E-Way Bill Compliance Card (Pops up when Gross Value > 50k) */}
+                      {((watchedShipmentTotalValue || 0) > 50000) && (
+                        <div className="space-y-4 mt-4">
+                          <EWayBillBanner tenant={tenant} />
+                          <FormField
+                            control={form.control}
+                            name="payment_details.eway_bill_number"
+                            render={({ field }) => (
+                              <FormItem className="bg-white p-4 rounded-lg border border-slate-200">
+                                <FormLabel className="text-slate-900 font-semibold">
+                                  E-Way Bill Number <span className="text-red-500">*</span>
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder="Enter 12-digit E-Way Bill Number"
+                                    {...field}
+                                    value={field.value || ""}
+                                    className="bg-white font-mono tracking-wider"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -921,36 +1135,118 @@ export default function CreateShipmentWizard() {
             )}
 
             {/* STEP 5: REVIEW */}
-            {currentStep === 4 && rateQuote && (
-              <div className="max-w-md mx-auto text-center space-y-6 animate-in fade-in">
-                <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
-                <h3 className="text-2xl font-bold">Review Pricing</h3>
-                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 text-left space-y-4">
-                  <div className="flex justify-between">
-                    <span>Chargeable Weight</span>
-                    <span className="font-bold">
-                      {rateQuote.chargeable_weight} kg
-                    </span>
+            {currentStep === 4 && rateQuote && (() => {
+              const totalItemValue = watchedShipmentTotalValue || 0;
+              const computedFinalCodAmount = watchedIsCod
+                ? totalItemValue + ((watchedFreightMode === FreightPaymentMode.TO_PAY || addShippingToCod) ? rateQuote.total_amount : 0)
+                : (watchedFreightMode === FreightPaymentMode.TO_PAY ? rateQuote.total_amount : 0);
+
+              return (
+                <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
+                  <div className="text-center space-y-2">
+                    <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
+                    <h3 className="text-2xl font-bold text-slate-900">Verify Shipping & COD Ledger</h3>
+                    <p className="text-slate-500 text-sm">
+                      Review the dynamic pricing quote and final door collection instructions before booking.
+                    </p>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Base Charge</span>
-                    <span className="font-bold">
-                      ₹{rateQuote.base_charge.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Taxes</span>
-                    <span className="font-bold">
-                      ₹{rateQuote.tax_amount.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="border-t pt-4 flex justify-between text-lg font-black">
-                    <span>Total Estimate</span>
-                    <span>₹{rateQuote.total_amount.toFixed(2)}</span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Card 1: Rate Estimation */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+                          Logistics Cost Estimate
+                        </h4>
+                        <div className="space-y-2.5">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Chargeable Weight</span>
+                            <span className="font-bold text-slate-800">
+                              {rateQuote.chargeable_weight} kg
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Base Charge</span>
+                            <span className="font-bold text-slate-800">
+                              ₹{rateQuote.base_charge.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Taxes Applied</span>
+                            <span className="font-bold text-slate-800">
+                              ₹{rateQuote.tax_amount.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-t pt-4 mt-4 flex justify-between items-baseline">
+                        <span className="text-sm font-semibold text-slate-700">Total Freight Fee</span>
+                        <span className="text-xl font-extrabold text-slate-900">
+                          ₹{rateQuote.total_amount.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Door Collection Fintech Card */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+                          Receiver Cash Collection
+                        </h4>
+                        {computedFinalCodAmount > 0 ? (
+                          <div className="space-y-3">
+                            <div className="text-sm text-slate-600">
+                              Receiver pays the following amount at their doorstep:
+                            </div>
+                            <div className="space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                              {watchedIsCod && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-500">Merchant COD Value</span>
+                                  <span className="font-medium text-slate-800">₹{totalItemValue.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {(watchedFreightMode === FreightPaymentMode.TO_PAY || (watchedIsCod && addShippingToCod)) && (
+                                <div className="flex justify-between text-xs text-amber-700 font-semibold">
+                                  <span>Shipping added to COD</span>
+                                  <span>+ ₹{rateQuote.total_amount.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex h-full flex-col justify-center items-center text-center py-4 space-y-2 text-slate-500">
+                            <span className="text-2xl">🕊️</span>
+                            <p className="text-sm font-semibold text-slate-700">No Cash Collection (Prepaid / Postpaid)</p>
+                            <p className="text-xs text-slate-400 max-w-[200px] leading-normal">
+                              Sender accounts will be billed. Package is delivered directly.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {computedFinalCodAmount > 0 && (
+                        <div className="border-t pt-4 mt-4 bg-emerald-50/40 -mx-6 -mb-6 p-6 rounded-b-xl border-emerald-100 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">💵</span>
+                            <div>
+                              <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                                Door Collect COD
+                              </div>
+                              <div className="text-sm font-semibold text-slate-700">
+                                Total at Delivery
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-2xl font-black text-emerald-700">
+                            ₹{computedFinalCodAmount.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* FOOTER */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">

@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export enum PaymentMode {
+export enum FreightPaymentMode {
     PREPAID = 'PREPAID',
-    COD = 'COD',
+    POSTPAID = 'POSTPAID',
+    TO_PAY = 'TO_PAY',
 }

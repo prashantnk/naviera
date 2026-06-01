@@ -1,6 +1,6 @@
 // frontend/src/app/[tenant_slug]/(marketing)/contact/page.tsx
 import { getTenantBySlug } from "@/lib/api";
-import { Mail, MapPin, Phone } from "lucide-react";
+import { Mail, MapPin, Phone, FileText } from "lucide-react";
 
 export default async function ContactPage({
   params,
@@ -80,6 +80,20 @@ export default async function ContactPage({
                 {contact?.address || "Address not provided."}
               </p>
             </div>
+
+            {contact?.gstin && (
+              <div className="border-t border-slate-100 pt-6 mt-6">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-2">
+                  <FileText className="text-primary h-5 w-5" /> Tax & Compliance
+                </h3>
+                <p className="text-slate-600 text-sm">
+                  GSTIN:{" "}
+                  <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded tracking-wider select-all">
+                    {contact.gstin}
+                  </span>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Escalation Matrix Card */}

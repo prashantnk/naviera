@@ -126,6 +126,13 @@ We run Python 3.11 with FastAPI and SQLModel (SQLAlchemy + Pydantic).
   * **Asynchronous Eager Loading:** We explicitly use `selectinload(...)` on every database fetch statement to eagerly pull related child rows in a single roundtrip and prevent `MissingGreenlet` async serialization crashes.
   * **Address Snapshotting:** Modifying a shipment's address creates a fresh `Address` snapshot row in the DB rather than editing the row in place. Deleting saved addresses uses soft-deletes (`is_saved = False`) to protect historical references.
   * **Just-In-Time User Provisioning:** The `get_or_create_user` service maps dynamic Supabase JWT identities to local Postgres database profiles automatically on first login.
+  * **Freight vs. Remittance Decoupling (Option A: Hybrid Financial Architecture):**
+    Always completely decouple Freight Settlement (Logistics/Shipping Charges) from Cash Collection (COD) and Commercial Valuation.
+    - **Core Logistics Columns:** Keep core queryable logistics/shipping charges (`base_freight`, `tax_amount`, `total_logistics_cost`) as standard database columns.
+    - **Commercial Value Columns:** Keep core queryable goods commercial values (`shipment_value`, `shipment_tax_value`, `shipment_total_value`, `add_shipping_to_cod`) as standard database columns.
+    - **Flexible Pricing Breakdown (JSONB Surcharges):** Avoid creating standard database columns for highly volatile or arbitrary dynamic surcharges (e.g., `cod_fee`, `fuel_surcharge`, `network_surcharge`). Instead, pack these details inside a single Postgres `JSONB` column named `pricing_breakdown`. This protects the schema from frequent DDL changes while keeping individual surcharges fully auditable.
+    - **Smart Math Assist:** In the shipping creation wizard/edit views, calculate door cash-collection (COD) totals interactively in real-time using the reactively watched form states:
+      `cod_amount = is_cod ? (shipment_total_value + (add_shipping_to_cod ? total_logistics_cost : 0)) : 0`.
 * **Alembic Migrations [MANDATORY]:**
   Auto-generation does not support detecting custom database `ENUM` value mutations (e.g. adding options or renaming segments). For any schema modification, write raw transactional SQL statements (`ALTER TYPE RENAME`, `CREATE TYPE AS ENUM`, mapping existing table columns) in the generated version file to prevent PostgreSQL crashes.
 * **API Client updates [Codegen Workaround]:**

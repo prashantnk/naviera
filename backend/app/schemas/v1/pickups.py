@@ -10,7 +10,8 @@ from app.models.pickups import (
     ActivityType,
     AddressType,
     DocumentType,
-    PaymentMode,
+    FreightPaymentMode,
+    CodRemittanceStatus,
     PickupStatus,
     PickupTimeSlot,
     ProductCategory,
@@ -50,15 +51,27 @@ class PackageBase(SQLModel):
 
 
 class PaymentDetailsBase(SQLModel):
-    amount: float = Field(default=0.0, ge=0)
     currency: str = "INR"
-    payment_mode: PaymentMode = PaymentMode.PREPAID
-    declared_value: float = Field(default=0.0, ge=0)
+    
+    freight_payment_mode: FreightPaymentMode = FreightPaymentMode.PREPAID
+    is_cod: bool = False
+    cod_amount: float = Field(default=0.0, ge=0)
+    add_shipping_to_cod: bool = False
+
+    # Pricing Ledger & Tax
+    base_freight: float = 0.0
     tax_amount: float = 0.0
+    total_logistics_cost: float = 0.0
+
+    # Compliance
+    shipment_value: float = Field(default=0.0, ge=0)
+    shipment_tax_value: float = Field(default=0.0, ge=0)
+    shipment_total_value: float = Field(default=0.0, ge=0)
     hsn_code: Optional[str] = None
     invoice_number: Optional[str] = None
     invoice_date: Optional[date] = None
     eway_bill_number: Optional[str] = None
+
 
 
 # --- NEW: Document Schema ---
@@ -194,6 +207,8 @@ class PackageRead(PackageBase):
 
 class PaymentDetailsRead(PaymentDetailsBase):
     id: UUID
+    cod_remittance_status: CodRemittanceStatus
+    pricing_breakdown: dict = {}
 
 
 class PickupDocumentRead(PickupDocumentBase):
@@ -347,12 +362,17 @@ class RateCalculationRequest(SQLModel):
     delivery_pincode: str
     packages: List[PackageCreate]
     service_type: ServiceType
+    is_cod: bool = False
+    shipment_total_value: float = 0.0
 
 
 class RateCalculationResponse(SQLModel):
     chargeable_weight: float
     base_charge: float
     service_surcharge: float
+    fuel_surcharge: float
+    network_surcharge: float
+    cod_fee: float
     tax_amount: float
     total_amount: float
     currency: str = "INR"

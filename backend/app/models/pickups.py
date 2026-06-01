@@ -26,9 +26,18 @@ class ServiceType(str, Enum):
     AIR = "AIR"
 
 
-class PaymentMode(str, Enum):
+class FreightPaymentMode(str, Enum):
     PREPAID = "PREPAID"
-    COD = "COD"
+    POSTPAID = "POSTPAID"
+    TO_PAY = "TO_PAY"
+
+
+class CodRemittanceStatus(str, Enum):
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    PENDING_COLLECTION = "PENDING_COLLECTION"
+    COLLECTED = "COLLECTED"
+    REMITTED = "REMITTED"
+    FAILED_RTO = "FAILED_RTO"
 
 
 class PickupStatus(str, Enum):
@@ -143,13 +152,68 @@ class PaymentDetails(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     pickup_id: uuid.UUID = Field(foreign_key="pickups.id", nullable=False)
 
-    amount: float = Field(default=0.0)
-    currency: str = Field(default="INR", max_length=3)
-    payment_mode: PaymentMode = Field(default=PaymentMode.PREPAID)
+    currency: str = Field(default="INR", max_length=3, description="ISO Currency code for all transactions.")
+    
+    freight_payment_mode: FreightPaymentMode = Field(
+        default=FreightPaymentMode.PREPAID,
+        sa_column=Column(sa_Enum(FreightPaymentMode, name="freightpaymentmode"), nullable=False),
+        description="Specifies who settles the logistics/shipping invoice (Prepaid, Postpaid, or To Pay at delivery)."
+    )
+    is_cod: bool = Field(
+        default=False,
+        description="Toggle to collect cash for the item value from the receiver at delivery."
+    )
+    cod_amount: float = Field(
+        default=0.0,
+        description="Item/Cargo commercial value to collect from the receiver at door. Billed independently of freight."
+    )
+    add_shipping_to_cod: bool = Field(
+        default=False,
+        description="Toggle to collect dynamic shipping charges from the receiver as part of COD doorstep payment."
+    )
+    cod_remittance_status: CodRemittanceStatus = Field(
+        default=CodRemittanceStatus.NOT_APPLICABLE,
+        sa_column=Column(sa_Enum(CodRemittanceStatus, name="codremittancestatus"), nullable=False),
+        description="Fintech reconciliation workflow tracking status of cash collected at delivery."
+    )
+
+    # Pricing Ledger
+    base_freight: float = Field(
+        default=0.0,
+        description="Core transportation service charge before taxes or auxiliary surcharges."
+    )
+    tax_amount: float = Field(
+        default=0.0,
+        description="GST/VAT indirect taxation levied on the logistics service fee."
+    )
+    total_logistics_cost: float = Field(
+        default=0.0,
+        description="Total shipping charge including base freight, taxes, and dynamic surcharges."
+    )
+
+    # JSON Audit Ledger
+    pricing_breakdown: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Raw audited schema logs recording the dynamic pricing engine's step-by-step calculations. Holds all dynamic surcharges such as cod_fee, fuel_surcharge, and network_surcharge."
+    )
 
     # Tax & Compliance
-    declared_value: float = Field(default=0.0, ge=0, description="Total shipment value")
-    tax_amount: float = Field(default=0.0)
+    shipment_value: float = Field(
+        default=0.0,
+        ge=0,
+        description="Base commercial value of the cargo inside packages."
+    )
+    shipment_tax_value: float = Field(
+        default=0.0,
+        ge=0,
+        description="Commercial tax levied on the cargo (e.g., product sales tax)."
+    )
+    shipment_total_value: float = Field(
+        default=0.0,
+        ge=0,
+        description="Total value of the commercial shipment (Shipment Value + Tax Value)."
+    )
     hsn_code: Optional[str] = Field(
         default=None, description="Harmonized System Nomenclature"
     )
