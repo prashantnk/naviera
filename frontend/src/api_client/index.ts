@@ -8,9 +8,10 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export { ActivityType } from './models/ActivityType';
+export { AddressCategory } from './models/AddressCategory';
 export type { AddressCreate } from './models/AddressCreate';
 export type { AddressRead } from './models/AddressRead';
-export { AddressType } from './models/AddressType';
+export { AddressScope } from './models/AddressScope';
 export type { AddressUpdate } from './models/AddressUpdate';
 export { CodRemittanceStatus } from './models/CodRemittanceStatus';
 export { DocumentType } from './models/DocumentType';

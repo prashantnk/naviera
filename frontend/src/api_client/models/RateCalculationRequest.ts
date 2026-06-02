@@ -9,5 +9,7 @@ export type RateCalculationRequest = {
     delivery_pincode: string;
     packages: Array<PackageCreate>;
     service_type: ServiceType;
+    is_cod?: boolean;
+    shipment_total_value?: number;
 };
 

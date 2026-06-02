@@ -5,7 +5,7 @@ import {
   AddressesService,
   AddressCreate,
   AddressRead,
-  AddressType,
+  AddressScope,
   ApiError,
   DocumentType,
   PackageCreate,
@@ -98,15 +98,11 @@ export default function CreateShipmentWizard() {
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
   const [addShippingToCod, setAddShippingToCod] = useState(false);
 
-  const [warehouses, setWarehouses] = useState<AddressRead[]>([]);
-  const [customers, setCustomers] = useState<AddressRead[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
 
   useEffect(() => {
-    AddressesService.listSavedAddresses(AddressType.WAREHOUSE)
-      .then(setWarehouses)
-      .catch(console.error);
-    AddressesService.listSavedAddresses(AddressType.CUSTOMER)
-      .then(setCustomers)
+    AddressesService.listSavedAddresses()
+      .then(setSavedAddresses)
       .catch(console.error);
   }, []);
 
@@ -341,13 +337,12 @@ export default function CreateShipmentWizard() {
           throw new Error("Please check package dimensions.");
         }
 
-        const allAddresses = [...warehouses, ...customers];
         const pPincode =
           values.new_pickup_address?.pincode ||
-          allAddresses.find((a) => a.id === values.pickup_address_id)?.pincode;
+          savedAddresses.find((a) => a.id === values.pickup_address_id)?.pincode;
         const dPincode =
           values.new_delivery_address?.pincode ||
-          allAddresses.find((a) => a.id === values.delivery_address_id)
+          savedAddresses.find((a) => a.id === values.delivery_address_id)
             ?.pincode;
 
         if (!pPincode || !dPincode)
@@ -386,9 +381,13 @@ export default function CreateShipmentWizard() {
   };
 
   const onSubmit = async (data: ShipmentFormValues) => {
+    if (currentStep < STEPS.length - 1) {
+      nextStep();
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const totalItemValue = data.payment_details.shipment_total_value || 0;
+      const totalItemValue = data.payment_details?.shipment_total_value || 0;
       const computedFinalCodAmount = data.payment_details.is_cod
         ? (data.payment_details.cod_amount || 0)
         : 0;
@@ -406,11 +405,27 @@ export default function CreateShipmentWizard() {
         pickup_address_id: data.pickup_address_id || undefined,
         new_pickup_address: data.pickup_address_id
           ? undefined
-          : (data.new_pickup_address as unknown as AddressCreate),
+          : data.new_pickup_address
+          ? ({
+              ...data.new_pickup_address,
+              is_saved: data.new_pickup_address.save_to_address_book,
+              scope: data.new_pickup_address.is_shared_with_team
+                ? AddressScope.TENANT
+                : AddressScope.PRIVATE,
+            } as unknown as AddressCreate)
+          : undefined,
         delivery_address_id: data.delivery_address_id || undefined,
         new_delivery_address: data.delivery_address_id
           ? undefined
-          : (data.new_delivery_address as unknown as AddressCreate),
+          : data.new_delivery_address
+          ? ({
+              ...data.new_delivery_address,
+              is_saved: data.new_delivery_address.save_to_address_book,
+              scope: data.new_delivery_address.is_shared_with_team
+                ? AddressScope.TENANT
+                : AddressScope.PRIVATE,
+            } as unknown as AddressCreate)
+          : undefined,
         packages: data.packages as PackageCreate[],
         payment_details: data.payment_details
           ? {
@@ -437,9 +452,25 @@ export default function CreateShipmentWizard() {
       localStorage.removeItem(DRAFT_KEY);
       toast.success("Shipment booked successfully!");
       router.push(routeTo("/shipments"));
-    } catch (error) {
+    } catch (error: unknown) {
+      let errorMessage = "Failed to create shipment.";
       const apiError = error as ApiError;
-      toast.error(apiError.body?.detail || "Failed to create shipment.");
+      if (apiError && typeof apiError === "object" && "body" in apiError) {
+        const body = apiError.body as { detail?: unknown } | undefined;
+        if (body && body.detail) {
+          if (Array.isArray(body.detail)) {
+            errorMessage = body.detail
+              .map((err: { loc?: unknown[]; msg?: string }) => {
+                const lastLoc = err.loc?.at(-1);
+                return `${lastLoc ? String(lastLoc) : "field"}: ${err.msg || "invalid value"}`;
+              })
+              .join(" | ");
+          } else if (typeof body.detail === "string") {
+            errorMessage = body.detail;
+          }
+        }
+      }
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -773,6 +804,10 @@ export default function CreateShipmentWizard() {
                               type="number"
                               className="bg-white font-bold text-slate-800 border-slate-300"
                               {...field}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val === "" ? "" : Number(val));
+                              }}
                             />
                           </FormControl>
                           <FormDescription className="text-[10px] text-slate-500 font-semibold">
@@ -1017,22 +1052,14 @@ export default function CreateShipmentWizard() {
                 <AddressFieldset
                   control={form.control}
                   type="pickup"
-                  title={
-                    isReverse
-                      ? "1. Pickup Location (Customer)"
-                      : "1. Origin (Warehouse)"
-                  }
-                  savedAddresses={isReverse ? customers : warehouses}
+                  title="Sender Details (Pickup Location)"
+                  savedAddresses={savedAddresses}
                 />
                 <AddressFieldset
                   control={form.control}
                   type="delivery"
-                  title={
-                    isReverse
-                      ? "2. Drop Location (Warehouse)"
-                      : "2. Destination (Customer)"
-                  }
-                  savedAddresses={isReverse ? warehouses : customers}
+                  title="Receiver Details (Delivery Location)"
+                  savedAddresses={savedAddresses}
                 />
               </div>
             )}

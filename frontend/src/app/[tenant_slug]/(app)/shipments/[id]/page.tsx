@@ -238,7 +238,17 @@ export default function ShipmentDetailsPage() {
                 <p className="font-semibold text-slate-900">
                   {shipment.pickup_address.name}
                 </p>
-                <p className="text-sm text-slate-600 leading-relaxed">
+                {shipment.pickup_address.company_name && (
+                  <p className="text-xs font-bold text-indigo-600/80 uppercase tracking-wider mt-0.5">
+                    {shipment.pickup_address.company_name}
+                  </p>
+                )}
+                {shipment.pickup_address.gstin && (
+                  <p className="text-[10px] font-mono bg-slate-100 border border-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded w-fit mt-1 uppercase tracking-wider font-bold">
+                    GSTIN: {shipment.pickup_address.gstin}
+                  </p>
+                )}
+                <p className="text-sm text-slate-600 leading-relaxed mt-1">
                   {shipment.pickup_address.address_line1}
                 </p>
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -257,7 +267,17 @@ export default function ShipmentDetailsPage() {
                 <p className="font-semibold text-slate-900">
                   {shipment.delivery_address.name}
                 </p>
-                <p className="text-sm text-slate-600 leading-relaxed">
+                {shipment.delivery_address.company_name && (
+                  <p className="text-xs font-bold text-indigo-600/80 uppercase tracking-wider mt-0.5">
+                    {shipment.delivery_address.company_name}
+                  </p>
+                )}
+                {shipment.delivery_address.gstin && (
+                  <p className="text-[10px] font-mono bg-slate-100 border border-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded w-fit mt-1 uppercase tracking-wider font-bold">
+                    GSTIN: {shipment.delivery_address.gstin}
+                  </p>
+                )}
+                <p className="text-sm text-slate-600 leading-relaxed mt-1">
                   {shipment.delivery_address.address_line1}
                 </p>
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -467,7 +487,7 @@ export default function ShipmentDetailsPage() {
                     <MessageSquare className="h-3.5 w-3.5" /> Latest Status Note
                   </span>
                   <p className="font-semibold text-blue-900 leading-snug italic">
-                    "{shipment.latest_status_comment}"
+                    &quot;{shipment.latest_status_comment}&quot;
                   </p>
                 </div>
               )}

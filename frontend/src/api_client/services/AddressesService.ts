@@ -2,9 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { AddressCategory } from '../models/AddressCategory';
 import type { AddressCreate } from '../models/AddressCreate';
 import type { AddressRead } from '../models/AddressRead';
-import type { AddressType } from '../models/AddressType';
 import type { AddressUpdate } from '../models/AddressUpdate';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -13,13 +13,13 @@ export class AddressesService {
     /**
      * List Saved Addresses
      * Fetch all SAVED addresses for the current user in this tenant.
-     * @param addressType Filter by WAREHOUSE or CUSTOMER
+     * @param category Filter by HOME, OFFICE, WAREHOUSE, STOREFRONT, or OTHER
      * @param xTenantSlug
      * @returns AddressRead Successful Response
      * @throws ApiError
      */
     public static listSavedAddresses(
-        addressType?: (AddressType | null),
+        category?: (AddressCategory | null),
         xTenantSlug?: (string | null),
     ): CancelablePromise<Array<AddressRead>> {
         return __request(OpenAPI, {
@@ -29,7 +29,7 @@ export class AddressesService {
                 'x-tenant-slug': xTenantSlug,
             },
             query: {
-                'address_type': addressType,
+                'category': category,
             },
             errors: {
                 422: `Validation Error`,

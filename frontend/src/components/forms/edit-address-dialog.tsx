@@ -1,8 +1,9 @@
-// frontend/src/components/forms/edit-address-dialog.tsx
+// src/components/forms/edit-address-dialog.tsx
 "use client";
 
-import { AddressRead, AddressesService, AddressType, AddressUpdate, ApiError } from "@/api_client";
+import { AddressRead, AddressesService, AddressCategory, AddressScope, AddressUpdate, ApiError } from "@/api_client";
 import { Button } from "@/components/ui/button";
+import { useUser } from "@/components/auth/auth-guard";
 import {
   Dialog,
   DialogContent,
@@ -26,24 +27,48 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, User, Building2, Phone, Mail, MapPin, Tag, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { usePincodeLocator } from "@/hooks/use-pincode-locator";
 import * as z from "zod";
 
 const addressSchema = z.object({
   name: z.string().min(2, "Contact name is required"),
   company_name: z.string().optional(),
-  phone: z.string().min(10, "Phone must be at least 10 digits"),
+  phone: z
+    .string()
+    .refine((val) => /^[6-9]\d{9}$/.test(val), {
+      message: "Must be a 10-digit mobile number starting with 6-9",
+    }),
+  alternate_phone: z
+    .string()
+    .refine((val) => !val || /^[6-9]\d{9}$/.test(val), {
+      message: "Must be a 10-digit mobile number starting with 6-9",
+    })
+    .optional()
+    .or(z.literal("")),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
-  address_type: z.nativeEnum(AddressType),
+  gstin: z
+    .string()
+    .refine((val) => !val || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(val), {
+      message: "Invalid Indian GSTIN format (e.g., 27AAAAA1111A1Z1)",
+    })
+    .optional()
+    .or(z.literal("")),
+  category: z.nativeEnum(AddressCategory),
+  scope: z.nativeEnum(AddressScope),
   address_line1: z.string().min(5, "Please enter a complete address"),
   address_line2: z.string().optional(),
   landmark: z.string().optional(),
   city: z.string().min(2, "City is required"),
   state: z.string().min(2, "State is required"),
-  pincode: z.string().min(6, "Valid Pincode required"),
+  pincode: z
+    .string()
+    .refine((val) => /^[1-9][0-9]{5}$/.test(val), {
+      message: "Must be a valid 6-digit Indian pincode (cannot start with 0)",
+    }),
 });
 
 export function EditAddressDialog({
@@ -58,9 +83,22 @@ export function EditAddressDialog({
   onSuccess: () => void;
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isAdmin } = useUser();
 
   const form = useForm<z.infer<typeof addressSchema>>({
     resolver: zodResolver(addressSchema),
+  });
+
+  const pincodeValue = useWatch({
+    control: form.control,
+    name: "pincode",
+  });
+
+  const { isLocating, geoVerified, geoError } = usePincodeLocator<z.infer<typeof addressSchema>>({
+    pincodeValue,
+    setValue: form.setValue,
+    cityField: "city",
+    stateField: "state",
   });
 
   useEffect(() => {
@@ -69,6 +107,7 @@ export function EditAddressDialog({
         name: address.name,
         company_name: address.company_name || "",
         phone: address.phone,
+        alternate_phone: address.alternate_phone || "",
         email: address.email || "",
         address_line1: address.address_line1,
         address_line2: address.address_line2 || "",
@@ -76,7 +115,9 @@ export function EditAddressDialog({
         city: address.city,
         state: address.state,
         pincode: address.pincode,
-        address_type: address.address_type,
+        category: address.category || AddressCategory.HOME,
+        scope: address.scope || AddressScope.PRIVATE,
+        gstin: address.gstin || "",
       });
     }
   }, [address, open, form]);
@@ -89,9 +130,13 @@ export function EditAddressDialog({
         ...data,
         email: data.email === "" ? undefined : data.email,
         company_name: data.company_name === "" ? undefined : data.company_name,
+        alternate_phone: data.alternate_phone === "" ? undefined : data.alternate_phone,
         address_line2:
           data.address_line2 === "" ? undefined : data.address_line2,
         landmark: data.landmark === "" ? undefined : data.landmark,
+        gstin: data.gstin === "" ? undefined : data.gstin,
+        // Force scope to PRIVATE for non-admins
+        scope: isAdmin ? data.scope : AddressScope.PRIVATE,
       } as AddressUpdate);
       toast.success("Address updated successfully!");
       setOpen(false);
@@ -106,120 +151,191 @@ export function EditAddressDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Address</DialogTitle>
+      <DialogContent 
+        className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto rounded-xl shadow-lg border border-slate-200"
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="border-b border-slate-100 pb-4">
+          <DialogTitle className="text-xl font-bold text-slate-950 flex items-center gap-2">
+            <MapPin className="h-5.5 w-5.5 text-slate-950 shrink-0" /> Edit Address
+          </DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-4 pt-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              form.handleSubmit(onSubmit)(e);
+            }}
+            className="space-y-5 pt-4"
           >
             {/* Section 1: Identity */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Contact Name <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="company_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Company Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Phone <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Contact details</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-slate-400" /> Contact Name <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 text-slate-400" /> Phone <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white font-mono" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-slate-400" /> Email Address
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="alternate_phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 text-slate-400" /> Alternate Phone
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white font-mono" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="company_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-slate-400" /> Company Name
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gstin"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-slate-400" /> GSTIN
+                      </FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="27AAAAA1111A1Z1" 
+                          className="bg-white font-mono uppercase" 
+                          {...field} 
+                          value={(field.value as string)?.toUpperCase() || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
-            {/* Section 2: Type */}
-            <FormField
-              control={form.control}
-              name="address_type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Address Type</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={AddressType.CUSTOMER}>
-                        Customer Destination
-                      </SelectItem>
-                      <SelectItem value={AddressType.WAREHOUSE}>
-                        My Warehouse (Origin)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Section 2: Physical address */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Physical address</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Tag className="h-3.5 w-3.5 text-slate-400" /> Address Category
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="bg-white">
+                            <SelectValue placeholder="Select Category" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {Object.values(AddressCategory).map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            {/* Section 3: Location */}
-            <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <FormField
-                control={form.control}
-                name="address_line1"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Address Line 1 <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input className="bg-white" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="pincode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        Pincode <span className="text-red-500">*</span>
+                        {isLocating && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />}
+                        {geoVerified && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">✓ Verified</span>}
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="address_line1"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>
+                        Address Line 1 <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input className="bg-white" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="address_line2"
@@ -233,6 +349,7 @@ export function EditAddressDialog({
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="landmark"
@@ -246,8 +363,7 @@ export function EditAddressDialog({
                     </FormItem>
                   )}
                 />
-              </div>
-              <div className="grid grid-cols-3 gap-4">
+
                 <FormField
                   control={form.control}
                   name="city"
@@ -257,12 +373,17 @@ export function EditAddressDialog({
                         City <span className="text-red-500">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input className="bg-white" {...field} />
+                        <Input 
+                          className="bg-white" 
+                          {...field} 
+                          disabled={geoVerified}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="state"
@@ -272,39 +393,61 @@ export function EditAddressDialog({
                         State <span className="text-red-500">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input className="bg-white" {...field} />
+                        <Input 
+                          className="bg-white" 
+                          {...field} 
+                          disabled={geoVerified}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="pincode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Pincode <span className="text-red-500">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input className="bg-white" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+
+                {isAdmin && (
+                  <FormField
+                    control={form.control}
+                    name="scope"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2 animate-in fade-in duration-150">
+                        <FormLabel className="flex items-center gap-1.5">
+                          <Eye className="h-3.5 w-3.5 text-slate-400" /> Sharing Scope
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="bg-white">
+                              <SelectValue placeholder="Select Scope" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value={AddressScope.PRIVATE}>Private (Personal Use)</SelectItem>
+                            <SelectItem value={AddressScope.TENANT}>Shared (Team-wide)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {geoError && (
+                  <div className="md:col-span-2 text-[11px] text-amber-600 font-medium bg-amber-50 border border-amber-100 p-2.5 rounded-lg flex items-center gap-1.5 animate-in fade-in duration-150">
+                    <span className="text-xs">⚠</span> {geoError}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
+                className="cursor-pointer"
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 cursor-pointer" disabled={isSubmitting}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...

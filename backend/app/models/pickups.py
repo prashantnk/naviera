@@ -9,10 +9,17 @@ from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 # --- 1. Enums (The Rules) ---
 
 
-class AddressType(str, Enum):
-    WAREHOUSE = "WAREHOUSE"  # The Tenant's own locations
-    CUSTOMER = "CUSTOMER"  # External Clients
+class AddressCategory(str, Enum):
+    HOME = "HOME"
+    OFFICE = "OFFICE"
+    WAREHOUSE = "WAREHOUSE"
+    STOREFRONT = "STOREFRONT"
     OTHER = "OTHER"
+
+
+class AddressScope(str, Enum):
+    PRIVATE = "PRIVATE"
+    TENANT = "TENANT"
 
 
 class ShipmentType(str, Enum):
@@ -104,7 +111,17 @@ class Address(SQLModel, table=True):
     user_id: Optional[uuid.UUID] = Field(
         default=None, foreign_key="user.id", index=True
     )
-    address_type: AddressType = Field(default=AddressType.CUSTOMER)
+    category: AddressCategory = Field(
+        default=AddressCategory.HOME,
+        sa_column=Column(sa_Enum(AddressCategory, name="addresscategory"), nullable=False)
+    )
+    scope: AddressScope = Field(
+        default=AddressScope.PRIVATE,
+        sa_column=Column(sa_Enum(AddressScope, name="addressscope"), nullable=False)
+    )
+    alternate_phone: Optional[str] = Field(default=None, max_length=20)
+    gstin: Optional[str] = Field(default=None, max_length=15)
+    address_signature: Optional[str] = Field(default=None, index=True)
     is_saved: bool = Field(default=False, index=True)
 
     name: str = Field(max_length=100)
