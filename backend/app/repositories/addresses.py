@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.pickups import Address, AddressType
+from app.models.pickups import Address, AddressCategory, AddressScope
 
 
 class AddressRepository:
@@ -20,20 +20,21 @@ class AddressRepository:
         self,
         tenant_id: uuid.UUID,
         user_id: uuid.UUID,
-        address_type: Optional[AddressType] = None,
+        category: Optional[AddressCategory] = None,
     ) -> List[Address]:
         """
-        Retrieves explicitly saved addresses, optionally filtered by type.
+        Retrieves explicitly saved addresses, optionally filtered by category.
         """
         statement = select(Address).where(
             Address.tenant_id == tenant_id,
-            Address.user_id == user_id,
-            Address.is_saved == True,
+            Address.is_saved,
+            (Address.scope == AddressScope.TENANT) |
+            (Address.user_id == user_id)
         )
 
         # APPLY the filter if it was provided
-        if address_type:
-            statement = statement.where(Address.address_type == address_type)
+        if category:
+            statement = statement.where(Address.category == category)
 
         result = await self.session.exec(statement)
         return list(result.all())
@@ -50,3 +51,12 @@ class AddressRepository:
     async def get_address_by_id(self, address_id: uuid.UUID) -> Address | None:
         """Retrieves a single address by ID."""
         return await self.session.get(Address, address_id)
+
+    async def get_address_by_signature(self, tenant_id: uuid.UUID, signature: str) -> Address | None:
+        """Retrieves a single address by its signature within a tenant."""
+        statement = select(Address).where(
+            Address.tenant_id == tenant_id,
+            Address.address_signature == signature,
+        )
+        result = await self.session.exec(statement)
+        return result.first()

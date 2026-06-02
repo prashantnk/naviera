@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
-from app.models.pickups import AddressType
+from app.models.pickups import AddressCategory
 from app.models.tenants import Tenant, User
 from app.schemas.v1.pickups import AddressCreate, AddressRead, AddressUpdate
 from app.services.addresses import AddressService, get_address_service
@@ -15,8 +15,8 @@ router = APIRouter()
 
 @router.get("", response_model=List[AddressRead])
 async def list_saved_addresses(
-    address_type: Optional[AddressType] = Query(
-        None, description="Filter by WAREHOUSE or CUSTOMER"
+    category: Optional[AddressCategory] = Query(
+        None, description="Filter by HOME, OFFICE, WAREHOUSE, STOREFRONT, or OTHER"
     ),
     current_user: User = Depends(get_current_active_user),
     current_tenant: Tenant = Depends(get_tenant_from_header),
@@ -26,7 +26,7 @@ async def list_saved_addresses(
     Fetch all SAVED addresses for the current user in this tenant.
     """
     return await address_service.list_saved_addresses(
-        user=current_user, tenant=current_tenant, address_type=address_type
+        user=current_user, tenant=current_tenant, category=category
     )
 
 

@@ -8,7 +8,8 @@ from sqlmodel import Field, SQLModel  # Using SQLModel for consistency
 # Import Enums
 from app.models.pickups import (
     ActivityType,
-    AddressType,
+    AddressCategory,
+    AddressScope,
     DocumentType,
     FreightPaymentMode,
     CodRemittanceStatus,
@@ -25,8 +26,10 @@ from app.models.pickups import (
 class AddressBase(SQLModel):
     name: str
     phone: str
+    alternate_phone: Optional[str] = None
     email: Optional[EmailStr] = None
     company_name: Optional[str] = None
+    gstin: Optional[str] = None
     address_line1: str
     address_line2: Optional[str] = None
     landmark: Optional[str] = None
@@ -34,7 +37,8 @@ class AddressBase(SQLModel):
     state: str
     pincode: str
     country: str = "IN"
-    address_type: AddressType = AddressType.CUSTOMER
+    category: AddressCategory = AddressCategory.HOME
+    scope: AddressScope = AddressScope.PRIVATE
     is_saved: bool = (
         False  # default to transient addresses (Not treated as saved to DB)
     )
@@ -90,6 +94,8 @@ class AddressCreate(AddressBase):
 class AddressUpdate(SQLModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    alternate_phone: Optional[str] = None
+    gstin: Optional[str] = None
     email: Optional[EmailStr] = None
     company_name: Optional[str] = None
     address_line1: Optional[str] = None
@@ -99,7 +105,8 @@ class AddressUpdate(SQLModel):
     state: Optional[str] = None
     pincode: Optional[str] = None
     country: Optional[str] = None
-    address_type: Optional[AddressType] = None
+    category: Optional[AddressCategory] = None
+    scope: Optional[AddressScope] = None
 
 
 class PackageCreate(PackageBase):
@@ -167,24 +174,6 @@ class PickupCreate(SQLModel):
                 "reason_for_return is mandatory when shipment_type is REVERSE"
             )
 
-        # --- Rule 3: Anti-Pollution (Security) ---
-        # Users should not define global Warehouses in this transient flow.
-        if (
-            self.new_pickup_address
-            and self.new_pickup_address.address_type == AddressType.WAREHOUSE
-        ):
-            raise ValueError(
-                "You cannot create a WAREHOUSE address here. Please use the Settings page."
-            )
-
-        if (
-            self.new_delivery_address
-            and self.new_delivery_address.address_type == AddressType.WAREHOUSE
-        ):
-            raise ValueError(
-                "You cannot create a WAREHOUSE address here. Please use the Settings page."
-            )
-
         # --- Rule 4: ProductCategory OTHER requires description ---
         if self.product_category == ProductCategory.OTHER and not self.other_category_description:
             raise ValueError(
@@ -199,6 +188,7 @@ class PickupCreate(SQLModel):
 
 class AddressRead(AddressBase):
     id: UUID
+    user_id: UUID
 
 
 class PackageRead(PackageBase):

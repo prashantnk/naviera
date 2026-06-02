@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export enum AddressType {
-    WAREHOUSE = 'WAREHOUSE',
-    CUSTOMER = 'CUSTOMER',
-    OTHER = 'OTHER',
+export enum AddressScope {
+    PRIVATE = 'PRIVATE',
+    TENANT = 'TENANT',
 }

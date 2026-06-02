@@ -2,10 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { AddressType } from './AddressType';
+import type { AddressCategory } from './AddressCategory';
+import type { AddressScope } from './AddressScope';
 export type AddressUpdate = {
     name?: (string | null);
     phone?: (string | null);
+    alternate_phone?: (string | null);
+    gstin?: (string | null);
     email?: (string | null);
     company_name?: (string | null);
     address_line1?: (string | null);
@@ -15,6 +18,7 @@ export type AddressUpdate = {
     state?: (string | null);
     pincode?: (string | null);
     country?: (string | null);
-    address_type?: (AddressType | null);
+    category?: (AddressCategory | null);
+    scope?: (AddressScope | null);
 };
 

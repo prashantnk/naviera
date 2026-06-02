@@ -1,5 +1,7 @@
 // frontend/src/lib/validations/shipment.ts
 import {
+  AddressCategory,
+  AddressScope,
   DocumentType,
   FreightPaymentMode,
   PickupTimeSlot,
@@ -9,11 +11,29 @@ import {
 } from "@/api_client";
 import * as z from "zod";
 
-const addressSchema = z.object({
+export const addressSchema = z.object({
   name: z.string().min(2, "Name is required").optional().or(z.literal("")),
+  company_name: z.string().optional().or(z.literal("")),
   phone: z
     .string()
-    .min(10, "Phone number must be at least 10 digits")
+    .refine((val) => !val || /^[6-9]\d{9}$/.test(val), {
+      message: "Must be a 10-digit mobile number starting with 6-9",
+    })
+    .optional()
+    .or(z.literal("")),
+  alternate_phone: z
+    .string()
+    .refine((val) => !val || /^[6-9]\d{9}$/.test(val), {
+      message: "Must be a 10-digit mobile number starting with 6-9",
+    })
+    .optional()
+    .or(z.literal("")),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  gstin: z
+    .string()
+    .refine((val) => !val || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(val), {
+      message: "Invalid Indian GSTIN format",
+    })
     .optional()
     .or(z.literal("")),
   address_line1: z
@@ -27,9 +47,15 @@ const addressSchema = z.object({
   state: z.string().min(2, "State is required").optional().or(z.literal("")),
   pincode: z
     .string()
-    .min(6, "Valid Pincode required")
+    .refine((val) => !val || /^[1-9][0-9]{5}$/.test(val), {
+      message: "Must be a valid 6-digit Indian pincode (cannot start with 0)",
+    })
     .optional()
     .or(z.literal("")),
+  category: z.nativeEnum(AddressCategory).default(AddressCategory.HOME),
+  scope: z.nativeEnum(AddressScope).default(AddressScope.PRIVATE),
+  save_to_address_book: z.boolean().default(true),
+  is_shared_with_team: z.boolean().default(false),
 });
 
 const packageSchema = z.object({

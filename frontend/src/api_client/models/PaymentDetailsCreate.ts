@@ -8,10 +8,10 @@ export type PaymentDetailsCreate = {
     freight_payment_mode?: FreightPaymentMode;
     is_cod?: boolean;
     cod_amount?: number;
+    add_shipping_to_cod?: boolean;
     base_freight?: number;
     tax_amount?: number;
     total_logistics_cost?: number;
-    add_shipping_to_cod?: boolean;
     shipment_value?: number;
     shipment_tax_value?: number;
     shipment_total_value?: number;

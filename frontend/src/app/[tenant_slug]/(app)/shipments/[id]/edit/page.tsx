@@ -1,10 +1,24 @@
 // frontend/src/app/[tenant_slug]/(app)/shipments/[id]/edit/page.tsx
 "use client";
 
-import { ApiError, FreightPaymentMode, ProductCategory, PickupUpdate, ServiceType, ShipmentsService, ShipmentType } from "@/api_client";
+import {
+  AddressesService,
+  AddressCreate,
+  AddressRead,
+  AddressScope,
+  ApiError,
+  FreightPaymentMode,
+  ProductCategory,
+  PickupUpdate,
+  ServiceType,
+  ShipmentsService,
+  ShipmentType,
+} from "@/api_client";
 import { CATEGORY_LABELS } from "../../new/page";
 import { PackageFieldset } from "@/components/forms/package-fieldset";
 import { EWayBillBanner } from "@/components/forms/eway-bill-banner";
+import { AddressFieldset } from "@/components/forms/address-fieldset";
+import { addressSchema, ShipmentFormValues } from "@/lib/validations/shipment";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +44,7 @@ import { ArrowLeft, Info, Loader2, Save } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Resolver, useForm } from "react-hook-form";
+import { Control, Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
 
@@ -65,6 +79,12 @@ const editShipmentSchema = z.object({
       eway_bill_number: z.string().optional(),
     })
     .optional(),
+
+  // Addresses
+  pickup_address_id: z.string().optional(),
+  new_pickup_address: addressSchema.optional(),
+  delivery_address_id: z.string().optional(),
+  new_delivery_address: addressSchema.optional(),
 
   // Packages
   packages: z
@@ -122,6 +142,13 @@ export default function EditShipmentPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
+
+  useEffect(() => {
+    AddressesService.listSavedAddresses()
+      .then(setSavedAddresses)
+      .catch(console.error);
+  }, []);
 
   const form = useForm<EditShipmentValues>({
     resolver: zodResolver(editShipmentSchema) as unknown as Resolver<EditShipmentValues>,
@@ -144,6 +171,10 @@ export default function EditShipmentPage() {
       },
       packages: [],
       comment: "",
+      pickup_address_id: "",
+      new_pickup_address: undefined,
+      delivery_address_id: "",
+      new_delivery_address: undefined,
     },
   });
 
@@ -219,6 +250,46 @@ export default function EditShipmentPage() {
             description: p.description || "",
           })),
           comment: "",
+          pickup_address_id: data.pickup_address?.is_saved ? data.pickup_address.id : "",
+          new_pickup_address: data.pickup_address && !data.pickup_address.is_saved
+            ? {
+                name: data.pickup_address.name,
+                company_name: data.pickup_address.company_name || "",
+                phone: data.pickup_address.phone,
+                alternate_phone: data.pickup_address.alternate_phone || "",
+                email: data.pickup_address.email || "",
+                address_line1: data.pickup_address.address_line1,
+                address_line2: data.pickup_address.address_line2 || "",
+                landmark: data.pickup_address.landmark || "",
+                city: data.pickup_address.city,
+                state: data.pickup_address.state,
+                pincode: data.pickup_address.pincode,
+                category: data.pickup_address.category,
+                gstin: data.pickup_address.gstin || "",
+                save_to_address_book: false,
+                is_shared_with_team: false,
+              }
+            : undefined,
+          delivery_address_id: data.delivery_address?.is_saved ? data.delivery_address.id : "",
+          new_delivery_address: data.delivery_address && !data.delivery_address.is_saved
+            ? {
+                name: data.delivery_address.name,
+                company_name: data.delivery_address.company_name || "",
+                phone: data.delivery_address.phone,
+                alternate_phone: data.delivery_address.alternate_phone || "",
+                email: data.delivery_address.email || "",
+                address_line1: data.delivery_address.address_line1,
+                address_line2: data.delivery_address.address_line2 || "",
+                landmark: data.delivery_address.landmark || "",
+                city: data.delivery_address.city,
+                state: data.delivery_address.state,
+                pincode: data.delivery_address.pincode,
+                category: data.delivery_address.category,
+                gstin: data.delivery_address.gstin || "",
+                save_to_address_book: false,
+                is_shared_with_team: false,
+              }
+            : undefined,
         });
       } catch {
         toast.error("Failed to load shipment details.");
@@ -252,6 +323,30 @@ export default function EditShipmentPage() {
         other_category_description: data.other_category_description || undefined,
 
         reason_for_return: data.reason_for_return || undefined,
+        pickup_address_id: data.pickup_address_id || undefined,
+        new_pickup_address: data.pickup_address_id
+          ? undefined
+          : data.new_pickup_address
+          ? ({
+              ...data.new_pickup_address,
+              is_saved: data.new_pickup_address.save_to_address_book,
+              scope: data.new_pickup_address.is_shared_with_team
+                ? AddressScope.TENANT
+                : AddressScope.PRIVATE,
+            } as unknown as AddressCreate)
+          : undefined,
+        delivery_address_id: data.delivery_address_id || undefined,
+        new_delivery_address: data.delivery_address_id
+          ? undefined
+          : data.new_delivery_address
+          ? ({
+              ...data.new_delivery_address,
+              is_saved: data.new_delivery_address.save_to_address_book,
+              scope: data.new_delivery_address.is_shared_with_team
+                ? AddressScope.TENANT
+                : AddressScope.PRIVATE,
+            } as unknown as AddressCreate)
+          : undefined,
         payment_details: sanitizedPaymentDetails,
         packages: data.packages.map((p) => ({
           ...p,
@@ -358,6 +453,22 @@ export default function EditShipmentPage() {
                   )}
                 />
               )}
+            </div>
+
+            <div className="space-y-6 border-t border-slate-200 pt-6">
+              <h3 className="text-lg font-semibold text-slate-900">Addresses</h3>
+              <AddressFieldset
+                control={form.control as unknown as Control<ShipmentFormValues>}
+                type="pickup"
+                title="Sender Details (Pickup Location)"
+                savedAddresses={savedAddresses}
+              />
+              <AddressFieldset
+                control={form.control as unknown as Control<ShipmentFormValues>}
+                type="delivery"
+                title="Receiver Details (Delivery Location)"
+                savedAddresses={savedAddresses}
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -522,6 +633,10 @@ export default function EditShipmentPage() {
                           type="number"
                           className="bg-white font-bold text-slate-800 border-slate-300"
                           {...field}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            field.onChange(val === "" ? "" : Number(val));
+                          }}
                         />
                       </FormControl>
                       <FormDescription className="text-[10px] text-slate-500 font-semibold">

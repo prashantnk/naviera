@@ -9,13 +9,13 @@ from app.models.pickups import Address
 async def test_check_saved_addresses():
     async with AsyncSessionLocal() as session:  # type: ignore
         # Query only "Saved" addresses
-        statement = select(Address).where(Address.is_saved == True)
+        statement = select(Address).where(Address.is_saved)
         result = await session.exec(statement)
         addresses = result.all()
 
         print(f"\nFound {len(addresses)} Saved Addresses:")
         for addr in addresses:
-            print(f" - [{addr.address_type}] {addr.name} (User ID: {addr.user_id})")
+            print(f" - [{addr.category} / {addr.scope}] {addr.name} (User ID: {addr.user_id})")
 
         # Assert that addresses query executed and returned a list structure
         assert isinstance(addresses, list)
