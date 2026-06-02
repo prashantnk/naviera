@@ -93,6 +93,8 @@ frontend/src/
   * **Forms:** `react-hook-form` + `zod` for schema validation.
   * **Tables:** `@tanstack/react-table` (TanStack Table) for advanced data grids.
   * **State & Caching:** `@tanstack/react-query` (React Query) with long staleTime (e.g. 1 hour) to mimic "Redis-like" client cache speed for settings.
+* **Address Forms Symmetry & Space-Saving Layout:**
+  Maintain complete visual symmetry across all address-related components. Empty address selector states must use the space-saving side-by-side responsive flex row: choice dropdown (`flex-1`) ➔ standard `OR` text divider ➔ outline action button.
 * **API Client Security:** The auto-generated OpenAPI client matches the backend schema. `lib/api-config.ts` automatically intercepts calls to attach the Supabase user JWT and custom `X-Tenant-Slug` headers.
 
 ### C. The Styling Engine (Runtime Theming)
@@ -124,7 +126,10 @@ We run Python 3.11 with FastAPI and SQLModel (SQLAlchemy + Pydantic).
   PgBouncer runs on Port 6543. To prevent `asyncpg` socket closures and transaction deadlocks, `app/core/db.py` strictly uses SQLAlchemy `poolclass=NullPool` and custom UUID statement preparers.
   * **Prepared Statement Cache Fix:** We pass `"statement_cache_size": 0` and `"prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__"` to prevent PgBouncer query collisions.
   * **Asynchronous Eager Loading:** We explicitly use `selectinload(...)` on every database fetch statement to eagerly pull related child rows in a single roundtrip and prevent `MissingGreenlet` async serialization crashes.
-  * **Address Snapshotting:** Modifying a shipment's address creates a fresh `Address` snapshot row in the DB rather than editing the row in place. Deleting saved addresses uses soft-deletes (`is_saved = False`) to protect historical references.
+  * **Address Snapshotting & Decoupled Modal Flow:**
+    Modifying a shipment's address creates a fresh `Address` snapshot row in the DB rather than editing the row in place. Deleting saved addresses uses soft-deletes (`is_saved = False`) to protect historical references.
+    Creating or updating a shipment with a transient address uses a dual-mode dialog (which hides duplicate B2B scopes). On submission, the frontend maps the transient checkboxes (`save_to_address_book` and `is_shared_with_team`) to the backend model's `is_saved` and `scope` parameters to complete database persistence.
+    Hydrating existing shipments with unsaved snapshot addresses is handled transiently in form states (`new_pickup_address`) so the user can preview, edit, or choose to bookmark them.
   * **Just-In-Time User Provisioning:** The `get_or_create_user` service maps dynamic Supabase JWT identities to local Postgres database profiles automatically on first login.
   * **Freight vs. Remittance Decoupling (Option A: Hybrid Financial Architecture):**
     Always completely decouple Freight Settlement (Logistics/Shipping Charges) from Cash Collection (COD) and Commercial Valuation.
