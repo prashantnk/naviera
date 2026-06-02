@@ -76,128 +76,124 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
           <div className="space-y-4">
             {!isReverse ? (
               <>
-                {/* Row 1: Dimensions & Weight (12 Cols) */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  <div className="col-span-12 md:col-span-2">
-                    <FormField
-                      control={control}
-                      name={`packages.${index}.length` as Path<TFieldValues>}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Length</FormLabel>
+                {/* Row 1: Dimensions & Unit (12 Cols) */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-start">
+                  <FormField
+                    control={control}
+                    name={`packages.${index}.length` as Path<TFieldValues>}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-semibold text-slate-700">Length</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            className="bg-white h-9 text-xs"
+                            placeholder="0"
+                            {...field}
+                            value={(field.value as number) || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              field.onChange(val === "" ? "" : Number(val));
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={control}
+                    name={`packages.${index}.breadth` as Path<TFieldValues>}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-semibold text-slate-700">Breadth</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            className="bg-white h-9 text-xs"
+                            placeholder="0"
+                            {...field}
+                            value={(field.value as number) || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              field.onChange(val === "" ? "" : Number(val));
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={control}
+                    name={`packages.${index}.height` as Path<TFieldValues>}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-semibold text-slate-700">Height</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            className="bg-white h-9 text-xs"
+                            placeholder="0"
+                            {...field}
+                            value={(field.value as number) || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              field.onChange(val === "" ? "" : Number(val));
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={control}
+                    name={`packages.${index}.dimension_unit` as Path<TFieldValues>}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs font-semibold text-slate-700">Unit</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || DimensionUnit.CM}
+                        >
                           <FormControl>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              className="bg-white"
-                              placeholder="0"
-                              {...field}
-                              value={(field.value as number) || ""}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val === "" ? "" : Number(val));
-                              }}
-                            />
+                            <SelectTrigger className="bg-white h-9 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
                           </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="col-span-12 md:col-span-2">
-                    <FormField
-                      control={control}
-                      name={`packages.${index}.breadth` as Path<TFieldValues>}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Breadth</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              className="bg-white"
-                              placeholder="0"
-                              {...field}
-                              value={(field.value as number) || ""}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val === "" ? "" : Number(val));
-                              }}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="col-span-12 md:col-span-2">
-                    <FormField
-                      control={control}
-                      name={`packages.${index}.height` as Path<TFieldValues>}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Height</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              className="bg-white"
-                              placeholder="0"
-                              {...field}
-                              value={(field.value as number) || ""}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val === "" ? "" : Number(val));
-                              }}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="col-span-12 md:col-span-2">
-                    <FormField
-                      control={control}
-                      name={`packages.${index}.dimension_unit` as Path<TFieldValues>}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Unit</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || DimensionUnit.CM}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="bg-white">
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {Object.values(DimensionUnit).map((unit) => (
-                                <SelectItem key={unit} value={unit}>
-                                  {unit}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="col-span-12 md:col-span-4">
+                          <SelectContent>
+                            {Object.values(DimensionUnit).map((unit) => (
+                              <SelectItem key={unit} value={unit} className="text-xs">
+                                {unit}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Row 2: Weight Details & Box Count (12 Cols) */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start mt-4">
+                  <div className="sm:col-span-8">
                     <FormField
                       control={control}
                       name={`packages.${index}.weight` as Path<TFieldValues>}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Weight</FormLabel>
+                          <FormLabel className="text-xs font-semibold text-slate-700">Weight</FormLabel>
                           <div className="flex gap-2 items-center">
                             <FormControl>
                               <Input
                                 type="number"
                                 step="0.1"
-                                className="bg-white flex-1"
+                                className="bg-white h-9 text-xs flex-1"
                                 placeholder="0.0"
                                 {...field}
                                 value={(field.value as number) || ""}
@@ -216,13 +212,13 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                                   value={unitField.value || WeightUnit.KG}
                                 >
                                   <FormControl>
-                                    <SelectTrigger className="w-[76px] bg-white shrink-0">
+                                    <SelectTrigger className="w-[76px] bg-white h-9 text-xs shrink-0">
                                       <SelectValue />
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
                                     {Object.values(WeightUnit).map((unit) => (
-                                      <SelectItem key={unit} value={unit}>
+                                      <SelectItem key={unit} value={unit} className="text-xs">
                                         {unit.toLowerCase()}
                                       </SelectItem>
                                     ))}
@@ -236,21 +232,17 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                       )}
                     />
                   </div>
-                </div>
-
-                {/* Row 2: Box Count, Description, Fragile */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start mt-4">
-                  <div className="col-span-12 md:col-span-2">
+                  <div className="sm:col-span-4">
                     <FormField
                       control={control}
                       name={`packages.${index}.box_count` as Path<TFieldValues>}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Number of Boxes</FormLabel>
+                          <FormLabel className="text-xs font-semibold text-slate-700">Number of Boxes</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
-                              className="bg-white"
+                              className="bg-white h-9 text-xs"
                               {...field}
                               value={(field.value as number) || 1}
                               onChange={(e) =>
@@ -263,17 +255,21 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                       )}
                     />
                   </div>
-                  <div className="col-span-12 md:col-span-6">
+                </div>
+
+                {/* Row 3: Contents Description & Fragile Toggle */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start mt-4">
+                  <div className="sm:col-span-8">
                     <FormField
                       control={control}
                       name={`packages.${index}.description` as Path<TFieldValues>}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Contents Description</FormLabel>
+                          <FormLabel className="text-xs font-semibold text-slate-700">Contents Description</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="e.g. Laptops, T-Shirts..."
-                              className="bg-white"
+                              className="bg-white h-9 text-xs"
                               {...field}
                               value={(field.value as string) || ""}
                             />
@@ -283,23 +279,36 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                       )}
                     />
                   </div>
-                  <div className="col-span-12 md:col-span-4">
+                  <div className="sm:col-span-4">
                     <FormField
                       control={control}
                       name={`packages.${index}.is_fragile` as Path<TFieldValues>}
                       render={({ field }) => (
-                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 p-3 mt-0 md:mt-6 h-10 rounded-lg border border-amber-200 bg-amber-50/30">
+                        <FormItem className="space-y-0 mt-0 sm:mt-6.5">
                           <FormControl>
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer accent-amber-600"
-                              checked={!!field.value}
-                              onChange={field.onChange}
-                            />
+                            <div
+                              onClick={() => field.onChange(!field.value)}
+                              className={`flex flex-row items-center gap-2.5 p-2 px-3 h-9 rounded-lg border transition-all cursor-pointer select-none w-full hover:bg-amber-50/50 ${
+                                field.value
+                                  ? "bg-amber-50/40 border-amber-300 shadow-3xs"
+                                  : "bg-white border-slate-200 hover:border-slate-300"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600 shrink-0"
+                                checked={!!field.value}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  field.onChange(e.target.checked);
+                                }}
+                              />
+                              <span className="flex items-center gap-1.5 text-amber-800 font-bold text-xs select-none">
+                                <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" /> Fragile
+                              </span>
+                            </div>
                           </FormControl>
-                          <FormLabel className="flex items-center gap-1.5 text-amber-800 cursor-pointer font-semibold text-xs select-none">
-                            <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" /> Contains Fragile Items
-                          </FormLabel>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -357,18 +366,31 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                     control={control}
                     name={`packages.${index}.is_fragile` as Path<TFieldValues>}
                     render={({ field }) => (
-                      <FormItem className="flex flex-row items-center space-x-3 space-y-0 p-3 mt-0 md:mt-6 h-10 rounded-lg border border-amber-200 bg-amber-50/30">
+                      <FormItem className="space-y-0 mt-0 md:mt-6.5">
                         <FormControl>
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer accent-amber-600"
-                            checked={!!field.value}
-                            onChange={field.onChange}
-                          />
+                          <div
+                            onClick={() => field.onChange(!field.value)}
+                            className={`flex flex-row items-center gap-2.5 p-2 px-3 h-9 rounded-lg border transition-all cursor-pointer select-none w-full hover:bg-amber-50/50 ${
+                              field.value
+                                ? "bg-amber-50/40 border-amber-300 shadow-3xs"
+                                : "bg-white border-slate-200 hover:border-slate-300"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer accent-amber-600 shrink-0"
+                              checked={!!field.value}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                field.onChange(e.target.checked);
+                              }}
+                            />
+                            <span className="flex items-center gap-1.5 text-amber-800 font-bold text-xs select-none">
+                              <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" /> Fragile
+                            </span>
+                          </div>
                         </FormControl>
-                        <FormLabel className="flex items-center gap-1.5 text-amber-800 cursor-pointer font-semibold text-xs select-none">
-                          <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" /> Contains Fragile Items
-                        </FormLabel>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />

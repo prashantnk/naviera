@@ -1,7 +1,7 @@
 // src/components/forms/address-fieldset.tsx
 "use client";
 
-import { AddressCategory, AddressRead } from "@/api_client";
+import { AddressRead } from "@/api_client";
 import { Button } from "@/components/ui/button";
 import {
   FormControl,
@@ -54,6 +54,7 @@ interface AddressFieldsetProps<TFieldValues extends HasAddresses> {
   type: "pickup" | "delivery";
   title: string;
   savedAddresses: AddressRead[];
+  minimal?: boolean;
 }
 
 export function AddressFieldset<TFieldValues extends HasAddresses>({
@@ -61,6 +62,7 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
   type,
   title,
   savedAddresses = [],
+  minimal = false,
 }: AddressFieldsetProps<TFieldValues>) {
   const { isAdmin } = useUser();
   const { setValue } = useFormContext<TFieldValues>();
@@ -119,66 +121,46 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
   };
 
   return (
-    <div className="space-y-6 bg-slate-50/50 p-6 rounded-xl border border-slate-100">
-      <div className="border-b border-slate-200 pb-4">
-        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-      </div>
+    <div className={minimal ? "space-y-4" : "space-y-6 bg-slate-50/50 p-6 rounded-xl border border-slate-100"}>
+      {!minimal && (
+        <div className="border-b border-slate-200 pb-4">
+          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+        </div>
+      )}
 
       {/* STATE 1 & 2: ADDRESS SUMMARY CARD */}
       {(activeSavedAddress || activeTransientAddress) ? (
         <div className="animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 relative hover:border-slate-300 transition-colors">
-            {/* Header badges & quick actions */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100">
-                  {activeSavedAddress?.category || activeTransientAddress?.category || AddressCategory.HOME}
-                </span>
-                {activeSavedAddress && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                    Saved Address
-                  </span>
-                )}
-                {activeSavedAddress?.scope === "TENANT" && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-100">
-                    Team Shared
-                  </span>
-                )}
-                {activeTransientAddress && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100">
-                    New Address
-                  </span>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1.5">
-                {activeTransientAddress && (
-                  <AddAddressDialog
-                    onSaveTransient={handleSaveTransient}
-                    defaultValues={activeTransientAddress as unknown as Partial<AddressFormValues>}
-                    trigger={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs font-semibold cursor-pointer text-slate-700 hover:bg-slate-100"
-                      >
-                        <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
-                      </Button>
-                    }
-                  />
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClear}
-                  className="h-8 text-xs font-semibold cursor-pointer text-red-600 hover:bg-red-50 hover:text-red-700"
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Clear
-                </Button>
-              </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 relative hover:border-slate-300 transition-colors pr-16">
+            {/* Absolute actions in the top-right */}
+            <div className="absolute top-4 right-4 flex items-center gap-1.5 z-10">
+              {activeTransientAddress && (
+                <AddAddressDialog
+                  onSaveTransient={handleSaveTransient}
+                  defaultValues={activeTransientAddress as unknown as Partial<AddressFormValues>}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md shrink-0 cursor-pointer flex items-center justify-center"
+                      title="Edit custom address"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  }
+                />
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleClear}
+                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50/80 rounded-md shrink-0 cursor-pointer flex items-center justify-center"
+                title="Remove address selection"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
 
             {/* Content Info */}
@@ -210,7 +192,7 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
               </div>
 
               <div className="font-semibold text-slate-900 pl-5.5 flex items-center gap-1.5 text-xs md:text-sm">
-                <MapPin className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
                 <span>
                   {activeSavedAddress?.city || activeTransientAddress?.city}, {activeSavedAddress?.state || activeTransientAddress?.state} - {activeSavedAddress?.pincode || activeTransientAddress?.pincode}
                 </span>
@@ -228,11 +210,11 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
                 control={control}
                 name={`${objectField}.save_to_address_book` as Path<TFieldValues>}
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormItem className="flex flex-row items-center space-x-2.5 space-y-0">
                     <FormControl>
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900 mt-0.5"
+                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900 shrink-0"
                         checked={!!field.value}
                         onChange={(e) => {
                           field.onChange(e.target.checked);
@@ -242,14 +224,9 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
                         }}
                       />
                     </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel className="text-sm font-medium text-slate-950 cursor-pointer select-none">
-                        Save this address for future use
-                      </FormLabel>
-                      <p className="text-xs text-slate-500">
-                        Add this entry to your address book so you can select it next time.
-                      </p>
-                    </div>
+                    <FormLabel className="text-xs font-bold text-slate-800 cursor-pointer select-none leading-none">
+                      Save this address for future use
+                    </FormLabel>
                   </FormItem>
                 )}
               />
@@ -259,23 +236,18 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
                   control={control}
                   name={`${objectField}.is_shared_with_team` as Path<TFieldValues>}
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <FormItem className="flex flex-row items-center space-x-2.5 space-y-0 animate-in fade-in slide-in-from-top-1 duration-150">
                       <FormControl>
                         <input
                           type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900 mt-0.5"
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer accent-slate-900 shrink-0"
                           checked={!!field.value}
                           onChange={field.onChange}
                         />
                       </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel className="text-sm font-medium text-slate-950 cursor-pointer select-none">
-                          Share this address with my B2B team
-                        </FormLabel>
-                        <p className="text-xs text-slate-500">
-                          Make this address visible to all colleagues in your B2B portal.
-                        </p>
-                      </div>
+                      <FormLabel className="text-xs font-bold text-slate-800 cursor-pointer select-none leading-none">
+                        Share this address with my B2B team
+                      </FormLabel>
                     </FormItem>
                   )}
                 />
@@ -286,48 +258,50 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
       ) : (
         /* STATE 3: EMPTY SELECTOR SLATE */
         <div className="space-y-2 animate-in fade-in duration-200">
-          <span className="text-sm font-semibold text-slate-700 pl-0.5">Select Address</span>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <div className="flex-1">
-              <FormField
-                control={control}
-                name={idField}
-                render={({ field }) => (
-                  <FormItem className="space-y-0">
-                    <Select
-                      onValueChange={field.onChange}
-                      value={(field.value as string) || undefined}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-white border-slate-200 shadow-sm h-11 text-sm">
-                          <SelectValue placeholder="Choose from Saved Address Book..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {savedAddresses.length === 0 && (
-                          <div className="p-3 text-sm text-slate-500 italic text-center">
-                            No saved addresses.
+          <span className="text-xs font-bold text-slate-700 pl-0.5">Select Address</span>
+          <div className="flex flex-col gap-3 pt-1 pb-0.5">
+            <FormField
+              control={control}
+              name={idField}
+              render={({ field }) => (
+                <FormItem className="space-y-0 w-full">
+                  <Select
+                    onValueChange={field.onChange}
+                    value={(field.value as string) || undefined}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="bg-white border-slate-200 shadow-3xs h-10 text-xs w-full">
+                        <SelectValue placeholder="Choose from Saved Address Book..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {savedAddresses.length === 0 && (
+                        <div className="p-3 text-xs text-slate-500 italic text-center">
+                          No saved addresses.
+                        </div>
+                      )}
+                      {savedAddresses.map((addr) => (
+                        <SelectItem key={addr.id} value={addr.id} className="text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900">{addr.name}</span>
+                            <span className="text-slate-400 text-[10px]">
+                              ({addr.category} - {addr.city}, {addr.state} - {addr.pincode})
+                            </span>
                           </div>
-                        )}
-                        {savedAddresses.map((addr) => (
-                          <SelectItem key={addr.id} value={addr.id}>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-slate-900">{addr.name}</span>
-                              <span className="text-slate-400 text-xs">
-                                ({addr.category} - {addr.city}, {addr.state} - {addr.pincode})
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest shrink-0 self-center sm:self-auto py-1 sm:py-0">OR</span>
+            <div className="relative flex py-1 items-center w-full">
+              <div className="grow border-t border-slate-200/80"></div>
+              <span className="shrink mx-3 text-[9px] font-bold uppercase tracking-widest text-slate-400/80">OR</span>
+              <div className="grow border-t border-slate-200/80"></div>
+            </div>
 
             <AddAddressDialog
               onSaveTransient={handleSaveTransient}
@@ -335,9 +309,9 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
                 <Button
                   type="button"
                   variant="outline"
-                  className="bg-white border-slate-200 hover:bg-slate-50 text-slate-900 cursor-pointer font-bold h-11 px-4 flex items-center justify-center gap-2 rounded-lg shadow-sm hover:border-slate-300 transition-all shrink-0"
+                  className="bg-white border-slate-200 hover:bg-slate-50 text-slate-900 cursor-pointer font-bold h-10 w-full flex items-center justify-center gap-2 rounded-lg shadow-3xs hover:border-slate-300 transition-all text-xs shrink-0"
                 >
-                  <MapPinPlus className="h-4 w-4 text-indigo-600" /> Add New Address
+                  <MapPinPlus className="h-4 w-4 text-primary" /> Add New Address
                 </Button>
               }
             />

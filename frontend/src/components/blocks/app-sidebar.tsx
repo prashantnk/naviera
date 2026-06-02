@@ -5,6 +5,7 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  ArrowUpRight,
   ChevronLeft,
   ChevronRight,
   Home,
@@ -35,6 +36,7 @@ export function AppSidebar() {
   const baseNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Shipments", href: "/shipments", icon: Package },
+    { name: "Forward Shipment", href: "/shipments/new/forward", icon: ArrowUpRight },
     { name: "Create Booking", href: "/shipments/new", icon: PlusCircle },
     { name: "Address Book", href: "/address-book", icon: MapPin },
   ];

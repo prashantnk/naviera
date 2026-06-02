@@ -160,6 +160,24 @@ export const forwardShipmentSchema = z
         path: ["payment_details", "cod_amount"],
       });
     }
+
+    // Rule E: Address selection check for Pickup Location
+    if (!data.pickup_address_id && (!data.new_pickup_address || !data.new_pickup_address.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a saved address or add a new pickup location.",
+        path: ["pickup_address_id"],
+      });
+    }
+
+    // Rule F: Address selection check for Delivery Location
+    if (!data.delivery_address_id && (!data.new_delivery_address || !data.new_delivery_address.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a saved address or add a new delivery location.",
+        path: ["delivery_address_id"],
+      });
+    }
   });
 
 // Specialized Reverse Returns Shipment Schema
@@ -227,6 +245,24 @@ export const reverseShipmentSchema = z
         code: z.ZodIssueCode.custom,
         message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
         path: ["payment_details", "cod_amount"],
+      });
+    }
+
+    // Rule D: Address selection check for Pickup Location
+    if (!data.pickup_address_id && (!data.new_pickup_address || !data.new_pickup_address.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a saved address or add a new pickup location.",
+        path: ["pickup_address_id"],
+      });
+    }
+
+    // Rule E: Address selection check for Delivery Location
+    if (!data.delivery_address_id && (!data.new_delivery_address || !data.new_delivery_address.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a saved address or add a new delivery location.",
+        path: ["delivery_address_id"],
       });
     }
   });
