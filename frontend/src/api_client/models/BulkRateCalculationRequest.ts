@@ -3,17 +3,16 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { PackageCreate } from './PackageCreate';
-import type { ServiceType } from './ServiceType';
+import type { QuoteSpecification } from './QuoteSpecification';
 import type { ShipmentType } from './ShipmentType';
-export type RateCalculationRequest = {
+export type BulkRateCalculationRequest = {
     pickup_pincode: string;
     delivery_pincode: string;
     packages: Array<PackageCreate>;
-    service_type: ServiceType;
     is_cod?: boolean;
     cod_amount?: number;
     shipment_total_value?: number;
     shipment_type?: ShipmentType;
-    is_rto?: boolean;
+    quotes_to_calculate?: (Array<QuoteSpecification> | null);
 };
 

@@ -380,7 +380,17 @@ export default function CreateShipmentWizard() {
           delivery_pincode: dPincode,
           packages: values.packages as PackageCreate[],
           service_type: values.service_type,
+          is_cod: values.payment_details.is_cod,
+          cod_amount: values.payment_details.cod_amount,
+          shipment_total_value: values.payment_details.shipment_total_value,
+          shipment_type: values.shipment_type,
+          is_rto: values.shipment_type === ShipmentType.REVERSE,
         });
+
+        if (quote.serviceable === false) {
+          throw new Error(quote.error_message || "This destination is not serviceable for the selected shipping speed.");
+        }
+
         setRateQuote(quote);
         setCurrentStep((prev) => prev + 1);
       } catch (error) {
