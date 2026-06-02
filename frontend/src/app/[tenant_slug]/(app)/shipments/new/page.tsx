@@ -18,6 +18,7 @@ import {
   ServiceType,
   ShipmentsService,
   ShipmentType,
+  WeightUnit,
 } from "@/api_client";
 import { AddressFieldset } from "@/components/forms/address-fieldset";
 import { PackageFieldset } from "@/components/forms/package-fieldset";
@@ -165,7 +166,15 @@ export default function CreateShipmentWizard() {
     if (savedDraft) {
       try {
         const parsed = JSON.parse(savedDraft);
-        if (parsed.step !== undefined) setCurrentStep(parsed.step);
+        if (parsed.step !== undefined) {
+          let restoredStep = parsed.step;
+          // Fallback to Step 4 if draft was saved at Step 5 (Review Booking)
+          // so the user can trigger a fresh calculate-rate quote and avoid empty screens
+          if (restoredStep === 4) {
+            restoredStep = 3;
+          }
+          setCurrentStep(restoredStep);
+        }
         if (parsed.addShippingToCod !== undefined) setAddShippingToCod(parsed.addShippingToCod);
 
         if (parsed.values) {
@@ -217,6 +226,22 @@ export default function CreateShipmentWizard() {
   const watchedShipmentValue = form.watch("payment_details.shipment_value");
   const watchedShipmentTaxValue = form.watch("payment_details.shipment_tax_value");
   const watchedShipmentTotalValue = form.watch("payment_details.shipment_total_value");
+  const watchedPackages = form.watch("packages");
+
+  // Client-side simple sum of actual cargo weights & boxes
+  const cargoTotals = (watchedPackages || []).reduce(
+    (acc, pkg) => {
+      const count = Number(pkg?.box_count) || 0;
+      const weight = Number(pkg?.weight) || 0;
+      const isGrams = pkg?.weight_unit === WeightUnit.G;
+      const weightInKg = isGrams ? weight / 1000 : weight;
+
+      acc.boxCount += count;
+      acc.actualWeightKg += weightInKg * count;
+      return acc;
+    },
+    { boxCount: 0, actualWeightKg: 0 }
+  );
 
   // Dynamic calculation of total commercial value: shipment_total_value = shipment_value + shipment_tax_value
   useEffect(() => {
@@ -439,6 +464,7 @@ export default function CreateShipmentWizard() {
               base_freight: rateQuote?.base_charge || 0,
               tax_amount: rateQuote?.tax_amount || 0,
               total_logistics_cost: rateQuote?.total_amount || 0,
+              pricing_breakdown: rateQuote?.pricing_breakdown || {},
               hsn_code: data.payment_details.hsn_code || undefined,
               invoice_number: data.payment_details.invoice_number || undefined,
               invoice_date: data.payment_details.invoice_date || undefined,
@@ -1067,7 +1093,25 @@ export default function CreateShipmentWizard() {
             {/* STEP 4: PACKAGES & DOCS */}
             {currentStep === 3 && (
               <div className="space-y-8 animate-in fade-in">
-                <PackageFieldset control={form.control} isReverse={isReverse} />
+                 <PackageFieldset control={form.control} isReverse={isReverse} />
+
+                {!isReverse && cargoTotals.actualWeightKg > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 text-slate-600 text-xs sm:text-sm">
+                      <span className="text-base">📦</span>
+                      <span>
+                        Cargo Summary: <strong>{cargoTotals.boxCount}</strong> {cargoTotals.boxCount === 1 ? "box" : "boxes"} configured
+                      </span>
+                    </div>
+                    <div className="text-xs sm:text-sm text-slate-500">
+                      Total Actual Weight:{" "}
+                      <strong className="text-slate-900 text-sm sm:text-base font-bold pl-1">
+                        {cargoTotals.actualWeightKg.toFixed(2)} kg
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
 
                 <div className="bg-blue-50/50 p-6 rounded-xl border border-blue-100 mt-8">
                   <h3 className="font-semibold text-slate-900 mb-2 flex items-center gap-2">
@@ -1169,104 +1213,175 @@ export default function CreateShipmentWizard() {
                 : (watchedFreightMode === FreightPaymentMode.TO_PAY ? rateQuote.total_amount : 0);
 
               return (
-                <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
+                <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
+                  {/* Section Title & Success Badge */}
                   <div className="text-center space-y-2">
-                    <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
-                    <h3 className="text-2xl font-bold text-slate-900">Verify Shipping & COD Ledger</h3>
-                    <p className="text-slate-500 text-sm">
+                    <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-500 mb-2">
+                      <CheckCircle2 className="h-6 w-6 animate-bounce" />
+                    </div>
+                    <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">Verify Shipping & COD Ledger</h3>
+                    <p className="text-slate-500 text-sm max-w-md mx-auto">
                       Review the dynamic pricing quote and final door collection instructions before booking.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Card 1: Rate Estimation */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-4 flex flex-col justify-between">
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                          Logistics Cost Estimate
+                  {/* 1. Total Chargeable Weight Header Card */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        Total Chargeable Weight <Info className="h-3.5 w-3.5 text-slate-400" />
+                      </div>
+                      <p className="text-3xl font-black text-slate-900 tracking-tight">
+                        {rateQuote.chargeable_weight} kg
+                      </p>
+                    </div>
+                    {rateQuote.pricing_breakdown && (
+                      <div className="flex gap-4 text-xs text-slate-500 sm:border-l sm:pl-6 border-slate-200">
+                        <div className="space-y-0.5">
+                          <span className="text-slate-400 block">Actual Weight</span>
+                          <strong className="text-slate-700 font-bold text-sm">{rateQuote.pricing_breakdown.total_actual_weight} kg</strong>
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-slate-400 block">Volumetric Weight</span>
+                          <strong className="text-slate-700 font-bold text-sm">{rateQuote.pricing_breakdown.total_volumetric_weight} kg</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. Two Column Grid for Pricing & COD */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
+                    
+                    {/* Left Column: Selected Service Card & Breakup (col-span-7) */}
+                    <div className="md:col-span-7 space-y-4 flex flex-col justify-between">
+                      {/* Selected Service Speed Premium Card */}
+                      <div className="bg-primary/[0.03] border border-primary/20 rounded-xl p-5 shadow-xs relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/[0.03] rounded-full -mr-8 -mt-8" />
+                        <div className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                          Selected Shipping Mode
+                        </div>
+                        <h4 className="text-md font-bold text-slate-800 mt-1">
+                          {form.getValues("service_type").replace(/_/g, " ")}
                         </h4>
-                        <div className="space-y-2.5">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Chargeable Weight</span>
-                            <span className="font-bold text-slate-800">
-                              {rateQuote.chargeable_weight} kg
-                            </span>
+                        <div className="flex items-baseline gap-1 mt-3">
+                          <span className="text-xs font-bold text-slate-500">₹</span>
+                          <span className="text-3xl font-black text-primary tracking-tight">
+                            {rateQuote.total_amount.toFixed(2)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5">
+                          Estimated Delivery in {rateQuote.estimated_days} {rateQuote.estimated_days === 1 ? "day" : "days"}
+                        </p>
+                      </div>
+
+                      {/* Shipping Cost Breakup Table */}
+                      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+                        <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-2 mb-1">
+                          Shipping Cost Breakup
+                        </h5>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between text-slate-600">
+                            <span>Freight Base Charge</span>
+                            <span className="font-medium">₹{rateQuote.base_charge.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Base Charge</span>
-                            <span className="font-bold text-slate-800">
-                              ₹{rateQuote.base_charge.toFixed(2)}
-                            </span>
+                          
+                          {rateQuote.pricing_breakdown && (
+                            <>
+                              {rateQuote.pricing_breakdown.service_surcharge > 0 && (
+                                <div className="flex justify-between text-xs text-slate-500 pl-2">
+                                  <span>Speed Premium</span>
+                                  <span>+ ₹{rateQuote.pricing_breakdown.service_surcharge.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {rateQuote.pricing_breakdown.fuel_surcharge > 0 && (
+                                <div className="flex justify-between text-xs text-slate-500 pl-2">
+                                  <span>Fuel Surcharge & DPH</span>
+                                  <span>+ ₹{rateQuote.pricing_breakdown.fuel_surcharge.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {rateQuote.pricing_breakdown.network_surcharge > 0 && (
+                                <div className="flex justify-between text-xs text-slate-500 pl-2">
+                                  <span>Network Surcharge</span>
+                                  <span>+ ₹{rateQuote.pricing_breakdown.network_surcharge.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {rateQuote.pricing_breakdown.oversized_surcharge > 0 && (
+                                <div className="flex justify-between text-xs text-amber-600 font-semibold pl-2">
+                                  <span>Oversized Cargo Surcharge</span>
+                                  <span>+ ₹{rateQuote.pricing_breakdown.oversized_surcharge.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {rateQuote.pricing_breakdown.cod_fee > 0 && (
+                                <div className="flex justify-between text-xs text-slate-500 pl-2">
+                                  <span>COD Processing Fee</span>
+                                  <span>+ ₹{rateQuote.pricing_breakdown.cod_fee.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          <div className="flex justify-between text-slate-600 border-t pt-2 mt-1">
+                            <span>GST (18%)</span>
+                            <span className="font-medium">₹{rateQuote.tax_amount.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-slate-500">Taxes Applied</span>
-                            <span className="font-bold text-slate-800">
-                              ₹{rateQuote.tax_amount.toFixed(2)}
-                            </span>
+                          <div className="flex justify-between font-bold text-slate-900 border-t border-double border-slate-200 pt-2.5 mt-2 text-base">
+                            <span>Total cost</span>
+                            <span>₹{rateQuote.total_amount.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="border-t pt-4 mt-4 flex justify-between items-baseline">
-                        <span className="text-sm font-semibold text-slate-700">Total Freight Fee</span>
-                        <span className="text-xl font-extrabold text-slate-900">
-                          ₹{rateQuote.total_amount.toFixed(2)}
-                        </span>
-                      </div>
                     </div>
 
-                    {/* Card 2: Door Collection Fintech Card */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs flex flex-col justify-between">
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                          Receiver Cash Collection
+                    {/* Right Column: Doorstep Cash Collection fintech card (col-span-5) */}
+                    <div className="md:col-span-5 flex flex-col justify-between bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                      <div className="p-5 space-y-3 flex-1">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b pb-2 mb-1">
+                          Doorstep Cash Details
                         </h4>
                         {computedFinalCodAmount > 0 ? (
-                          <div className="space-y-3">
-                            <div className="text-sm text-slate-600">
-                              Receiver pays the following amount at their doorstep:
-                            </div>
-                            <div className="space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                          <div className="space-y-3.5">
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              The logistics agent will collect the following total cash amount from the receiver at delivery:
+                            </p>
+                            <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-600">
                               {watchedIsCod && (
-                                <div className="flex justify-between text-xs">
-                                  <span className="text-slate-500">Merchant COD Value</span>
-                                  <span className="font-medium text-slate-800">₹{totalItemValue.toFixed(2)}</span>
+                                <div className="flex justify-between">
+                                  <span>Goods Value (COD)</span>
+                                  <span className="font-semibold text-slate-800">₹{totalItemValue.toFixed(2)}</span>
                                 </div>
                               )}
                               {(watchedFreightMode === FreightPaymentMode.TO_PAY || (watchedIsCod && addShippingToCod)) && (
-                                <div className="flex justify-between text-xs text-amber-700 font-semibold">
-                                  <span>Shipping added to COD</span>
+                                <div className="flex justify-between text-amber-700 font-semibold">
+                                  <span>Shipping Freight</span>
                                   <span>+ ₹{rateQuote.total_amount.toFixed(2)}</span>
                                 </div>
                               )}
                             </div>
                           </div>
                         ) : (
-                          <div className="flex h-full flex-col justify-center items-center text-center py-4 space-y-2 text-slate-500">
-                            <span className="text-2xl">🕊️</span>
-                            <p className="text-sm font-semibold text-slate-700">No Cash Collection (Prepaid / Postpaid)</p>
-                            <p className="text-xs text-slate-400 max-w-[200px] leading-normal">
-                              Sender accounts will be billed. Package is delivered directly.
-                            </p>
+                          <div className="flex h-full flex-col justify-center items-center text-center py-6 space-y-3 text-slate-500">
+                            <span className="text-3xl">🕊️</span>
+                            <div>
+                              <p className="text-sm font-bold text-slate-700">No Doorstep Collection</p>
+                              <p className="text-xs text-slate-400 mt-1 leading-normal">
+                                This is a Prepaid/Postpaid shipment. Package will be delivered directly.
+                              </p>
+                            </div>
                           </div>
                         )}
                       </div>
 
                       {computedFinalCodAmount > 0 && (
-                        <div className="border-t pt-4 mt-4 bg-emerald-50/40 -mx-6 -mb-6 p-6 rounded-b-xl border-emerald-100 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">💵</span>
-                            <div>
-                              <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
-                                Door Collect COD
-                              </div>
-                              <div className="text-sm font-semibold text-slate-700">
-                                Total at Delivery
-                              </div>
-                            </div>
+                        <div className="bg-emerald-50 border-t border-emerald-100 p-5 flex flex-col justify-center">
+                          <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                            Door Collect Amount
                           </div>
-                          <span className="text-2xl font-black text-emerald-700">
-                            ₹{computedFinalCodAmount.toFixed(2)}
-                          </span>
+                          <div className="flex items-baseline justify-between mt-1">
+                            <span className="text-xs font-semibold text-slate-700">Total Cash</span>
+                            <span className="text-2xl font-black text-emerald-700 tracking-tight">
+                              ₹{computedFinalCodAmount.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -13,6 +13,10 @@ import {
   ServiceType,
   ShipmentsService,
   ShipmentType,
+  DimensionUnit,
+  WeightUnit,
+  RateCalculationResponse,
+  PackageCreate,
 } from "@/api_client";
 import { CATEGORY_LABELS } from "../../new/page";
 import { PackageFieldset } from "@/components/forms/package-fieldset";
@@ -21,6 +25,14 @@ import { AddressFieldset } from "@/components/forms/address-fieldset";
 import { addressSchema, ShipmentFormValues } from "@/lib/validations/shipment";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -77,6 +89,7 @@ const editShipmentSchema = z.object({
       invoice_number: z.string().optional(),
       invoice_date: z.string().optional(), // 🔥 Added Invoice Date
       eway_bill_number: z.string().optional(),
+      pricing_breakdown: z.any().optional(),
     })
     .optional(),
 
@@ -94,7 +107,9 @@ const editShipmentSchema = z.object({
         length: z.number().min(0).default(0),
         breadth: z.number().min(0).default(0),
         height: z.number().min(0).default(0),
+        dimension_unit: z.nativeEnum(DimensionUnit).default(DimensionUnit.CM),
         weight: z.number().min(0.1, "Weight is required"),
+        weight_unit: z.nativeEnum(WeightUnit).default(WeightUnit.KG),
         box_count: z.number().min(1).default(1),
         is_fragile: z.boolean().default(false),
         description: z.string().optional(),
@@ -143,6 +158,28 @@ export default function EditShipmentPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
+
+  // Pricing Change States
+  const [originalPricing, setOriginalPricing] = useState<{
+    pickup_pincode: string;
+    delivery_pincode: string;
+    service_type: ServiceType;
+    packages: {
+      length: number;
+      breadth: number;
+      height: number;
+      weight: number;
+      box_count: number;
+      dimension_unit: DimensionUnit;
+      weight_unit: WeightUnit;
+    }[];
+    total_cost: number;
+  } | null>(null);
+
+  const [newPriceQuote, setNewPriceQuote] = useState<RateCalculationResponse | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [showPriceChangeDialog, setShowPriceChangeDialog] = useState(false);
+  const [pendingFormValues, setPendingFormValues] = useState<EditShipmentValues | null>(null);
 
   useEffect(() => {
     AddressesService.listSavedAddresses()
@@ -197,6 +234,22 @@ export default function EditShipmentPage() {
       try {
         const data = await ShipmentsService.getShipmentDetails(shipmentId);
         setShipmentType(data.shipment_type);
+
+        setOriginalPricing({
+          pickup_pincode: data.pickup_address.pincode,
+          delivery_pincode: data.delivery_address.pincode,
+          service_type: data.service_type || ServiceType.SURFACE_ROAD,
+          packages: data.packages.map((p) => ({
+            length: p.length || 0,
+            breadth: p.breadth || 0,
+            height: p.height || 0,
+            weight: p.weight,
+            box_count: p.box_count || 1,
+            dimension_unit: p.dimension_unit as DimensionUnit,
+            weight_unit: p.weight_unit as WeightUnit,
+          })),
+          total_cost: data.payment_details?.total_logistics_cost || 0,
+        });
 
         form.reset({
           order_reference_id: data.order_reference_id || "",
@@ -300,19 +353,127 @@ export default function EditShipmentPage() {
     fetchShipment();
   }, [shipmentId, form]);
 
+  const hasPricingParametersChanged = (values: EditShipmentValues) => {
+    if (!originalPricing) return false;
+
+    const pPincode =
+      values.new_pickup_address?.pincode ||
+      savedAddresses.find((a) => a.id === values.pickup_address_id)?.pincode ||
+      originalPricing.pickup_pincode;
+
+    const dPincode =
+      values.new_delivery_address?.pincode ||
+      savedAddresses.find((a) => a.id === values.delivery_address_id)?.pincode ||
+      originalPricing.delivery_pincode;
+
+    if (pPincode !== originalPricing.pickup_pincode) return true;
+    if (dPincode !== originalPricing.delivery_pincode) return true;
+    if (values.service_type !== originalPricing.service_type) return true;
+
+    if (values.packages.length !== originalPricing.packages.length) return true;
+
+    for (let i = 0; i < values.packages.length; i++) {
+      const p1 = values.packages[i];
+      const p2 = originalPricing.packages[i];
+      if (!p2) return true;
+      if (
+        p1.length !== p2.length ||
+        p1.breadth !== p2.breadth ||
+        p1.height !== p2.height ||
+        p1.weight !== p2.weight ||
+        p1.box_count !== p2.box_count ||
+        p1.dimension_unit !== p2.dimension_unit ||
+        p1.weight_unit !== p2.weight_unit
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const handleApproveAndSave = async () => {
+    if (!pendingFormValues || !newPriceQuote) return;
+    setShowPriceChangeDialog(false);
+    await onSubmit(pendingFormValues);
+  };
+
+  const handleCloseDialog = () => {
+    setShowPriceChangeDialog(false);
+    setNewPriceQuote(null);
+    setPendingFormValues(null);
+  };
+
   const onSubmit = async (data: EditShipmentValues) => {
+    // Check if any pricing parameters have changed and if we haven't fetched a fresh quote yet
+    if (hasPricingParametersChanged(data) && !newPriceQuote) {
+      setIsRecalculating(true);
+      setPendingFormValues(data);
+      setShowPriceChangeDialog(true);
+      try {
+        const pPincode =
+          data.new_pickup_address?.pincode ||
+          savedAddresses.find((a) => a.id === data.pickup_address_id)?.pincode ||
+          originalPricing?.pickup_pincode;
+
+        const dPincode =
+          data.new_delivery_address?.pincode ||
+          savedAddresses.find((a) => a.id === data.delivery_address_id)?.pincode ||
+          originalPricing?.delivery_pincode;
+
+        if (!pPincode || !dPincode) {
+          throw new Error("Cannot calculate rate: Missing pickup or delivery pincode.");
+        }
+
+        const quote = await ShipmentsService.calculateShippingRate({
+          pickup_pincode: pPincode,
+          delivery_pincode: dPincode,
+          packages: data.packages as PackageCreate[],
+          service_type: data.service_type || ServiceType.SURFACE_ROAD,
+        });
+        setNewPriceQuote(quote);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to recalculate shipping rates for changes. Please check inputs.");
+        setShowPriceChangeDialog(false);
+      } finally {
+        setIsRecalculating(false);
+      }
+      return; // Halt standard submit
+    }
+
     setIsSubmitting(true);
     try {
+      // If a new quote was verified and approved, inject the updated values
+      let finalPaymentDetails = data.payment_details;
+      if (newPriceQuote) {
+        finalPaymentDetails = {
+          ...data.payment_details,
+          base_freight: newPriceQuote.base_charge,
+          tax_amount: newPriceQuote.tax_amount,
+          total_logistics_cost: newPriceQuote.total_amount,
+          pricing_breakdown: newPriceQuote.pricing_breakdown || {},
+          shipment_total_value: data.payment_details?.shipment_total_value ?? 0,
+          shipment_value: data.payment_details?.shipment_value ?? 0,
+          shipment_tax_value: data.payment_details?.shipment_tax_value ?? 0,
+          eway_bill_number: data.payment_details?.eway_bill_number ?? undefined,
+          invoice_number: data.payment_details?.invoice_number ?? undefined,
+          invoice_date: data.payment_details?.invoice_date ?? undefined,
+          hsn_code: data.payment_details?.hsn_code ?? undefined,
+          add_shipping_to_cod: data.payment_details?.add_shipping_to_cod ?? false,
+        };
+      }
+
       // 🔥 FIX 1: Sanitize empty strings to undefined so FastAPI doesn't reject them
-      const sanitizedPaymentDetails = data.payment_details
+      const sanitizedPaymentDetails = finalPaymentDetails
         ? {
-            ...data.payment_details,
-            add_shipping_to_cod: data.payment_details.freight_payment_mode === FreightPaymentMode.TO_PAY ? true : (data.payment_details.add_shipping_to_cod || false),
-            hsn_code: data.payment_details.hsn_code || undefined,
-            invoice_number: data.payment_details.invoice_number || undefined,
-            invoice_date: data.payment_details.invoice_date || undefined,
+            ...finalPaymentDetails,
+            add_shipping_to_cod: finalPaymentDetails.freight_payment_mode === FreightPaymentMode.TO_PAY ? true : (finalPaymentDetails.add_shipping_to_cod || false),
+            hsn_code: finalPaymentDetails.hsn_code || undefined,
+            invoice_number: finalPaymentDetails.invoice_number || undefined,
+            invoice_date: finalPaymentDetails.invoice_date || undefined,
             eway_bill_number:
-              data.payment_details.eway_bill_number || undefined,
+              finalPaymentDetails.eway_bill_number || undefined,
           }
         : undefined;
 
@@ -359,6 +520,9 @@ export default function EditShipmentPage() {
       await ShipmentsService.updateShipment(shipmentId, payload);
 
       toast.success("Shipment updated successfully!");
+      // Reset pricing validation states
+      setNewPriceQuote(null);
+      setPendingFormValues(null);
       router.push(routeTo(`/shipments/${shipmentId}`));
     } catch (error) {
       const apiError = error as ApiError;
@@ -924,6 +1088,138 @@ export default function EditShipmentPage() {
           </form>
         </Form>
       </div>
+
+      {/* Cost Adjustment Confirmation Dialog */}
+      <Dialog open={showPriceChangeDialog} onOpenChange={(open) => { if (!open) handleCloseDialog(); }}>
+        <DialogContent className="max-w-md sm:max-w-lg p-6 bg-white rounded-2xl shadow-xl border border-slate-200">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              Cost Adjustment Required
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm leading-relaxed">
+              Your recent edits to package specifications or address details have triggered a dynamic shipping rate recalculation. Please review the cost updates below before saving.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isRecalculating ? (
+            <div className="flex flex-col items-center justify-center py-8 space-y-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-xs font-semibold text-slate-400 tracking-wider uppercase animate-pulse">
+                Recalculating rates...
+              </p>
+            </div>
+          ) : newPriceQuote ? (
+            <div className="space-y-5 my-3 animate-in fade-in zoom-in-95 duration-200">
+              {/* Price Comparison Box */}
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200/60">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Original Cost</span>
+                  <span className="text-xl font-black text-slate-400 line-through">
+                    ₹{originalPricing?.total_cost.toFixed(2) || "0.00"}
+                  </span>
+                </div>
+                <div className="space-y-0.5 border-l border-slate-200/80 pl-4">
+                  <span className="text-[10px] font-bold uppercase text-primary tracking-wider block">Updated Cost</span>
+                  <span className="text-2xl font-black text-primary tracking-tight">
+                    ₹{newPriceQuote.total_amount.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Detailed Billing Ledger */}
+              <div className="space-y-3 rounded-xl border border-slate-200 p-4 bg-white shadow-xs">
+                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-2">
+                  New Shipping Breakdown
+                </h5>
+                <div className="space-y-2 text-xs text-slate-600">
+                  <div className="flex justify-between text-slate-700 text-sm font-medium">
+                    <span>Base Freight</span>
+                    <span>₹{newPriceQuote.base_charge.toFixed(2)}</span>
+                  </div>
+                  
+                  {newPriceQuote.pricing_breakdown && (
+                    <>
+                      {(newPriceQuote.pricing_breakdown.service_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-2">
+                          <span>Speed Premium</span>
+                          <span>+ ₹{Number(newPriceQuote.pricing_breakdown.service_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(newPriceQuote.pricing_breakdown.fuel_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-2">
+                          <span>Fuel Surcharge & DPH</span>
+                          <span>+ ₹{Number(newPriceQuote.pricing_breakdown.fuel_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(newPriceQuote.pricing_breakdown.network_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-2">
+                          <span>Network Surcharge</span>
+                          <span>+ ₹{Number(newPriceQuote.pricing_breakdown.network_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(newPriceQuote.pricing_breakdown.oversized_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between text-amber-600 font-semibold pl-2">
+                          <span>Oversized Cargo Surcharge</span>
+                          <span>+ ₹{Number(newPriceQuote.pricing_breakdown.oversized_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(newPriceQuote.pricing_breakdown.cod_fee ?? 0) > 0 && (
+                        <div className="flex justify-between pl-2">
+                          <span>COD Processing Fee</span>
+                          <span>+ ₹{Number(newPriceQuote.pricing_breakdown.cod_fee).toFixed(2)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex justify-between text-slate-600 border-t pt-2 mt-1">
+                    <span>GST (18%)</span>
+                    <span className="font-medium">₹{newPriceQuote.tax_amount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-slate-900 border-t border-double border-slate-300 pt-2.5 mt-1.5 text-sm uppercase tracking-wider">
+                    <span>Total Cost</span>
+                    <span>₹{newPriceQuote.total_amount.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Doorstep Cash Collection Note */}
+              {Number(newPriceQuote.pricing_breakdown?.cod_amount ?? 0) > 0 && (
+                <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-850 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest block text-emerald-800">Doorstep COD Collection Impact</span>
+                  <p className="text-xs text-emerald-700 font-medium">
+                    The cash collected at delivery will automatically be adjusted to ₹{Number(newPriceQuote.pricing_breakdown?.cod_amount ?? 0).toFixed(2)} to reflect updated logistics metrics.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-400 italic">
+              Failed to compute updated pricing. Please re-verify dimensions.
+            </div>
+          )}
+
+          <DialogFooter className="mt-4 border-t border-slate-100 pt-4 flex flex-col-reverse sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCloseDialog}
+              className="w-full sm:w-auto font-bold cursor-pointer border-slate-200 hover:bg-slate-50"
+            >
+              Cancel & Review
+            </Button>
+            <Button
+              type="button"
+              onClick={handleApproveAndSave}
+              disabled={isRecalculating || !newPriceQuote}
+              className="w-full sm:w-auto font-bold cursor-pointer"
+            >
+              Approve & Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

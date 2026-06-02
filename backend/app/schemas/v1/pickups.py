@@ -18,6 +18,8 @@ from app.models.pickups import (
     ProductCategory,
     ServiceType,
     ShipmentType,
+    DimensionUnit,
+    WeightUnit,
 )
 
 # --- 1. Base Building Blocks ---
@@ -45,10 +47,12 @@ class AddressBase(SQLModel):
 
 
 class PackageBase(SQLModel):
-    length: float = Field(default=0.0, ge=0, description="Length in CM")
-    breadth: float = Field(default=0.0, ge=0, description="Breadth in CM")
-    height: float = Field(default=0.0, ge=0, description="Height in CM")
-    weight: float = Field(gt=0, description="Weight in KG")
+    length: float = Field(default=0.0, ge=0, description="Length")
+    breadth: float = Field(default=0.0, ge=0, description="Breadth")
+    height: float = Field(default=0.0, ge=0, description="Height")
+    dimension_unit: DimensionUnit = DimensionUnit.CM
+    weight: float = Field(gt=0, description="Weight")
+    weight_unit: WeightUnit = WeightUnit.KG
     box_count: int = Field(default=1, gt=0)
     description: Optional[str] = None
     is_fragile: bool = False
@@ -66,6 +70,7 @@ class PaymentDetailsBase(SQLModel):
     base_freight: float = 0.0
     tax_amount: float = 0.0
     total_logistics_cost: float = 0.0
+    pricing_breakdown: dict = {}
 
     # Compliance
     shipment_value: float = Field(default=0.0, ge=0)
@@ -359,11 +364,8 @@ class RateCalculationRequest(SQLModel):
 class RateCalculationResponse(SQLModel):
     chargeable_weight: float
     base_charge: float
-    service_surcharge: float
-    fuel_surcharge: float
-    network_surcharge: float
-    cod_fee: float
     tax_amount: float
     total_amount: float
     currency: str = "INR"
     estimated_days: int
+    pricing_breakdown: dict = {}

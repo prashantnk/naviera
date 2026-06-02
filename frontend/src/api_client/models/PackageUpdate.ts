@@ -2,27 +2,31 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DimensionUnit } from './DimensionUnit';
+import type { WeightUnit } from './WeightUnit';
 /**
  * Used for rditing packages inside a shipment.
  * - id: If present, we update the existing row. If None, we create a new row.
  */
 export type PackageUpdate = {
     /**
-     * Length in CM
+     * Length
      */
     length?: number;
     /**
-     * Breadth in CM
+     * Breadth
      */
     breadth?: number;
     /**
-     * Height in CM
+     * Height
      */
     height?: number;
+    dimension_unit?: DimensionUnit;
     /**
-     * Weight in KG
+     * Weight
      */
     weight: number;
+    weight_unit?: WeightUnit;
     box_count?: number;
     description?: (string | null);
     is_fragile?: boolean;

@@ -22,6 +22,18 @@ class AddressScope(str, Enum):
     TENANT = "TENANT"
 
 
+class DimensionUnit(str, Enum):
+    CM = "CM"
+    M = "M"
+    IN = "IN"
+    FT = "FT"
+
+
+class WeightUnit(str, Enum):
+    KG = "KG"
+    G = "G"
+
+
 class ShipmentType(str, Enum):
     FORWARD = "FORWARD"
     REVERSE = "REVERSE"
@@ -253,10 +265,18 @@ class PackageDetails(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     pickup_id: uuid.UUID = Field(foreign_key="pickups.id", nullable=False)
 
-    length: float = Field(description="CM")
-    breadth: float = Field(description="CM")
-    height: float = Field(description="CM")
-    weight: float = Field(description="KG")
+    length: float = Field(description="Length")
+    breadth: float = Field(description="Breadth")
+    height: float = Field(description="Height")
+    dimension_unit: DimensionUnit = Field(
+        default=DimensionUnit.CM,
+        sa_column=Column(sa_Enum(DimensionUnit, name="dimensionunit"), nullable=False)
+    )
+    weight: float = Field(description="Weight")
+    weight_unit: WeightUnit = Field(
+        default=WeightUnit.KG,
+        sa_column=Column(sa_Enum(WeightUnit, name="weightunit"), nullable=False)
+    )
 
     box_count: int = Field(default=1)
     description: Optional[str] = Field(
