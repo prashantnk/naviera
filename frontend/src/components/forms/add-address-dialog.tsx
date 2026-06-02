@@ -63,7 +63,7 @@ const addressSchema = z.object({
         }),
 });
 
-type AddressFormValues = z.infer<typeof addressSchema>;
+export type AddressFormValues = z.infer<typeof addressSchema>;
 
 interface AddAddressDialogProps {
     onSuccess?: () => void;
