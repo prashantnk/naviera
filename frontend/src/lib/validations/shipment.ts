@@ -8,6 +8,8 @@ import {
   ProductCategory,
   ServiceType,
   ShipmentType,
+  DimensionUnit,
+  WeightUnit,
 } from "@/api_client";
 import * as z from "zod";
 
@@ -62,7 +64,9 @@ const packageSchema = z.object({
   length: z.number().min(0, "Cannot be negative").default(0),
   breadth: z.number().min(0, "Cannot be negative").default(0),
   height: z.number().min(0, "Cannot be negative").default(0),
+  dimension_unit: z.nativeEnum(DimensionUnit).default(DimensionUnit.CM),
   weight: z.number().min(0.1, "Weight is required"),
+  weight_unit: z.nativeEnum(WeightUnit).default(WeightUnit.KG),
   box_count: z.number().min(1).default(1),
   is_fragile: z.boolean().default(false),
   description: z.string().optional(),

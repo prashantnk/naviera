@@ -381,6 +381,109 @@ export default function ShipmentDetailsPage() {
                   </>
                 )}
               </div>
+
+              {/* Dynamic Weight & Cost Breakup */}
+              <div className="mt-8 pt-6 border-t border-slate-200/80">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+                  Billing & Weight Ledger Breakup
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Weight Ledger */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3">
+                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/60 pb-2">
+                      Weight Ledger
+                    </h5>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Chargeable Weight</span>
+                        <span className="font-bold text-slate-900">
+                          {shipment.payment_details.pricing_breakdown?.raw_chargeable_weight || shipment.payment_details.pricing_breakdown?.chargeable_weight || "N/A"} kg
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Actual Weight</span>
+                        <span className="font-medium text-slate-800">
+                          {shipment.payment_details.pricing_breakdown?.total_actual_weight || "N/A"} kg
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Volumetric Weight</span>
+                        <span className="font-medium text-slate-800">
+                          {shipment.payment_details.pricing_breakdown?.total_volumetric_weight || "N/A"} kg
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Base & Surcharges Breakup */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3">
+                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/60 pb-2">
+                      Base & Surcharges
+                    </h5>
+                    <div className="space-y-2 text-xs text-slate-600">
+                      <div className="flex justify-between text-slate-700 text-sm">
+                        <span>Base Freight</span>
+                        <span className="font-semibold">₹{(shipment.payment_details.base_freight || 0).toFixed(2)}</span>
+                      </div>
+                      {(shipment.payment_details.pricing_breakdown?.service_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-1">
+                          <span>Speed Premium</span>
+                          <span>+ ₹{Number(shipment.payment_details.pricing_breakdown?.service_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(shipment.payment_details.pricing_breakdown?.fuel_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-1">
+                          <span>Fuel Surcharge & DPH</span>
+                          <span>+ ₹{Number(shipment.payment_details.pricing_breakdown?.fuel_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(shipment.payment_details.pricing_breakdown?.network_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between pl-1">
+                          <span>Network Surcharge</span>
+                          <span>+ ₹{Number(shipment.payment_details.pricing_breakdown?.network_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(shipment.payment_details.pricing_breakdown?.oversized_surcharge ?? 0) > 0 && (
+                        <div className="flex justify-between text-amber-700 font-semibold pl-1">
+                          <span>Oversized Surcharge</span>
+                          <span>+ ₹{Number(shipment.payment_details.pricing_breakdown?.oversized_surcharge).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(shipment.payment_details.pricing_breakdown?.cod_fee ?? 0) > 0 && (
+                        <div className="flex justify-between pl-1">
+                          <span>COD Processing Fee</span>
+                          <span>+ ₹{Number(shipment.payment_details.pricing_breakdown?.cod_fee).toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Billing Ledger */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3 flex flex-col justify-between">
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/60 pb-2 mb-2">
+                        Final Cost Breakup
+                      </h5>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Subtotal</span>
+                          <span className="font-medium text-slate-800">
+                            ₹{((shipment.payment_details.total_logistics_cost || 0) - (shipment.payment_details.tax_amount || 0)).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>GST (18%)</span>
+                          <span className="font-medium text-slate-800">₹{(shipment.payment_details.tax_amount || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between font-bold text-slate-900 border-t border-double border-slate-300 pt-2 mt-2 text-base">
+                      <span>Total logistics cost</span>
+                      <span>₹{(shipment.payment_details.total_logistics_cost || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

@@ -2,23 +2,27 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DimensionUnit } from './DimensionUnit';
+import type { WeightUnit } from './WeightUnit';
 export type PackageRead = {
     /**
-     * Length in CM
+     * Length
      */
     length?: number;
     /**
-     * Breadth in CM
+     * Breadth
      */
     breadth?: number;
     /**
-     * Height in CM
+     * Height
      */
     height?: number;
+    dimension_unit?: DimensionUnit;
     /**
-     * Weight in KG
+     * Weight
      */
     weight: number;
+    weight_unit?: WeightUnit;
     box_count?: number;
     description?: (string | null);
     is_fragile?: boolean;

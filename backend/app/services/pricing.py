@@ -1,5 +1,6 @@
 # backend/app/services/pricing.py
-from app.models.pickups import ServiceType
+import math
+from app.models.pickups import ServiceType, DimensionUnit, WeightUnit
 from app.schemas.v1.pickups import RateCalculationRequest, RateCalculationResponse
 
 
@@ -7,73 +8,187 @@ class PricingEngine:
     """
     Core business logic for calculating shipping rates based on standard
     logistics algorithms (Actual vs Volumetric Weight).
+    Adheres to strict multi-tenant carrier economics and pricing guidelines.
     """
 
-    # Industry standard volumetric divisor (cm3 / 5000 = kg)
-    VOLUMETRIC_DIVISOR = 5000.0
-    BASE_RATE_PER_KG = 50.0  # INR 50 per KG
-    TAX_RATE = 0.18  # 18% GST
+    # Core freight metrics
+    BASE_RATE_PER_KG: float = 50.0  # INR 50 per KG
+    TAX_RATE: float = 0.18  # 18% GST
+
+    # Volumetric & weight limits
+    AIR_VOLUMETRIC_DIVISOR: float = 5000.0
+    SURFACE_VOLUMETRIC_DIVISOR: float = 4500.0
+    MINIMUM_WEIGHT_FLOOR: float = 0.5
+    SLAB_ROUNDING_BASE: float = 2.0
+
+    # Dimensional normalizations to CM
+    INCH_TO_CM: float = 2.54
+    FEET_TO_CM: float = 30.48
+    GRAMS_TO_KG: float = 1000.0
+
+    # B2B Oversized Cargo constraints
+    OVERSIZED_DIMENSION_THRESHOLD: float = 120.0
+    OVERSIZED_SURCHARGE_INR: float = 250.0
+
+    # Auxiliary surcharges
+    FUEL_SURCHARGE_MULTIPLIER: float = 0.10
+    NETWORK_SURCHARGE_INR: float = 25.0
+    COD_FEE_MULTIPLIER: float = 0.02
+
+    # Service speed premiums
+    SURFACE_TRAIN_MULTIPLIER: float = 0.15
+    AIR_MULTIPLIER: float = 0.60
+
+    @classmethod
+    def _normalize_dimensions(
+        cls, length: float, breadth: float, height: float, unit: DimensionUnit
+    ) -> tuple[float, float, float]:
+        """
+        Normalizes length, breadth, and height to Centimeters (CM).
+        Applies immediate float rounding to 2 decimal places to resolve floating point anomalies.
+        """
+        if unit == DimensionUnit.M:
+            return length * 100.0, breadth * 100.0, height * 100.0
+        elif unit == DimensionUnit.IN:
+            return (
+                round(length * cls.INCH_TO_CM, 2),
+                round(breadth * cls.INCH_TO_CM, 2),
+                round(height * cls.INCH_TO_CM, 2),
+            )
+        elif unit == DimensionUnit.FT:
+            return (
+                round(length * cls.FEET_TO_CM, 2),
+                round(breadth * cls.FEET_TO_CM, 2),
+                round(height * cls.FEET_TO_CM, 2),
+            )
+        return length, breadth, height
+
+    @classmethod
+    def _normalize_weight(cls, weight: float, unit: WeightUnit) -> float:
+        """Normalizes raw weight to Kilograms (KG)."""
+        if unit == WeightUnit.G:
+            return weight / cls.GRAMS_TO_KG
+        return weight
+
+    @classmethod
+    def _is_package_oversized(
+        cls, length_cm: float, breadth_cm: float, height_cm: float
+    ) -> bool:
+        """Evaluates if any single normalized package dimension exceeds the carrier threshold."""
+        return (
+            length_cm > cls.OVERSIZED_DIMENSION_THRESHOLD
+            or breadth_cm > cls.OVERSIZED_DIMENSION_THRESHOLD
+            or height_cm > cls.OVERSIZED_DIMENSION_THRESHOLD
+        )
+
+    @classmethod
+    def _calculate_volumetric_weight(
+        cls, length_cm: float, breadth_cm: float, height_cm: float, service_type: ServiceType
+    ) -> float:
+        """Calculates standard volumetric weight in KG based on active carrier speed."""
+        divisor = (
+            cls.AIR_VOLUMETRIC_DIVISOR
+            if service_type == ServiceType.AIR
+            else cls.SURFACE_VOLUMETRIC_DIVISOR
+        )
+        return (length_cm * breadth_cm * height_cm) / divisor
+
+    @classmethod
+    def _apply_slab_rounding(cls, weight: float) -> float:
+        """Applies the minimum weight floor and rounds UP to the nearest 0.5kg billing slab."""
+        chargeable = max(weight, cls.MINIMUM_WEIGHT_FLOOR)
+        return math.ceil(chargeable * cls.SLAB_ROUNDING_BASE) / cls.SLAB_ROUNDING_BASE
 
     @classmethod
     def calculate_rate(cls, request: RateCalculationRequest) -> RateCalculationResponse:
-        total_chargeable_weight = 0.0
+        """
+        Main pricing orchestrator. Calculates freight pricing details, service surcharges,
+        taxes, and dynamic ledger breakdowns.
+        """
+        total_actual_weight = 0.0
+        total_volumetric_weight = 0.0
+        is_oversized = False
 
-        # 1. Calculate Chargeable Weight for all packages
         for pkg in request.packages:
-            # Volumetric weight = (L * B * H) / 5000
-            volumetric_weight = (
-                pkg.length * pkg.breadth * pkg.height
-            ) / cls.VOLUMETRIC_DIVISOR
+            # 1. Unit Normalization & Conversions
+            dim_unit = getattr(pkg, "dimension_unit", DimensionUnit.CM)
+            l_cm, b_cm, h_cm = cls._normalize_dimensions(
+                pkg.length, pkg.breadth, pkg.height, dim_unit
+            )
 
-            # Multiply by number of boxes
-            total_volumetric = volumetric_weight * pkg.box_count
-            total_actual = pkg.weight * pkg.box_count
+            # 2. Oversized cargo check
+            if cls._is_package_oversized(l_cm, b_cm, h_cm):
+                is_oversized = True
 
-            # Chargeable weight is always the HIGHER of actual vs volumetric
-            chargeable = max(total_actual, total_volumetric)
-            total_chargeable_weight += chargeable
+            w_unit = getattr(pkg, "weight_unit", WeightUnit.KG)
+            w_kg = cls._normalize_weight(pkg.weight, w_unit)
 
-        # 2. Calculate Base Charge
-        base_charge = total_chargeable_weight * cls.BASE_RATE_PER_KG
+            # 3. Volumetric calculation
+            vol_weight_pkg = cls._calculate_volumetric_weight(
+                l_cm, b_cm, h_cm, request.service_type
+            )
 
-        # 3. Apply Service Type Multipliers
+            total_actual_weight += w_kg * pkg.box_count
+            total_volumetric_weight += vol_weight_pkg * pkg.box_count
+
+        # 4. Carrier Aggregation & 500g slab rounding
+        raw_chargeable_weight = max(total_actual_weight, total_volumetric_weight)
+        chargeable_weight = cls._apply_slab_rounding(raw_chargeable_weight)
+
+        # 5. Base transport cost
+        base_charge = chargeable_weight * cls.BASE_RATE_PER_KG
+
+        # 6. Resolve service speed premiums
         service_surcharge = 0.0
-        estimated_days = 5  # Default surface road delivery
+        estimated_days = 5  # Default road logistics
 
         if request.service_type == ServiceType.SURFACE_TRAIN:
-            # Rail logistics has a minor surcharge but is faster than road
-            service_surcharge = base_charge * 0.15
+            service_surcharge = base_charge * cls.SURFACE_TRAIN_MULTIPLIER
             estimated_days = 3
         elif request.service_type == ServiceType.AIR:
-            # Air freight delivers in 1 day with a 60% premium
-            service_surcharge = base_charge * 0.60
+            service_surcharge = base_charge * cls.AIR_MULTIPLIER
             estimated_days = 1
 
-        # 4. Calculate Auxiliary Surcharges & COD Fee
-        # Fuel surcharge is 10% of freight subtotal
-        fuel_surcharge = (base_charge + service_surcharge) * 0.10
-        # Network surcharge is flat INR 25
-        network_surcharge = 25.0
+        # 7. Dynamic Surcharges
+        fuel_surcharge = (base_charge + service_surcharge) * cls.FUEL_SURCHARGE_MULTIPLIER
+        network_surcharge = cls.NETWORK_SURCHARGE_INR
+        oversized_surcharge = cls.OVERSIZED_SURCHARGE_INR if is_oversized else 0.0
 
-        # COD Fee is 2.0% of the commercial Shipment Total Value, only if Cash on Delivery is requested
         cod_fee = 0.0
         if request.is_cod and request.shipment_total_value > 0:
-            cod_fee = request.shipment_total_value * 0.02
+            cod_fee = request.shipment_total_value * cls.COD_FEE_MULTIPLIER
 
-        # 5. Calculate Taxes & Total Logistics Charge
-        subtotal = base_charge + service_surcharge + fuel_surcharge + network_surcharge + cod_fee
+        # 8. Subtotal & Tax Calculations
+        subtotal = (
+            base_charge
+            + service_surcharge
+            + fuel_surcharge
+            + network_surcharge
+            + oversized_surcharge
+            + cod_fee
+        )
         tax_amount = subtotal * cls.TAX_RATE
         total_amount = subtotal + tax_amount
 
-        # 6. Return the complete "Receipt" breakdown
+        # 9. Compile JSON ledger
+        pricing_breakdown = {
+            "is_oversized": is_oversized,
+            "oversized_surcharge": oversized_surcharge,
+            "fuel_surcharge": round(fuel_surcharge, 2),
+            "network_surcharge": round(network_surcharge, 2),
+            "cod_fee": round(cod_fee, 2),
+            "base_charge": round(base_charge, 2),
+            "service_surcharge": round(service_surcharge, 2),
+            "total_actual_weight": round(total_actual_weight, 2),
+            "total_volumetric_weight": round(total_volumetric_weight, 2),
+            "raw_chargeable_weight": round(raw_chargeable_weight, 2),
+        }
+
         return RateCalculationResponse(
-            chargeable_weight=round(total_chargeable_weight, 2),
+            chargeable_weight=round(chargeable_weight, 2),
             base_charge=round(base_charge, 2),
-            service_surcharge=round(service_surcharge, 2),
-            fuel_surcharge=round(fuel_surcharge, 2),
-            network_surcharge=round(network_surcharge, 2),
-            cod_fee=round(cod_fee, 2),
             tax_amount=round(tax_amount, 2),
             total_amount=round(total_amount, 2),
             estimated_days=estimated_days,
+            pricing_breakdown=pricing_breakdown,
         )

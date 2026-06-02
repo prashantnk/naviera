@@ -12,6 +12,7 @@ export type PaymentDetailsCreate = {
     base_freight?: number;
     tax_amount?: number;
     total_logistics_cost?: number;
+    pricing_breakdown?: Record<string, any>;
     shipment_value?: number;
     shipment_tax_value?: number;
     shipment_total_value?: number;

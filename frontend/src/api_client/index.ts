@@ -14,6 +14,7 @@ export type { AddressRead } from './models/AddressRead';
 export { AddressScope } from './models/AddressScope';
 export type { AddressUpdate } from './models/AddressUpdate';
 export { CodRemittanceStatus } from './models/CodRemittanceStatus';
+export { DimensionUnit } from './models/DimensionUnit';
 export { DocumentType } from './models/DocumentType';
 export { FreightPaymentMode } from './models/FreightPaymentMode';
 export type { HTTPValidationError } from './models/HTTPValidationError';
@@ -45,6 +46,7 @@ export type { UserRead } from './models/UserRead';
 export { UserRole } from './models/UserRole';
 export type { UserUpdate } from './models/UserUpdate';
 export type { ValidationError } from './models/ValidationError';
+export { WeightUnit } from './models/WeightUnit';
 
 export { AddressesService } from './services/AddressesService';
 export { ShipmentsService } from './services/ShipmentsService';
