@@ -20,8 +20,8 @@ import {
   ShipmentType,
   WeightUnit,
 } from "@/api_client";
-import { AddressFieldset } from "@/components/forms/address-fieldset";
-import { PackageFieldset } from "@/components/forms/package-fieldset";
+import { AddressFieldset, HasAddresses } from "@/components/forms/address-fieldset";
+import { PackageFieldset, HasPackages } from "@/components/forms/package-fieldset";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { EWayBillBanner } from "@/components/forms/eway-bill-banner";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Path, Resolver, useFieldArray, useForm } from "react-hook-form";
+import { Path, Resolver, useFieldArray, useForm, Control } from "react-hook-form";
 import { toast } from "sonner";
 
 const STEPS = [
@@ -1086,13 +1086,13 @@ export default function CreateShipmentWizard() {
             {currentStep === 2 && (
               <div className="space-y-6 animate-in fade-in">
                 <AddressFieldset
-                  control={form.control}
+                  control={form.control as unknown as Control<HasAddresses>}
                   type="pickup"
                   title="Sender Details (Pickup Location)"
                   savedAddresses={savedAddresses}
                 />
                 <AddressFieldset
-                  control={form.control}
+                  control={form.control as unknown as Control<HasAddresses>}
                   type="delivery"
                   title="Receiver Details (Delivery Location)"
                   savedAddresses={savedAddresses}
@@ -1103,7 +1103,7 @@ export default function CreateShipmentWizard() {
             {/* STEP 4: PACKAGES & DOCS */}
             {currentStep === 3 && (
               <div className="space-y-8 animate-in fade-in">
-                 <PackageFieldset control={form.control} isReverse={isReverse} />
+                 <PackageFieldset control={form.control as unknown as Control<HasPackages>} isReverse={isReverse} />
 
                 {!isReverse && cargoTotals.actualWeightKg > 0 && (
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs animate-in fade-in duration-200">

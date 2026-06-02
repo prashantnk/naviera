@@ -19,50 +19,72 @@ import {
 } from "@/components/ui/select";
 import { User, Building2, Pencil, Trash2, MapPin, MapPinPlus } from "lucide-react";
 import { useMemo } from "react";
-import { Control, Path, PathValue, useFormContext, useWatch } from "react-hook-form";
-import { ShipmentFormValues } from "@/lib/validations/shipment";
+import { Control, Path, PathValue, useFormContext, useWatch, FieldValues } from "react-hook-form";
 import { useUser } from "@/components/auth/auth-guard";
-import { AddAddressDialog } from "@/components/forms/add-address-dialog";
+import { AddAddressDialog, AddressFormValues } from "@/components/forms/add-address-dialog";
 
-interface AddressFieldsetProps {
-  control: Control<ShipmentFormValues>;
+export interface AddressFormValue {
+  name?: string;
+  company_name?: string;
+  phone?: string;
+  alternate_phone?: string;
+  email?: string;
+  gstin?: string;
+  address_line1?: string;
+  address_line2?: string;
+  landmark?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  category?: string;
+  scope?: string;
+  save_to_address_book?: boolean;
+  is_shared_with_team?: boolean;
+}
+
+export interface HasAddresses extends FieldValues {
+  pickup_address_id?: string;
+  delivery_address_id?: string;
+  new_pickup_address?: AddressFormValue;
+  new_delivery_address?: AddressFormValue;
+}
+
+interface AddressFieldsetProps<TFieldValues extends HasAddresses> {
+  control: Control<TFieldValues>;
   type: "pickup" | "delivery";
   title: string;
   savedAddresses: AddressRead[];
 }
 
-export function AddressFieldset({
+export function AddressFieldset<TFieldValues extends HasAddresses>({
   control,
   type,
   title,
   savedAddresses = [],
-}: AddressFieldsetProps) {
+}: AddressFieldsetProps<TFieldValues>) {
   const { isAdmin } = useUser();
-  const { setValue } = useFormContext<ShipmentFormValues>();
+  const { setValue } = useFormContext<TFieldValues>();
 
   const idField = (
     type === "pickup" ? "pickup_address_id" : "delivery_address_id"
-  ) as Path<ShipmentFormValues>;
+  ) as Path<TFieldValues>;
   const objectField = (
     type === "pickup" ? "new_pickup_address" : "new_delivery_address"
-  ) as Path<ShipmentFormValues>;
+  ) as Path<TFieldValues>;
 
   // Watch active selections
-  const selectedAddressId = useWatch({
-    control,
+  const selectedAddressId = useWatch<TFieldValues>({
     name: idField,
-  }) as string | undefined;
+  }) as unknown as string | undefined;
 
-  const transientAddress = useWatch({
-    control,
+  const transientAddress = useWatch<TFieldValues>({
     name: objectField,
-  }) as NonNullable<ShipmentFormValues["new_pickup_address"]> | undefined;
+  }) as unknown as AddressFormValue | undefined;
 
-  const saveToAddressBook = useWatch({
-    control,
-    name: `${objectField}.save_to_address_book` as Path<ShipmentFormValues>,
-    defaultValue: true,
-  });
+  const saveToAddressBook = useWatch<TFieldValues>({
+    name: `${objectField}.save_to_address_book` as unknown as Path<TFieldValues>,
+    defaultValue: true as unknown as never,
+  }) as unknown as boolean;
 
   // Determine if we have a saved address active
   const activeSavedAddress = useMemo(() => {
@@ -76,24 +98,24 @@ export function AddressFieldset({
     return transientAddress;
   }, [selectedAddressId, transientAddress]);
 
-  const handleSaveTransient = (data: Omit<NonNullable<ShipmentFormValues["new_pickup_address"]>, "save_to_address_book" | "is_shared_with_team">) => {
+  const handleSaveTransient = (data: Omit<AddressFormValue, "save_to_address_book" | "is_shared_with_team">) => {
     // Clear selected saved ID to prioritize transient payload
-    setValue(idField, undefined, { shouldValidate: true });
+    setValue(idField, "" as unknown as PathValue<TFieldValues, Path<TFieldValues>>, { shouldValidate: true });
     
     // Spreading defaults strictly and type-casting to PathValue to avoid any union warnings or 'any' usage
     const payload = {
       ...data,
       save_to_address_book: true,
       is_shared_with_team: false,
-    } as unknown as PathValue<ShipmentFormValues, Path<ShipmentFormValues>>;
+    } as unknown as PathValue<TFieldValues, Path<TFieldValues>>;
 
     // Write full transient data into form state
     setValue(objectField, payload, { shouldValidate: true });
   };
 
   const handleClear = () => {
-    setValue(idField, undefined, { shouldValidate: true });
-    setValue(objectField, undefined, { shouldValidate: true });
+    setValue(idField, "" as unknown as PathValue<TFieldValues, Path<TFieldValues>>, { shouldValidate: true });
+    setValue(objectField, undefined as unknown as PathValue<TFieldValues, Path<TFieldValues>>, { shouldValidate: true });
   };
 
   return (
@@ -134,7 +156,7 @@ export function AddressFieldset({
                 {activeTransientAddress && (
                   <AddAddressDialog
                     onSaveTransient={handleSaveTransient}
-                    defaultValues={activeTransientAddress}
+                    defaultValues={activeTransientAddress as unknown as Partial<AddressFormValues>}
                     trigger={
                       <Button
                         type="button"
@@ -204,7 +226,7 @@ export function AddressFieldset({
             <div className="border-t border-slate-200/60 pt-4 mt-4 space-y-3 animate-in fade-in duration-150">
               <FormField
                 control={control}
-                name={`${objectField}.save_to_address_book` as Path<ShipmentFormValues>}
+                name={`${objectField}.save_to_address_book` as Path<TFieldValues>}
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                     <FormControl>
@@ -215,7 +237,7 @@ export function AddressFieldset({
                         onChange={(e) => {
                           field.onChange(e.target.checked);
                           if (!e.target.checked) {
-                            setValue(`${objectField}.is_shared_with_team` as Path<ShipmentFormValues>, false);
+                            setValue(`${objectField}.is_shared_with_team` as Path<TFieldValues>, false as unknown as PathValue<TFieldValues, Path<TFieldValues>>);
                           }
                         }}
                       />
@@ -235,7 +257,7 @@ export function AddressFieldset({
               {saveToAddressBook && isAdmin && (
                 <FormField
                   control={control}
-                  name={`${objectField}.is_shared_with_team` as Path<ShipmentFormValues>}
+                  name={`${objectField}.is_shared_with_team` as Path<TFieldValues>}
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0 animate-in fade-in slide-in-from-top-1 duration-150">
                       <FormControl>
@@ -274,7 +296,7 @@ export function AddressFieldset({
                   <FormItem className="space-y-0">
                     <Select
                       onValueChange={field.onChange}
-                      value={field.value as string || undefined}
+                      value={(field.value as string) || undefined}
                     >
                       <FormControl>
                         <SelectTrigger className="bg-white border-slate-200 shadow-sm h-11 text-sm">

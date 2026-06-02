@@ -78,25 +78,20 @@ const documentSchema = z.object({
   file_name: z.string(),
 });
 
-export const shipmentFormSchema = z
+// Specialized Outbound Forward Shipment Schema
+export const forwardShipmentSchema = z
   .object({
     order_reference_id: z.string().optional().or(z.literal("")),
     requested_pickup_date: z.string().min(1, "Please select a pickup date"),
     pickup_time_slot: z.nativeEnum(PickupTimeSlot, {
       message: "Please select a pickup time slot",
     }),
-
-    // We keep nativeEnum, but we will strictly control the default values in the page.tsx file
     service_type: z.nativeEnum(ServiceType),
-    shipment_type: z.nativeEnum(ShipmentType),
-    reason_for_return: z.string().optional(),
-
+    shipment_type: z.literal(ShipmentType.FORWARD),
     product_category: z.nativeEnum(ProductCategory, {
       message: "Please select a product category",
     }),
     other_category_description: z.string().optional(),
-
-
     payment_details: z.object({
       freight_payment_mode: z.nativeEnum(FreightPaymentMode),
       is_cod: z.boolean().default(false),
@@ -113,30 +108,16 @@ export const shipmentFormSchema = z
       invoice_date: z.string().optional(),
       eway_bill_number: z.string().optional(),
     }),
-
     pickup_address_id: z.string().optional(),
     new_pickup_address: addressSchema.optional(),
     delivery_address_id: z.string().optional(),
     new_delivery_address: addressSchema.optional(),
-
     packages: z.array(packageSchema).min(1, "At least one package is required"),
     documents: z.array(documentSchema).optional(),
   })
   .superRefine((data, ctx) => {
-    // Reverse shipments need a reason
+    // Rule A: E-Way Bill is mandatory for values over ₹50,000
     if (
-      data.shipment_type === ShipmentType.REVERSE &&
-      (!data.reason_for_return || data.reason_for_return.length < 3)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Reason is required for reverse pickups",
-        path: ["reason_for_return"],
-      });
-    }
-    // E-Way Bill is only mandatory for FORWARD shipments > 50k
-    if (
-      data.shipment_type === ShipmentType.FORWARD &&
       data.payment_details.shipment_total_value > 50000 &&
       !data.payment_details.eway_bill_number
     ) {
@@ -147,6 +128,75 @@ export const shipmentFormSchema = z
       });
     }
 
+    // Rule B: ProductCategory OTHER requires description
+    if (
+      data.product_category === ProductCategory.OTHER &&
+      (!data.other_category_description || data.other_category_description.trim() === "")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please specify the custom category description.",
+        path: ["other_category_description"],
+      });
+    }
+
+    // Rule C: No Vehicles in Air Cargo
+    if (
+      data.service_type === ServiceType.AIR &&
+      data.product_category === ProductCategory.VEHICLE
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vehicles cannot be transported via Air Cargo. Please select a Surface service.",
+        path: ["product_category"],
+      });
+    }
+
+    // Rule D: COD cash collection requirements
+    if (data.payment_details.is_cod === true && data.payment_details.cod_amount <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
+        path: ["payment_details", "cod_amount"],
+      });
+    }
+  });
+
+// Specialized Reverse Returns Shipment Schema
+export const reverseShipmentSchema = z
+  .object({
+    order_reference_id: z.string().optional().or(z.literal("")),
+    requested_pickup_date: z.string().min(1, "Please select a pickup date"),
+    pickup_time_slot: z.nativeEnum(PickupTimeSlot, {
+      message: "Please select a pickup time slot",
+    }),
+    service_type: z.nativeEnum(ServiceType),
+    shipment_type: z.literal(ShipmentType.REVERSE),
+    reason_for_return: z.string().min(3, "Reason is required for reverse pickups (min 3 chars)"),
+    product_category: z.nativeEnum(ProductCategory, {
+      message: "Please select a product category",
+    }),
+    other_category_description: z.string().optional(),
+    payment_details: z.object({
+      freight_payment_mode: z.nativeEnum(FreightPaymentMode),
+      is_cod: z.boolean().default(false),
+      cod_amount: z.number().min(0, "COD amount cannot be negative").default(0),
+      add_shipping_to_cod: z.boolean().default(false),
+      shipment_value: z.number().min(0, "Shipment value cannot be negative"),
+      shipment_tax_value: z.number().default(0),
+      shipment_total_value: z.number().default(0),
+      tax_amount: z.number().default(0),
+      base_freight: z.number().default(0),
+      total_logistics_cost: z.number().default(0),
+    }),
+    pickup_address_id: z.string().optional(),
+    new_pickup_address: addressSchema.optional(),
+    delivery_address_id: z.string().optional(),
+    new_delivery_address: addressSchema.optional(),
+    packages: z.array(packageSchema).min(1, "At least one package is required"),
+    documents: z.array(documentSchema).optional(),
+  })
+  .superRefine((data, ctx) => {
     // Rule A: ProductCategory OTHER requires description
     if (
       data.product_category === ProductCategory.OTHER &&
@@ -159,7 +209,7 @@ export const shipmentFormSchema = z
       });
     }
 
-    // Rule B: No Vehicles in Air Cargo speed
+    // Rule B: No Vehicles in Air Cargo
     if (
       data.service_type === ServiceType.AIR &&
       data.product_category === ProductCategory.VEHICLE
@@ -181,4 +231,15 @@ export const shipmentFormSchema = z
     }
   });
 
-export type ShipmentFormValues = z.infer<typeof shipmentFormSchema>;
+// Backward Compatible Discriminated Union Schema
+export const shipmentFormSchema = z.discriminatedUnion("shipment_type", [
+  forwardShipmentSchema,
+  reverseShipmentSchema,
+]);
+
+export type ForwardShipmentFormValues = z.infer<typeof forwardShipmentSchema>;
+export type ReverseShipmentFormValues = z.infer<typeof reverseShipmentSchema>;
+export type ShipmentFormValues = Omit<ForwardShipmentFormValues, "shipment_type"> & {
+  shipment_type: ShipmentType;
+  reason_for_return?: string;
+};
