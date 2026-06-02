@@ -19,6 +19,8 @@ from app.schemas.v1.pickups import (
     RateCalculationRequest,
     RateCalculationResponse,
     ShipmentActivityRead,
+    BulkRateCalculationRequest,
+    BulkRateCalculationResponse,
 )
 from app.services.label import LabelGenerator
 from app.services.pricing import PricingEngine
@@ -28,6 +30,7 @@ from app.services.shipment import ShipmentService, get_shipment_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 
 @router.post("", response_model=PickupRead, status_code=status.HTTP_201_CREATED)
@@ -227,3 +230,18 @@ async def calculate_shipping_rate(
 
     # We don't need the database here, it's pure math!
     return PricingEngine.calculate_rate(payload)
+
+
+@router.post("/calculate-rates", response_model=BulkRateCalculationResponse)
+async def calculate_bulk_shipping_rates(
+    payload: BulkRateCalculationRequest,
+    # Notice: We still require auth to prevent public API abuse!
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+):
+    """
+    Calculates bulk rate quotes for all available services in a single payload request.
+    """
+    logger.info(f"API Request: Calculate Bulk Rates for Tenant '{current_tenant.slug}'")
+    return PricingEngine.calculate_bulk_rates(payload)
+

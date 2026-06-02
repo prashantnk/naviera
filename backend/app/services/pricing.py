@@ -1,7 +1,14 @@
 # backend/app/services/pricing.py
 import math
-from app.models.pickups import ServiceType, DimensionUnit, WeightUnit
-from app.schemas.v1.pickups import RateCalculationRequest, RateCalculationResponse
+from app.models.pickups import ServiceType, DimensionUnit, WeightUnit, ShipmentType
+from app.schemas.v1.pickups import (
+    RateCalculationRequest,
+    RateCalculationResponse,
+    BulkRateCalculationRequest,
+    BulkRateCalculationResponse,
+    ServiceQuote,
+    QuoteSpecification,
+)
 
 
 class PricingEngine:
@@ -34,10 +41,80 @@ class PricingEngine:
     FUEL_SURCHARGE_MULTIPLIER: float = 0.10
     NETWORK_SURCHARGE_INR: float = 25.0
     COD_FEE_MULTIPLIER: float = 0.02
+    RTO_CHARGE_MULTIPLIER: float = 0.50  # 50% base freight applied for return legs
 
     # Service speed premiums
     SURFACE_TRAIN_MULTIPLIER: float = 0.15
     AIR_MULTIPLIER: float = 0.60
+
+    @classmethod
+    def _check_serviceability(
+        cls, service_type: ServiceType, delivery_pincode: str
+    ) -> tuple[bool, str | None]:
+        """
+        Evaluates route serviceability boundaries based on delivery pin code.
+        """
+        if service_type == ServiceType.AIR and delivery_pincode.endswith("9"):
+            return False, "Air cargo service not available for this remote pin."
+            
+        if service_type == ServiceType.SURFACE_TRAIN and delivery_pincode.endswith("8"):
+            return False, "Rail network not connected to this destination."
+            
+        return True, None
+
+    @classmethod
+    def calculate_bulk_rates(cls, request: BulkRateCalculationRequest) -> BulkRateCalculationResponse:
+        """
+        Calculates customized bulk rate quotes for a list of requested service/flow combinations.
+        """
+        specs = request.quotes_to_calculate
+        if not specs:
+            # Default fallback if quotes_to_calculate is empty or None
+            specs = [
+                QuoteSpecification(service_type=ServiceType.AIR, is_rto=False),
+                QuoteSpecification(service_type=ServiceType.SURFACE_TRAIN, is_rto=False),
+                QuoteSpecification(service_type=ServiceType.SURFACE_ROAD, is_rto=False),
+            ]
+
+        quotes = []
+        for spec in specs:
+            serviceable, error_msg = cls._check_serviceability(spec.service_type, request.delivery_pincode)
+            
+            quote = None
+            if serviceable:
+                single_req = RateCalculationRequest(
+                    pickup_pincode=request.pickup_pincode,
+                    delivery_pincode=request.delivery_pincode,
+                    packages=request.packages,
+                    service_type=spec.service_type,
+                    is_cod=request.is_cod,
+                    cod_amount=request.cod_amount,
+                    shipment_total_value=request.shipment_total_value,
+                    shipment_type=request.shipment_type,
+                    is_rto=spec.is_rto
+                )
+                quote = cls.calculate_rate(single_req)
+            else:
+                # Return unserviceable response payload
+                quote = RateCalculationResponse(
+                    chargeable_weight=0.0,
+                    base_charge=0.0,
+                    tax_amount=0.0,
+                    total_amount=0.0,
+                    estimated_days=0,
+                    pricing_breakdown={},
+                    serviceable=False,
+                    error_message=error_msg
+                )
+                
+            quotes.append(ServiceQuote(
+                service_type=spec.service_type,
+                is_rto=spec.is_rto,
+                serviceable=serviceable,
+                quote=quote,
+                error_message=error_msg
+            ))
+        return BulkRateCalculationResponse(quotes=quotes)
 
     @classmethod
     def _normalize_dimensions(
@@ -105,6 +182,20 @@ class PricingEngine:
         Main pricing orchestrator. Calculates freight pricing details, service surcharges,
         taxes, and dynamic ledger breakdowns.
         """
+        # 0. Route-based Serviceability check
+        serviceable, error_msg = cls._check_serviceability(request.service_type, request.delivery_pincode)
+        if not serviceable:
+            return RateCalculationResponse(
+                chargeable_weight=0.0,
+                base_charge=0.0,
+                tax_amount=0.0,
+                total_amount=0.0,
+                estimated_days=0,
+                pricing_breakdown={},
+                serviceable=False,
+                error_message=error_msg
+            )
+
         total_actual_weight = 0.0
         total_volumetric_weight = 0.0
         is_oversized = False
@@ -154,9 +245,15 @@ class PricingEngine:
         network_surcharge = cls.NETWORK_SURCHARGE_INR
         oversized_surcharge = cls.OVERSIZED_SURCHARGE_INR if is_oversized else 0.0
 
+        # COD Remittance operations fee: calculated based on collectible cash cod_amount
         cod_fee = 0.0
-        if request.is_cod and request.shipment_total_value > 0:
-            cod_fee = request.shipment_total_value * cls.COD_FEE_MULTIPLIER
+        if request.is_cod and request.cod_amount > 0:
+            cod_fee = request.cod_amount * cls.COD_FEE_MULTIPLIER
+
+        # Return / RTO Leg surcharge
+        rto_surcharge = 0.0
+        if request.is_rto or request.shipment_type == ShipmentType.REVERSE:
+            rto_surcharge = base_charge * cls.RTO_CHARGE_MULTIPLIER
 
         # 8. Subtotal & Tax Calculations
         subtotal = (
@@ -166,6 +263,7 @@ class PricingEngine:
             + network_surcharge
             + oversized_surcharge
             + cod_fee
+            + rto_surcharge
         )
         tax_amount = subtotal * cls.TAX_RATE
         total_amount = subtotal + tax_amount
@@ -177,6 +275,7 @@ class PricingEngine:
             "fuel_surcharge": round(fuel_surcharge, 2),
             "network_surcharge": round(network_surcharge, 2),
             "cod_fee": round(cod_fee, 2),
+            "rto_surcharge": round(rto_surcharge, 2),
             "base_charge": round(base_charge, 2),
             "service_surcharge": round(service_surcharge, 2),
             "total_actual_weight": round(total_actual_weight, 2),
@@ -191,4 +290,6 @@ class PricingEngine:
             total_amount=round(total_amount, 2),
             estimated_days=estimated_days,
             pricing_breakdown=pricing_breakdown,
+            serviceable=True,
+            error_message=None
         )

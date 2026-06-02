@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BulkRateCalculationRequest } from '../models/BulkRateCalculationRequest';
+import type { BulkRateCalculationResponse } from '../models/BulkRateCalculationResponse';
 import type { PaginatedResponse_PickupRead_ } from '../models/PaginatedResponse_PickupRead_';
 import type { PickupCreate } from '../models/PickupCreate';
 import type { PickupRead } from '../models/PickupRead';
@@ -236,6 +238,31 @@ export class ShipmentsService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/v1/shipments/calculate-rate',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Calculate Bulk Shipping Rates
+     * Calculates bulk rate quotes for all available services in a single payload request.
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns BulkRateCalculationResponse Successful Response
+     * @throws ApiError
+     */
+    public static calculateBulkShippingRates(
+        requestBody: BulkRateCalculationRequest,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<BulkRateCalculationResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/shipments/calculate-rates',
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },

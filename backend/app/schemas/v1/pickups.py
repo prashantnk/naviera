@@ -358,7 +358,10 @@ class RateCalculationRequest(SQLModel):
     packages: List[PackageCreate]
     service_type: ServiceType
     is_cod: bool = False
+    cod_amount: float = 0.0
     shipment_total_value: float = 0.0
+    shipment_type: ShipmentType = ShipmentType.FORWARD
+    is_rto: bool = False
 
 
 class RateCalculationResponse(SQLModel):
@@ -369,3 +372,36 @@ class RateCalculationResponse(SQLModel):
     currency: str = "INR"
     estimated_days: int
     pricing_breakdown: dict = {}
+    serviceable: bool = True
+    error_message: Optional[str] = None
+
+
+# --- NEW: Bulk Rate Calculation Schemas ---
+
+class QuoteSpecification(SQLModel):
+    service_type: ServiceType
+    is_rto: bool = False
+
+
+class BulkRateCalculationRequest(SQLModel):
+    pickup_pincode: str
+    delivery_pincode: str
+    packages: List[PackageCreate]
+    is_cod: bool = False
+    cod_amount: float = 0.0
+    shipment_total_value: float = 0.0
+    shipment_type: ShipmentType = ShipmentType.FORWARD
+    quotes_to_calculate: Optional[List[QuoteSpecification]] = None
+
+
+class ServiceQuote(SQLModel):
+    service_type: ServiceType
+    is_rto: bool = False
+    serviceable: bool
+    quote: Optional[RateCalculationResponse] = None
+    error_message: Optional[str] = None
+
+
+class BulkRateCalculationResponse(SQLModel):
+    quotes: List[ServiceQuote]
+

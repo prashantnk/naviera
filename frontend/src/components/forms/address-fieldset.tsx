@@ -292,7 +292,7 @@ export function AddressFieldset({
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-slate-900">{addr.name}</span>
                               <span className="text-slate-400 text-xs">
-                                ({addr.category} - {addr.city}, {addr.state})
+                                ({addr.category} - {addr.city}, {addr.state} - {addr.pincode})
                               </span>
                             </div>
                           </SelectItem>

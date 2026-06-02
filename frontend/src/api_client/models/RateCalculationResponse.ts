@@ -10,5 +10,7 @@ export type RateCalculationResponse = {
     currency?: string;
     estimated_days: number;
     pricing_breakdown?: Record<string, any>;
+    serviceable?: boolean;
+    error_message?: (string | null);
 };
 
