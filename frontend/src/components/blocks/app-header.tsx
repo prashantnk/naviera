@@ -28,6 +28,7 @@ import {
   Settings,
   User,
   X,
+  ArrowUpRight,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -54,6 +55,7 @@ export function AppHeader() {
   const baseNavItems = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Shipments", href: "/shipments", icon: Package },
+    { name: "Forward Shipment", href: "/shipments/new/forward", icon: ArrowUpRight },
     { name: "Create Booking", href: "/shipments/new", icon: PlusCircle },
     { name: "Address Book", href: "/address-book", icon: MapPin },
   ];
