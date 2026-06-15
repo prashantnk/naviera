@@ -116,14 +116,14 @@ export const forwardShipmentSchema = z
     documents: z.array(documentSchema).optional(),
   })
   .superRefine((data, ctx) => {
-    // Rule A: E-Way Bill is mandatory for values over ₹50,000
+    // Rule A: E-Way Bill is mandatory for values over ₹49,999
     if (
-      data.payment_details.shipment_total_value > 50000 &&
+      data.payment_details.shipment_total_value >= 50000 &&
       !data.payment_details.eway_bill_number
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "E-Way Bill is mandatory for values over ₹50,000",
+        message: "E-Way Bill is mandatory when price is more than ₹49,999.",
         path: ["payment_details", "eway_bill_number"],
       });
     }
@@ -153,12 +153,20 @@ export const forwardShipmentSchema = z
     }
 
     // Rule D: COD cash collection requirements
-    if (data.payment_details.is_cod === true && data.payment_details.cod_amount <= 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
-        path: ["payment_details", "cod_amount"],
-      });
+    if (data.payment_details.is_cod === true) {
+      if (data.payment_details.cod_amount <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
+          path: ["payment_details", "cod_amount"],
+        });
+      } else if (data.payment_details.cod_amount > data.payment_details.shipment_total_value) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Collectible amount cannot exceed the total shipment value.",
+          path: ["payment_details", "cod_amount"],
+        });
+      }
     }
 
     // Rule E: Address selection check for Pickup Location
@@ -240,12 +248,20 @@ export const reverseShipmentSchema = z
     }
 
     // Rule C: COD cash collection requirements
-    if (data.payment_details.is_cod === true && data.payment_details.cod_amount <= 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
-        path: ["payment_details", "cod_amount"],
-      });
+    if (data.payment_details.is_cod === true) {
+      if (data.payment_details.cod_amount <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "COD amount must be greater than 0 when Cash-on-Delivery is enabled.",
+          path: ["payment_details", "cod_amount"],
+        });
+      } else if (data.payment_details.cod_amount > data.payment_details.shipment_total_value) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Collectible amount cannot exceed the total shipment value.",
+          path: ["payment_details", "cod_amount"],
+        });
+      }
     }
 
     // Rule D: Address selection check for Pickup Location

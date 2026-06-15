@@ -364,3 +364,34 @@ def test_decoupled_cod_amount_calculation():
     # Should NOT be based on shipment_total_value (100000 * 0.02 = 2000.0 INR)
     assert response.pricing_breakdown["cod_fee"] == 100.0
 
+
+def test_b2b_pricing_calculations():
+    """
+    Verify B2B pricing logic: 10kg minimum floor, docket charge, and FOV charge.
+    """
+    request = RateCalculationRequest(
+        pickup_pincode="110001",
+        delivery_pincode="400001",
+        service_type=ServiceType.SURFACE_ROAD,
+        packages=[
+            PackageCreate(
+                length=10.0, breadth=10.0, height=10.0, weight=2.0, box_count=1
+            )
+        ],
+        shipment_total_value=50000.0,
+        is_b2b=True
+    )
+    response = PricingEngine.calculate_rate(request)
+    
+    # 1. 10kg floor logic: actual weight = 2.0kg. Floor is 10kg. So chargeable = 10.0kg
+    assert response.chargeable_weight == 10.0
+    
+    # Base charge = 10kg * 50 = 500.0 INR
+    assert response.base_charge == 500.0
+    
+    # 2. Docket charge = 50.0 INR
+    assert response.pricing_breakdown["docket_charge"] == 50.0
+    
+    # 3. FOV charge = max(50000 * 0.002, 50.0) = max(100.0, 50.0) = 100.0 INR
+    assert response.pricing_breakdown["fov_charge"] == 100.0
+

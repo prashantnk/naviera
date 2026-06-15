@@ -1,8 +1,9 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
+import sqlalchemy as sa
 from sqlalchemy import Enum as sa_Enum
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
@@ -64,9 +65,17 @@ class PickupStatus(str, Enum):
     OPEN = "OPEN"
     ASSIGNED = "ASSIGNED"
     IN_TRANSIT = "IN_TRANSIT"
+    EXCEPTION = "EXCEPTION"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
     RTO_INITIATED = "RTO_INITIATED"
+
+
+class NdrExceptionReason(str, Enum):
+    DOCUMENT_NEEDED = "DOCUMENT_NEEDED"
+    APPOINTMENT_NEEDED = "APPOINTMENT_NEEDED"
+    SHORT_SHIPMENT = "SHORT_SHIPMENT"
+    CUSTOMER_UNAVAILABLE = "CUSTOMER_UNAVAILABLE"
 
 
 class DocumentType(str, Enum):
@@ -80,6 +89,14 @@ class DocumentType(str, Enum):
     BOX_PHOTO = "BOX_PHOTO"  # Proof of condition
     LABEL_IMAGE = "LABEL_IMAGE"  # If user provides their own label
     OTHER = "OTHER"
+
+    # B2B Support
+    PO_COPY = "PO_COPY"
+    KYC = "KYC"
+    REGULATORY_FORM = "REGULATORY_FORM"
+    PHOTO_ID = "PHOTO_ID"
+    ASN = "ASN"
+    E_INVOICE_QR = "E_INVOICE_QR"
 
 
 class ActivityType(str, Enum):
@@ -105,6 +122,12 @@ class ProductCategory(str, Enum):
     ELECTRONICS = "ELECTRONICS"
     APPAREL = "APPAREL"
     OTHER = "OTHER"
+
+
+class PickupStrategy(str, Enum):
+    DEFAULT = "DEFAULT"
+    DEDICATED = "DEDICATED"
+    CONSOLIDATED = "CONSOLIDATED"
 
 
 # --- 2. Modular Tables ---
@@ -248,9 +271,11 @@ class PaymentDetails(SQLModel, table=True):
     )
 
     # We store the *Numbers* here for search, but the *Files* go in PickupDocument
-    invoice_number: Optional[str] = Field(default=None)
+    invoice_numbers: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
     invoice_date: Optional[date] = None
-    eway_bill_number: Optional[str] = None
+    eway_bill_numbers: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+
+    chargeable_weight: float = Field(default=0.0, description="Weight used for billing calculation")
 
     pickup: "PickupRequest" = Relationship(back_populates="payment_details")
 
@@ -283,6 +308,7 @@ class PackageDetails(SQLModel, table=True):
         default=None, description="Specifics for this box"
     )
     is_fragile: bool = Field(default=False)
+    child_awb_number: Optional[str] = Field(default=None, max_length=100)
 
     pickup: "PickupRequest" = Relationship(back_populates="packages")
 
@@ -334,6 +360,14 @@ class PickupRequest(SQLModel, table=True):
         default=None, description="Mandatory if Type is REVERSE"
     )
 
+    ndr_reason: Optional[NdrExceptionReason] = Field(
+        default=None,
+        sa_column=Column(
+            sa_Enum(NdrExceptionReason, name="ndrexceptionreason", create_type=True),
+            nullable=True,
+        )
+    )
+
     # Scheduling
     requested_pickup_date: date = Field(nullable=False)
 
@@ -366,6 +400,30 @@ class PickupRequest(SQLModel, table=True):
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # PO Details
+    po_number: Optional[str] = Field(default=None, max_length=255)
+    po_date: Optional[date] = Field(default=None)
+
+    # Appointment Slots
+    appointment_id: Optional[str] = Field(default=None, max_length=100)
+    appointment_start: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    appointment_end: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(sa.DateTime(timezone=True), nullable=True)
+    )
+
+    # Pickup Strategy
+    pickup_strategy: Optional[PickupStrategy] = Field(
+        default=None,
+        sa_column=Column(
+            sa_Enum(PickupStrategy, name="pickupstrategy"),
+            nullable=True,
+        )
+    )
 
 
 class ShipmentActivity(SQLModel, table=True):

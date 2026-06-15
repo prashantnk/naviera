@@ -43,6 +43,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { format, parseISO } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -596,7 +598,10 @@ export default function EditShipmentPage() {
                   <FormItem>
                     <FormLabel>Requested Pickup Date</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} className="bg-white" />
+                      <DatePicker 
+                        date={field.value ? parseISO(field.value) : undefined}
+                        setDate={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -832,7 +837,7 @@ export default function EditShipmentPage() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value={FreightPaymentMode.PREPAID}>
-                              Prepaid (Sender pays)
+                              Prepaid (Sender wallet)
                             </SelectItem>
                             <SelectItem value={FreightPaymentMode.POSTPAID}>
                               Postpaid (Sender account billing)
@@ -999,11 +1004,9 @@ export default function EditShipmentPage() {
                         <FormItem>
                           <FormLabel>Invoice Date</FormLabel>
                           <FormControl>
-                            <Input
-                              type="date"
-                              {...field}
-                              value={field.value || ""}
-                              className="bg-white"
+                            <DatePicker 
+                              date={field.value ? parseISO(field.value) : undefined}
+                              setDate={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1013,7 +1016,7 @@ export default function EditShipmentPage() {
                   </div>
 
                   {/* E-Way Bill Compliance Card (Pops up when Gross Value > 50k) */}
-                  {((watchedShipmentTotalValue || 0) > 50000) && (
+                  {((watchedShipmentTotalValue || 0) >= 50000) && (
                     <div className="space-y-4 mt-4">
                       <EWayBillBanner tenant={tenant} />
                       <FormField

@@ -21,6 +21,15 @@ import { DimensionUnit, WeightUnit } from "@/api_client";
 import { Box, Plus, Trash2, ShieldAlert } from "lucide-react";
 import { useFieldArray, Control, ArrayPath, FieldValues, Path, FieldArray } from "react-hook-form";
 
+export const UNIT_LABELS: Record<string, string> = {
+  [WeightUnit.KG]: "Kilograms",
+  [WeightUnit.G]: "Grams",
+  [DimensionUnit.CM]: "Centimeters",
+  [DimensionUnit.M]: "Meters",
+  [DimensionUnit.IN]: "Inches",
+  [DimensionUnit.FT]: "Feet",
+};
+
 export interface HasPackages extends FieldValues {
   packages: {
     id?: string;
@@ -162,13 +171,13 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                         >
                           <FormControl>
                             <SelectTrigger className="bg-white h-9 text-xs">
-                              <SelectValue />
+                              <SelectValue>{field.value || DimensionUnit.CM}</SelectValue>
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
                             {Object.values(DimensionUnit).map((unit) => (
                               <SelectItem key={unit} value={unit} className="text-xs">
-                                {unit}
+                                {UNIT_LABELS[unit] || unit}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -212,14 +221,14 @@ export function PackageFieldset<TFieldValues extends HasPackages>({
                                   value={unitField.value || WeightUnit.KG}
                                 >
                                   <FormControl>
-                                    <SelectTrigger className="w-[76px] bg-white h-9 text-xs shrink-0">
-                                      <SelectValue />
+                                    <SelectTrigger className="w-[76px] bg-white h-9 text-xs shrink-0 uppercase">
+                                      <SelectValue>{unitField.value || WeightUnit.KG}</SelectValue>
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
                                     {Object.values(WeightUnit).map((unit) => (
                                       <SelectItem key={unit} value={unit} className="text-xs">
-                                        {unit.toLowerCase()}
+                                        {UNIT_LABELS[unit] || unit.toLowerCase()}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

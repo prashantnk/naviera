@@ -43,3 +43,8 @@ seed = "scripts.seed:main_wrapper"
 [tool.ruff.lint.per-file-ignores]
 # Ignore "E402: Module vel imleport not at top of file" for main.py
 "app/main.py" = ["E402"]
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider --assert=plain"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+asyncio_mode = "auto"

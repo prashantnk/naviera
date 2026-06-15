@@ -27,7 +27,7 @@ export const EWayBillBanner: React.FC<EWayBillBannerProps> = ({ tenant }) => {
       
       {tenantGstin ? (
         <div className="leading-relaxed">
-          Gross invoice value exceeds <strong className="text-slate-900 font-semibold">₹50,000</strong>. 
+          This is mandatory when price is more than <strong className="text-slate-900 font-semibold">₹49,999</strong>. 
           If required, please use Consignor (<span className="font-semibold text-slate-800">{tenantName}</span>) GSTIN:{" "}
           <span className="inline-flex items-center gap-1 bg-white border border-slate-200 px-1.5 py-0.5 rounded font-mono font-bold text-slate-900 select-all mx-1.5 shadow-3xs">
             {tenantGstin}
@@ -58,7 +58,7 @@ export const EWayBillBanner: React.FC<EWayBillBannerProps> = ({ tenant }) => {
         </div>
       ) : (
         <div className="leading-relaxed">
-          Gross invoice value exceeds <strong className="text-slate-900 font-semibold">₹50,000</strong>. 
+          This is mandatory when price is more than <strong className="text-slate-900 font-semibold">₹49,999</strong>. 
           Please visit the official{" "}
           <a
             href="https://ewaybillgst.gov.in/"

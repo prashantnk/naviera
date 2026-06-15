@@ -1,3 +1,9 @@
+
+import pytest
+import asyncio
+from app.core.db import async_engine
+
+
 import uuid
 from datetime import date
 
@@ -22,11 +28,25 @@ def get_auth_token():
     return res.session.access_token  # type: ignore
 
 
-def test_full_flow():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}", "X-Tenant-Slug": TENANT_SLUG}
+@pytest.mark.asyncio
+async def test_full_flow():
+    
 
-    with httpx.Client(base_url=API_BASE_URL, timeout=30.0) as client:
+    
+    from app.core.dependencies import get_current_active_user, get_tenant_from_header
+    from app.models.tenants import User, Tenant
+    from app.core.db import AsyncSessionLocal, async_engine
+    from sqlmodel import select
+    import asyncio
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    
+    
+        
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
 
         # --- 1. Create Shipment ---
         print("\n📦 1. Creating Shipment...")
@@ -55,7 +75,7 @@ def test_full_flow():
             },
             "packages": [{"length": 10, "breadth": 10, "height": 10, "weight": 1.0}],
         }
-        res = client.post(
+        res = await client.post(
             f"{settings.API_V1_STR}/shipments", json=create_payload, headers=headers
         )
         if res.status_code != 201:
@@ -67,7 +87,7 @@ def test_full_flow():
 
         # --- 2. TEST: Private Detail View (GET /shipments/{id}) ---
         print("\n🔍 2. Testing Private Detail View...")
-        res = client.get(
+        res = await client.get(
             f"{settings.API_V1_STR}/shipments/{shipment_id}", headers=headers
         )
 
@@ -82,7 +102,7 @@ def test_full_flow():
 
         # --- 3. TEST: Valid State Transition (DRAFT -> OPEN) ---
         print("\n✅ 3. Testing VALID Status Move (DRAFT -> OPEN)...")
-        res = client.patch(
+        res = await client.patch(
             f"{settings.API_V1_STR}/shipments/{shipment_id}",
             json={"status": "OPEN", "comment": "Opening shipment"},
             headers=headers,
@@ -97,7 +117,7 @@ def test_full_flow():
         print("\n🛡️  4. Testing INVALID Status Move (OPEN -> COMPLETED)...")
         print("   (This skips ASSIGNED and IN_TRANSIT, so it should fail)")
 
-        res = client.patch(
+        res = await client.patch(
             f"{settings.API_V1_STR}/shipments/{shipment_id}",
             json={"status": "COMPLETED", "comment": "Trying to skip steps"},
             headers=headers,
@@ -113,4 +133,4 @@ def test_full_flow():
 
 
 if __name__ == "__main__":
-    test_full_flow()
+    asyncio.run(test_full_flow())

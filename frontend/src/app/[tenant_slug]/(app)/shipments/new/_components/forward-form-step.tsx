@@ -25,6 +25,8 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { format, parseISO } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -123,7 +125,7 @@ export function ForwardFormStep({
     { boxCount: 0, actualWeightKg: 0 },
   );
 
-  const showEWayBill = (watchedTotalValue || 0) > 50000;
+  const showEWayBill = (watchedTotalValue || 0) >= 50000;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -334,7 +336,7 @@ export function ForwardFormStep({
                         value={FreightPaymentMode.PREPAID}
                         className="text-xs"
                       >
-                        Prepaid (Sender pays)
+                        Prepaid (Sender wallet)
                       </SelectItem>
                       <SelectItem
                         value={FreightPaymentMode.POSTPAID}
@@ -518,11 +520,9 @@ export function ForwardFormStep({
                     Invoice Date (Optional)
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="date"
-                      className="h-9 text-xs bg-white"
-                      {...field}
-                      value={field.value || ""}
+                    <DatePicker 
+                      date={field.value ? parseISO(field.value) : undefined}
+                      setDate={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
                     />
                   </FormControl>
                   <FormMessage />
