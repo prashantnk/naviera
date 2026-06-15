@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Field
 
 from app.models.tenants import UserRole
 
@@ -26,7 +26,7 @@ class UserRead(SQLModel):
 
 
 class TenantUpdate(SQLModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
     settings: Optional[dict] = None
 
 

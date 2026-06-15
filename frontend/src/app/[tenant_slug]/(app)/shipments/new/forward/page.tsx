@@ -24,6 +24,8 @@ import { RateShoppingStep } from "../_components/rate-shopping-step";
 import { Button } from "@/components/ui/button";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { format, parseISO } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { forwardShipmentSchema, ForwardShipmentFormValues } from "@/lib/validations/shipment";
@@ -422,7 +424,10 @@ export default function ForwardBookingSandbox() {
                       <FormItem>
                         <FormLabel className="text-xs font-bold text-slate-700">Requested Pickup Date *</FormLabel>
                         <FormControl>
-                          <Input type="date" className="h-9 text-xs bg-white" {...field} />
+                          <DatePicker 
+                            date={field.value ? parseISO(field.value) : undefined}
+                            setDate={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

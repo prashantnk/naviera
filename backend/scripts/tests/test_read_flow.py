@@ -1,3 +1,9 @@
+
+import pytest
+import asyncio
+from app.core.db import async_engine
+
+
 import uuid
 from datetime import date
 
@@ -22,11 +28,25 @@ def get_auth_token():
     return res.session.access_token  # type: ignore
 
 
-def test_read_flow():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}", "X-Tenant-Slug": TENANT_SLUG}
+@pytest.mark.asyncio
+async def test_read_flow():
+    
 
-    with httpx.Client(base_url=API_BASE_URL, timeout=30.0) as client:
+    
+    from app.core.dependencies import get_current_active_user, get_tenant_from_header
+    from app.models.tenants import User, Tenant
+    from app.core.db import AsyncSessionLocal, async_engine
+    from sqlmodel import select
+    import asyncio
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    
+    
+        
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
 
         # --- 1. Setup: Create a Shipment ---
         print("\n📦 1. Creating a fresh shipment for testing...")
@@ -54,8 +74,12 @@ def test_read_flow():
                 "pincode": "400001",
             },
             "packages": [{"length": 10, "breadth": 10, "height": 10, "weight": 1.0}],
+            "payment_details": {
+                "invoice_numbers": ["INV-001", "INV-002"],
+                "eway_bill_numbers": ["EWAY-999"]
+            },
         }
-        res = client.post(
+        res = await client.post(
             f"{settings.API_V1_STR}/shipments", json=create_payload, headers=headers
         )
         if res.status_code != 201:
@@ -75,7 +99,7 @@ def test_read_flow():
             "comment": "Driver assigned for pickup",
             "is_public": True,  # Make this visible to public!
         }
-        client.patch(
+        await client.patch(
             f"{settings.API_V1_STR}/shipments/{shipment_id}",
             json=update_payload,
             headers=headers,
@@ -84,7 +108,7 @@ def test_read_flow():
 
         # --- 3. TEST: Admin Timeline (Restricted) ---
         print("\n🕵️  3. Testing Admin Timeline (GET /shipments/{id}/timeline)...")
-        res = client.get(
+        res = await client.get(
             f"{settings.API_V1_STR}/shipments/{shipment_id}/timeline", headers=headers
         )
 
@@ -105,7 +129,7 @@ def test_read_flow():
         )
         # Note: We do NOT send auth headers here to prove it's public
         public_headers = {"X-Tenant-Slug": TENANT_SLUG}
-        res = client.get(
+        res = await client.get(
             f"{settings.API_V1_STR}/shipments/tracking/{tracking_id}",
             headers=public_headers,
         )
@@ -128,7 +152,7 @@ def test_read_flow():
         # --- 5. TEST: List Shipments ---
         print("\n📋 5. Testing List Shipments (GET /shipments/)...")
         # Request Page 1 with size 5
-        res = client.get(
+        res = await client.get(
             f"{settings.API_V1_STR}/shipments?page=1&size=5", headers=headers
         )
 
@@ -149,4 +173,4 @@ def test_read_flow():
 
 
 if __name__ == "__main__":
-    test_read_flow()
+    asyncio.run(test_read_flow())

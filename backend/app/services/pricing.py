@@ -28,6 +28,12 @@ class PricingEngine:
     MINIMUM_WEIGHT_FLOOR: float = 0.5
     SLAB_ROUNDING_BASE: float = 2.0
 
+    B2B_MINIMUM_WEIGHT_FLOOR: float = 10.0
+    B2B_SLAB_ROUNDING_BASE: float = 1.0
+    B2B_DOCKET_CHARGE_INR: float = 50.0
+    B2B_FOV_PERCENTAGE: float = 0.002
+    B2B_FOV_MINIMUM_INR: float = 50.0
+
     # Dimensional normalizations to CM
     INCH_TO_CM: float = 2.54
     FEET_TO_CM: float = 30.48
@@ -91,7 +97,8 @@ class PricingEngine:
                     cod_amount=request.cod_amount,
                     shipment_total_value=request.shipment_total_value,
                     shipment_type=request.shipment_type,
-                    is_rto=spec.is_rto
+                    is_rto=spec.is_rto,
+                    is_b2b=getattr(request, 'is_b2b', False)
                 )
                 quote = cls.calculate_rate(single_req)
             else:
@@ -171,8 +178,15 @@ class PricingEngine:
         return (length_cm * breadth_cm * height_cm) / divisor
 
     @classmethod
-    def _apply_slab_rounding(cls, weight: float) -> float:
+    def _apply_slab_rounding(cls, weight: float, is_b2b: bool = False) -> float:
         """Applies the minimum weight floor and rounds UP to the nearest 0.5kg billing slab."""
+        # Fix: Round to 4 decimal places to eliminate floating point accumulation errors before ceil
+        weight = round(weight, 4)
+        
+        if is_b2b:
+            chargeable = max(weight, cls.B2B_MINIMUM_WEIGHT_FLOOR)
+            return math.ceil(chargeable * cls.B2B_SLAB_ROUNDING_BASE) / cls.B2B_SLAB_ROUNDING_BASE
+
         chargeable = max(weight, cls.MINIMUM_WEIGHT_FLOOR)
         return math.ceil(chargeable * cls.SLAB_ROUNDING_BASE) / cls.SLAB_ROUNDING_BASE
 
@@ -182,6 +196,8 @@ class PricingEngine:
         Main pricing orchestrator. Calculates freight pricing details, service surcharges,
         taxes, and dynamic ledger breakdowns.
         """
+        is_b2b = getattr(request, 'is_b2b', False)
+
         # 0. Route-based Serviceability check
         serviceable, error_msg = cls._check_serviceability(request.service_type, request.delivery_pincode)
         if not serviceable:
@@ -224,7 +240,7 @@ class PricingEngine:
 
         # 4. Carrier Aggregation & 500g slab rounding
         raw_chargeable_weight = max(total_actual_weight, total_volumetric_weight)
-        chargeable_weight = cls._apply_slab_rounding(raw_chargeable_weight)
+        chargeable_weight = cls._apply_slab_rounding(raw_chargeable_weight, is_b2b=is_b2b)
 
         # 5. Base transport cost
         base_charge = chargeable_weight * cls.BASE_RATE_PER_KG
@@ -255,6 +271,9 @@ class PricingEngine:
         if request.is_rto or request.shipment_type == ShipmentType.REVERSE:
             rto_surcharge = base_charge * cls.RTO_CHARGE_MULTIPLIER
 
+        docket_charge = cls.B2B_DOCKET_CHARGE_INR if is_b2b else 0.0
+        fov_charge = max(request.shipment_total_value * cls.B2B_FOV_PERCENTAGE, cls.B2B_FOV_MINIMUM_INR) if is_b2b and request.shipment_total_value > 0 else 0.0
+
         # 8. Subtotal & Tax Calculations
         subtotal = (
             base_charge
@@ -264,6 +283,8 @@ class PricingEngine:
             + oversized_surcharge
             + cod_fee
             + rto_surcharge
+            + docket_charge
+            + fov_charge
         )
         tax_amount = subtotal * cls.TAX_RATE
         total_amount = subtotal + tax_amount
@@ -278,6 +299,8 @@ class PricingEngine:
             "rto_surcharge": round(rto_surcharge, 2),
             "base_charge": round(base_charge, 2),
             "service_surcharge": round(service_surcharge, 2),
+            "docket_charge": round(docket_charge, 2),
+            "fov_charge": round(fov_charge, 2),
             "total_actual_weight": round(total_actual_weight, 2),
             "total_volumetric_weight": round(total_volumetric_weight, 2),
             "raw_chargeable_weight": round(raw_chargeable_weight, 2),

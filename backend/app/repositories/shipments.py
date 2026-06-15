@@ -3,7 +3,7 @@ import uuid
 from typing import List, Optional, Tuple
 
 from sqlalchemy import desc
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -123,11 +123,11 @@ class ShipmentRepository:
             .where(PickupRequest.id == pickup.id)
             .options(
                 # We add # type: ignore to silence Pylance for these specific lines
-                selectinload(PickupRequest.pickup_address),  # type: ignore
-                selectinload(PickupRequest.delivery_address),  # type: ignore
+                joinedload(PickupRequest.pickup_address),  # type: ignore
+                joinedload(PickupRequest.delivery_address),  # type: ignore
                 selectinload(PickupRequest.packages),  # type: ignore
                 selectinload(PickupRequest.documents),  # type: ignore
-                selectinload(PickupRequest.payment_details),  # type: ignore
+                joinedload(PickupRequest.payment_details),  # type: ignore
             )
         )
 
@@ -148,11 +148,11 @@ class ShipmentRepository:
             select(PickupRequest)
             .where(PickupRequest.id == shipment_id)
             .options(
-                selectinload(PickupRequest.pickup_address),  # type: ignore
-                selectinload(PickupRequest.delivery_address),  # type: ignore
+                joinedload(PickupRequest.pickup_address),  # type: ignore
+                joinedload(PickupRequest.delivery_address),  # type: ignore
                 selectinload(PickupRequest.packages),  # type: ignore
                 selectinload(PickupRequest.documents),  # type: ignore
-                selectinload(PickupRequest.payment_details),  # type: ignore
+                joinedload(PickupRequest.payment_details),  # type: ignore
                 # We generally don't load 'activities' here to keep it light,
                 # unless we need history for some reason.
             )
@@ -227,11 +227,11 @@ class ShipmentRepository:
             select(PickupRequest)
             .where(PickupRequest.id == shipment.id)
             .options(
-                selectinload(PickupRequest.pickup_address),  # type: ignore
-                selectinload(PickupRequest.delivery_address),  # type: ignore
+                joinedload(PickupRequest.pickup_address),  # type: ignore
+                joinedload(PickupRequest.delivery_address),  # type: ignore
                 selectinload(PickupRequest.packages),  # type: ignore
                 selectinload(PickupRequest.documents),  # type: ignore
-                selectinload(PickupRequest.payment_details),  # type: ignore
+                joinedload(PickupRequest.payment_details),  # type: ignore
             )
         )
 
@@ -293,11 +293,11 @@ class ShipmentRepository:
 
         # 4. Eager Load Children (Prevent MissingGreenlet)
         query = query.options(
-            selectinload(PickupRequest.pickup_address),  # type: ignore
-            selectinload(PickupRequest.delivery_address),  # type: ignore
+            joinedload(PickupRequest.pickup_address),  # type: ignore
+            joinedload(PickupRequest.delivery_address),  # type: ignore
             selectinload(PickupRequest.packages),  # type: ignore
             selectinload(PickupRequest.documents),  # type: ignore
-            selectinload(PickupRequest.payment_details),  # type: ignore
+            joinedload(PickupRequest.payment_details),  # type: ignore
         )
 
         # 5. Execute

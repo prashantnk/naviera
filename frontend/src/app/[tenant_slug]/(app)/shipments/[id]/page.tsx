@@ -10,6 +10,7 @@ import {
   ShipmentType,
 } from "@/api_client";
 import { CATEGORY_LABELS } from "../new/page";
+import { format, parseISO } from "date-fns";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -61,6 +62,15 @@ const getStatusColor = (status: PickupStatus) => {
     default:
       return "bg-slate-100 text-slate-700";
   }
+};
+
+const UNIT_LABELS: Record<string, string> = {
+  KG: "kg",
+  G: "grams",
+  CM: "cm",
+  M: "meters",
+  IN: "inches",
+  FT: "feet",
 };
 
 export default function ShipmentDetailsPage() {
@@ -528,9 +538,7 @@ export default function ShipmentDetailsPage() {
                 <span className="text-slate-500 font-medium">Pickup Date</span>
                 <span className="font-bold text-slate-900 flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  {new Date(
-                    shipment.requested_pickup_date
-                  ).toLocaleDateString()}
+                  {format(parseISO(shipment.requested_pickup_date), "dd/MM/yyyy")}
                 </span>
               </div>
               {shipment.pickup_time_slot && (
@@ -544,7 +552,7 @@ export default function ShipmentDetailsPage() {
               <div className="flex justify-between items-center border-b border-slate-50 pb-3">
                 <span className="text-slate-500 font-medium">Created On</span>
                 <span className="font-bold text-slate-900">
-                  {new Date(shipment.created_at).toLocaleDateString()}
+                  {format(new Date(shipment.created_at), "dd/MM/yyyy")}
                 </span>
               </div>
 
@@ -622,12 +630,12 @@ export default function ShipmentDetailsPage() {
                       Box {idx + 1}
                     </span>
                     <span className="text-sm font-black text-slate-700 bg-white px-2 py-0.5 rounded shadow-sm border border-slate-100">
-                      {pkg.weight} kg
+                      {pkg.weight} {UNIT_LABELS[pkg.weight_unit as string] || pkg.weight_unit}
                     </span>
                   </div>
                   <div className="text-xs font-medium text-slate-500 flex justify-between items-center">
                     <span>
-                      {pkg.length} x {pkg.breadth} x {pkg.height} cm
+                      {pkg.length} x {pkg.breadth} x {pkg.height} {UNIT_LABELS[pkg.dimension_unit as string] || pkg.dimension_unit}
                     </span>
                     {pkg.description && (
                       <span className="truncate ml-2 max-w-[120px] italic">

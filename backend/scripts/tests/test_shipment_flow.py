@@ -1,3 +1,9 @@
+
+import pytest
+import asyncio
+from app.core.db import async_engine
+
+
 import json
 import uuid
 from datetime import date, timedelta
@@ -92,6 +98,8 @@ def generate_dummy_payload():
             },
         ],
         "payment_details": {
+            "invoice_numbers": ["INV-001", "INV-002"],
+            "eway_bill_numbers": ["EWAY-999"],
             "freight_payment_mode": "PREPAID",
             "is_cod": False,
             "cod_amount": 0.0,
@@ -114,18 +122,33 @@ def generate_dummy_payload():
     }
 
 
-def test_shipment_flow():
-    jwt = get_auth_token()
+@pytest.mark.asyncio
+async def test_shipment_flow():
+    
     payload = generate_dummy_payload()
 
     print("\n📦 Sending Shipment Creation Request...")
 
-    headers = {"Authorization": f"Bearer {jwt}", "X-Tenant-Slug": TENANT_SLUG}
+    
 
     # We use a 30s timeout because database creation might take a moment
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(
-            f"{API_BASE_URL}{settings.API_V1_STR}/shipments",
+    
+    from app.core.dependencies import get_current_active_user, get_tenant_from_header
+    from app.models.tenants import User, Tenant
+    from app.core.db import AsyncSessionLocal, async_engine
+    from sqlmodel import select
+    import asyncio
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    
+    
+        
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
+        response = await client.post(
+            f"{settings.API_V1_STR}/shipments",
             headers=headers,
             json=payload,
         )
@@ -149,5 +172,5 @@ def test_shipment_flow():
 
 if __name__ == "__main__":
     for _ in range(1):
-        test_shipment_flow()
+        asyncio.run(test_shipment_flow())
 

@@ -313,6 +313,12 @@ class ShipmentService:
 
         # --- 4. Prepare Shipment Header ---
 
+        if payload.ndr_reason is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot set ndr_reason during shipment creation",
+            )
+
         new_tracking_id = await self._generate_unique_tracking_id(tenant.slug)
         
         # If category is not OTHER, ignore/clear custom description
@@ -331,6 +337,12 @@ class ShipmentService:
             service_type=payload.service_type,
             requested_pickup_date=payload.requested_pickup_date,
             pickup_time_slot=payload.pickup_time_slot,
+            po_number=payload.po_number,
+            po_date=payload.po_date,
+            appointment_id=payload.appointment_id,
+            appointment_start=payload.appointment_start,
+            appointment_end=payload.appointment_end,
+            pickup_strategy=payload.pickup_strategy,
             product_category=payload.product_category,
             other_category_description=final_other_desc,
 
@@ -386,23 +398,35 @@ class ShipmentService:
             "other_category_description",
 
             "reason_for_return",
+            "ndr_reason",
+
+            # --- NEW: B2B Fields ---
+            "po_number",
+            "po_date",
+            "appointment_id",
+            "appointment_start",
+            "appointment_end",
+            "pickup_strategy",
         ]
 
+        update_dict = update_data.model_dump(exclude_unset=True)
+
         for field in fields_to_check:
-            new_val = getattr(update_data, field)
-            old_val = getattr(old_obj, field)
+            if field in update_dict:
+                new_val = getattr(update_data, field)
+                old_val = getattr(old_obj, field)
 
-            # Helper to handle Date comparison vs String comparison
-            if new_val is not None and new_val != old_val:
-                # Convert dates to ISO string for JSON serialization
-                old_json = (
-                    old_val.isoformat() if hasattr(old_val, "isoformat") else old_val
-                )
-                new_json = (
-                    new_val.isoformat() if hasattr(new_val, "isoformat") else new_val
-                )
+                # Helper to handle Date comparison vs String comparison
+                if new_val != old_val:
+                    # Convert dates to ISO string for JSON serialization
+                    old_json = (
+                        old_val.isoformat() if hasattr(old_val, "isoformat") else old_val
+                    )
+                    new_json = (
+                        new_val.isoformat() if hasattr(new_val, "isoformat") else new_val
+                    )
 
-                diff[field] = {"old": old_json, "new": new_json}
+                    diff[field] = {"old": old_json, "new": new_json}
 
         # B. Packages (List Sync Logic)
         if update_data.packages is not None:
@@ -482,12 +506,13 @@ class ShipmentService:
         valid_transitions = {
             PickupStatus.DRAFT: [PickupStatus.OPEN, PickupStatus.CANCELLED],
             PickupStatus.OPEN: [PickupStatus.ASSIGNED, PickupStatus.CANCELLED],
-            PickupStatus.ASSIGNED: [PickupStatus.IN_TRANSIT, PickupStatus.CANCELLED],
-            # Removed PickupStatus.EXCEPTION from below lines
+            PickupStatus.ASSIGNED: [PickupStatus.IN_TRANSIT, PickupStatus.CANCELLED, PickupStatus.EXCEPTION],
             PickupStatus.IN_TRANSIT: [
                 PickupStatus.COMPLETED,
                 PickupStatus.RTO_INITIATED,
+                PickupStatus.EXCEPTION,
             ],
+            PickupStatus.EXCEPTION: [PickupStatus.IN_TRANSIT, PickupStatus.RTO_INITIATED, PickupStatus.CANCELLED],
             PickupStatus.RTO_INITIATED: [PickupStatus.COMPLETED],
             # Terminal states (cannot move out)
             PickupStatus.COMPLETED: [],
@@ -529,9 +554,20 @@ class ShipmentService:
         if not current or current.tenant_id != tenant_id:
             raise HTTPException(status_code=404, detail="Shipment not found")
 
+        original_ndr_reason = current.ndr_reason
+
+        update_dict = payload.model_dump(exclude_unset=True)
+
+        for field in ["status", "product_category", "requested_pickup_date"]:
+            if field in update_dict and update_dict[field] is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"{field} cannot be null",
+                )
+
         # Validate other category description requirement for updates
         resolved_category = payload.product_category if payload.product_category is not None else current.product_category
-        resolved_description = payload.other_category_description if payload.other_category_description is not None else current.other_category_description
+        resolved_description = payload.other_category_description if "other_category_description" in update_dict else current.other_category_description
         if resolved_category == ProductCategory.OTHER and not resolved_description:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -544,6 +580,15 @@ class ShipmentService:
         # --- NEW: Check Status Transition ---
         if payload.status:
             self._validate_status_transition(current.status, payload.status)
+
+        # Validate NDR Reason requirement
+        resolved_status = payload.status if payload.status else current.status
+        resolved_ndr = payload.ndr_reason if "ndr_reason" in update_dict else current.ndr_reason
+        if resolved_status == PickupStatus.EXCEPTION and not resolved_ndr:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ndr_reason is required when status is EXCEPTION",
+            )
 
         # 4. Handle Address Snapshots (Special Case)
         new_pickup_addr = None
@@ -632,31 +677,57 @@ class ShipmentService:
                     documents_to_delete.append(old_doc)
 
         # 7. Apply Simple Updates to Header
-        if payload.status:
+        if "status" in update_dict:
             current.status = payload.status
-        if payload.requested_pickup_date:
+        if "requested_pickup_date" in update_dict:
             current.requested_pickup_date = payload.requested_pickup_date
-        if payload.pickup_time_slot:
+        if "pickup_time_slot" in update_dict:
             current.pickup_time_slot = payload.pickup_time_slot
 
         # Denormalization: Update latest comment on header if status changed
         if payload.comment and payload.status:
             current.latest_status_comment = payload.comment
 
-        if payload.order_reference_id is not None:
+        if "order_reference_id" in update_dict:
             current.order_reference_id = payload.order_reference_id
-        if payload.product_category is not None:
+        if "product_category" in update_dict:
             current.product_category = payload.product_category
             
         # Auto-clear description if category is not OTHER, otherwise update if provided
         if current.product_category != ProductCategory.OTHER:
+            diff.pop("other_category_description", None)
+            if current.other_category_description is not None:
+                diff["other_category_description"] = {"old": current.other_category_description, "new": None}
             current.other_category_description = None
-        elif payload.other_category_description is not None:
+        elif "other_category_description" in update_dict:
             current.other_category_description = payload.other_category_description
             
 
-        if payload.reason_for_return is not None:
+        if "reason_for_return" in update_dict:
             current.reason_for_return = payload.reason_for_return
+
+        # --- NEW: B2B Fields ---
+        if "po_number" in update_dict:
+            current.po_number = payload.po_number
+        if "po_date" in update_dict:
+            current.po_date = payload.po_date
+        if "appointment_id" in update_dict:
+            current.appointment_id = payload.appointment_id
+        if "appointment_start" in update_dict:
+            current.appointment_start = payload.appointment_start
+        if "appointment_end" in update_dict:
+            current.appointment_end = payload.appointment_end
+        if "pickup_strategy" in update_dict:
+            current.pickup_strategy = payload.pickup_strategy
+
+        if "ndr_reason" in update_dict:
+            current.ndr_reason = payload.ndr_reason
+
+        if current.status != PickupStatus.EXCEPTION and current.ndr_reason is not None:
+            diff.pop("ndr_reason", None)
+            if original_ndr_reason is not None:
+                diff["ndr_reason"] = {"old": original_ndr_reason, "new": None}
+            current.ndr_reason = None
 
         # Sync Financials / Payment Details
         if payload.payment_details:

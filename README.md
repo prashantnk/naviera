@@ -25,3 +25,20 @@ _Once your cloud environment starts, open two terminals:_
 
 - `/backend` - The FastAPI Python application. See `backend/README.md` for database and API details.
 - `/frontend` - The Next.js React application. See `frontend/README.md` for UI and API client sync details.
+
+## 🧪 Testing
+
+The backend contains a comprehensive automated Pytest suite that validates both B2C and B2B workflows, financial engines, and NDR status transitions.
+
+**Note:** The tests run real integration requests against the local Fast API server.
+
+1. Ensure the FastAPI server is running in a separate terminal:
+   ```bash
+   cd backend
+   poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
+2. Run the test suite:
+   ```bash
+   cd backend
+   poetry run pytest
+   ```

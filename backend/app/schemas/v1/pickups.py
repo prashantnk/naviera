@@ -2,11 +2,12 @@ from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import EmailStr, model_validator
+from pydantic import EmailStr, model_validator, constr, conlist, computed_field
 from sqlmodel import Field, SQLModel  # Using SQLModel for consistency
 
 # Import Enums
 from app.models.pickups import (
+    PickupStrategy,
     ActivityType,
     AddressCategory,
     AddressScope,
@@ -20,25 +21,26 @@ from app.models.pickups import (
     ShipmentType,
     DimensionUnit,
     WeightUnit,
+    NdrExceptionReason,
 )
 
 # --- 1. Base Building Blocks ---
 
 
 class AddressBase(SQLModel):
-    name: str
-    phone: str
-    alternate_phone: Optional[str] = None
+    name: str = Field(..., max_length=255)
+    phone: str = Field(..., max_length=255)
+    alternate_phone: Optional[str] = Field(default=None, max_length=255)
     email: Optional[EmailStr] = None
-    company_name: Optional[str] = None
-    gstin: Optional[str] = None
-    address_line1: str
-    address_line2: Optional[str] = None
-    landmark: Optional[str] = None
-    city: str
-    state: str
-    pincode: str
-    country: str = "IN"
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    gstin: Optional[str] = Field(default=None, max_length=255)
+    address_line1: str = Field(..., max_length=255)
+    address_line2: Optional[str] = Field(default=None, max_length=255)
+    landmark: Optional[str] = Field(default=None, max_length=255)
+    city: str = Field(..., max_length=255)
+    state: str = Field(..., max_length=255)
+    pincode: str = Field(..., max_length=255)
+    country: str = Field(default="IN", max_length=255)
     category: AddressCategory = AddressCategory.HOME
     scope: AddressScope = AddressScope.PRIVATE
     is_saved: bool = (
@@ -54,12 +56,12 @@ class PackageBase(SQLModel):
     weight: float = Field(gt=0, description="Weight")
     weight_unit: WeightUnit = WeightUnit.KG
     box_count: int = Field(default=1, gt=0)
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=255)
     is_fragile: bool = False
 
 
 class PaymentDetailsBase(SQLModel):
-    currency: str = "INR"
+    currency: str = Field(default="INR", max_length=10)
     
     freight_payment_mode: FreightPaymentMode = FreightPaymentMode.PREPAID
     is_cod: bool = False
@@ -76,18 +78,37 @@ class PaymentDetailsBase(SQLModel):
     shipment_value: float = Field(default=0.0, ge=0)
     shipment_tax_value: float = Field(default=0.0, ge=0)
     shipment_total_value: float = Field(default=0.0, ge=0)
-    hsn_code: Optional[str] = None
-    invoice_number: Optional[str] = None
+    hsn_code: Optional[str] = Field(default=None, max_length=255)
+    invoice_numbers: Optional[conlist(constr(max_length=255))] = None
     invoice_date: Optional[date] = None
-    eway_bill_number: Optional[str] = None
+    eway_bill_numbers: Optional[conlist(constr(max_length=255))] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def transform_legacy_fields(cls, data: dict) -> dict:
+        if isinstance(data, dict):
+            if "invoice_number" in data:
+                val = data.pop("invoice_number")
+                if val:
+                    data.setdefault("invoice_numbers", []).append(val)
+            if "eway_bill_number" in data:
+                val = data.pop("eway_bill_number")
+                if val:
+                    data.setdefault("eway_bill_numbers", []).append(val)
+            
+            if "eway_bill_numbers" in data and isinstance(data["eway_bill_numbers"], list):
+                data["eway_bill_numbers"] = [
+                    v for v in data["eway_bill_numbers"] if v and str(v).strip()
+                ]
+        return data
 
 
 
 # --- NEW: Document Schema ---
 class PickupDocumentBase(SQLModel):
     document_type: DocumentType
-    file_url: str
-    file_name: str
+    file_url: str = Field(..., max_length=255)
+    file_name: str = Field(..., max_length=255)
 
 
 # --- 2. Create Schemas (Inputs) ---
@@ -97,19 +118,19 @@ class AddressCreate(AddressBase):
     pass
 
 class AddressUpdate(SQLModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    alternate_phone: Optional[str] = None
-    gstin: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=255)
+    alternate_phone: Optional[str] = Field(default=None, max_length=255)
+    gstin: Optional[str] = Field(default=None, max_length=255)
     email: Optional[EmailStr] = None
-    company_name: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    landmark: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pincode: Optional[str] = None
-    country: Optional[str] = None
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    address_line1: Optional[str] = Field(default=None, max_length=255)
+    address_line2: Optional[str] = Field(default=None, max_length=255)
+    landmark: Optional[str] = Field(default=None, max_length=255)
+    city: Optional[str] = Field(default=None, max_length=255)
+    state: Optional[str] = Field(default=None, max_length=255)
+    pincode: Optional[str] = Field(default=None, max_length=255)
+    country: Optional[str] = Field(default=None, max_length=255)
     category: Optional[AddressCategory] = None
     scope: Optional[AddressScope] = None
 
@@ -131,16 +152,23 @@ class PickupCreate(SQLModel):
     The Master Input for Creating a Shipment.
     """
 
-    order_reference_id: Optional[str] = None
+    order_reference_id: Optional[str] = Field(default=None, max_length=255)
     shipment_type: ShipmentType = ShipmentType.FORWARD
     service_type: ServiceType = ServiceType.SURFACE_ROAD
     requested_pickup_date: date
-    pickup_time_slot: PickupTimeSlot
+    pickup_time_slot: Optional[PickupTimeSlot] = None
+    po_number: Optional[str] = Field(default=None, max_length=255)
+    po_date: Optional[date] = None
+    appointment_id: Optional[str] = Field(default=None, max_length=100)
+    appointment_start: Optional[datetime] = None
+    appointment_end: Optional[datetime] = None
+    pickup_strategy: Optional[PickupStrategy] = None
 
     product_category: ProductCategory
-    other_category_description: Optional[str] = None
+    other_category_description: Optional[str] = Field(default=None, max_length=255)
 
-    reason_for_return: Optional[str] = None
+    reason_for_return: Optional[str] = Field(default=None, max_length=255)
+    ndr_reason: Optional[NdrExceptionReason] = None
 
     # Logic: ID vs Object
     pickup_address_id: Optional[UUID] = None
@@ -185,6 +213,21 @@ class PickupCreate(SQLModel):
                 "other_category_description is required when product_category is OTHER"
             )
 
+        if self.payment_details is not None:
+            # --- Rule A: E-Way Bill Limit ---
+            if self.payment_details.shipment_total_value >= 50000:
+                has_eway_bill_number = any(bool(eb.strip()) for eb in (self.payment_details.eway_bill_numbers or []))
+                has_eway_bill_doc = any(doc.document_type == DocumentType.EWAY_BILL for doc in self.documents)
+                if not (has_eway_bill_number or has_eway_bill_doc):
+                    raise ValueError("E-Way Bill is mandatory for shipment value >= 50000")
+
+            # --- Rule D: COD Limit ---
+            if self.payment_details.is_cod:
+                if self.payment_details.cod_amount <= 0:
+                    raise ValueError("COD amount must be greater than 0")
+                if self.payment_details.cod_amount > self.payment_details.shipment_total_value:
+                    raise ValueError("COD amount cannot exceed shipment total value")
+
         return self
 
 
@@ -205,6 +248,14 @@ class PaymentDetailsRead(PaymentDetailsBase):
     cod_remittance_status: CodRemittanceStatus
     pricing_breakdown: dict = {}
 
+    @computed_field
+    def invoice_number(self) -> Optional[str]:
+        return self.invoice_numbers[0] if self.invoice_numbers else None
+
+    @computed_field
+    def eway_bill_number(self) -> Optional[str]:
+        return self.eway_bill_numbers[0] if self.eway_bill_numbers else None
+
 
 class PickupDocumentRead(PickupDocumentBase):
     id: UUID
@@ -224,11 +275,18 @@ class PickupRead(SQLModel):
     service_type: ServiceType
     requested_pickup_date: date
     pickup_time_slot: Optional[PickupTimeSlot] = None
+    po_number: Optional[str] = None
+    po_date: Optional[date] = None
+    appointment_id: Optional[str] = None
+    appointment_start: Optional[datetime] = None
+    appointment_end: Optional[datetime] = None
+    pickup_strategy: Optional[PickupStrategy] = None
 
     product_category: ProductCategory
     other_category_description: Optional[str] = None
 
     reason_for_return: Optional[str] = None
+    ndr_reason: Optional[NdrExceptionReason] = None
     created_by_user_id: UUID
     creator_email: Optional[str] = None
 
@@ -272,19 +330,26 @@ class PickupUpdate(SQLModel):
 
     # --- 1. Lifecycle & Audit ---
     status: Optional[PickupStatus] = None
-    comment: Optional[str] = None  # Reason for change (Required for Status changes)
+    comment: Optional[str] = Field(default=None, max_length=255)  # Reason for change (Required for Status changes)
     is_public: bool = False  # Should this update be visible on the Tracking Page?
 
     # --- 2. Scheduling & Reference ---
     requested_pickup_date: Optional[date] = None
-    order_reference_id: Optional[str] = None
+    order_reference_id: Optional[str] = Field(default=None, max_length=255)
     pickup_time_slot: Optional[PickupTimeSlot] = None
+    po_number: Optional[str] = Field(default=None, max_length=255)
+    po_date: Optional[date] = None
+    appointment_id: Optional[str] = Field(default=None, max_length=100)
+    appointment_start: Optional[datetime] = None
+    appointment_end: Optional[datetime] = None
+    pickup_strategy: Optional[PickupStrategy] = None
 
     # --- 3. Cargo Details ---
     product_category: Optional[ProductCategory] = None
-    other_category_description: Optional[str] = None
+    other_category_description: Optional[str] = Field(default=None, max_length=255)
 
-    reason_for_return: Optional[str] = None
+    reason_for_return: Optional[str] = Field(default=None, max_length=255)
+    ndr_reason: Optional[NdrExceptionReason] = None
 
     # --- 4. Address Corrections (The Snapshot Strategy) ---
     # Scenario A: User picks a different existing address
@@ -305,6 +370,33 @@ class PickupUpdate(SQLModel):
     # --- 7. Financials ---
     # We reuse PaymentDetailsCreate because usually, you update the whole block (Amount + Mode)
     payment_details: Optional[PaymentDetailsCreate] = None
+
+    @model_validator(mode="after")
+    def validate_business_logic(self) -> "PickupUpdate":
+        if getattr(self, "shipment_type", None) == ShipmentType.REVERSE and not self.reason_for_return:
+            raise ValueError(
+                "reason_for_return is mandatory when shipment_type is REVERSE"
+            )
+
+        if self.product_category == ProductCategory.OTHER and not self.other_category_description:
+            raise ValueError(
+                "other_category_description is required when product_category is OTHER"
+            )
+
+        if self.payment_details is not None:
+            if self.payment_details.shipment_total_value >= 50000:
+                has_eway_bill_number = any(bool(eb.strip()) for eb in (self.payment_details.eway_bill_numbers or []))
+                has_eway_bill_doc = any(doc.document_type == DocumentType.EWAY_BILL for doc in (self.documents or []))
+                if not (has_eway_bill_number or has_eway_bill_doc):
+                    raise ValueError("E-Way Bill is mandatory for shipment value >= 50000")
+
+            if self.payment_details.is_cod:
+                if self.payment_details.cod_amount <= 0:
+                    raise ValueError("COD amount must be greater than 0")
+                if self.payment_details.cod_amount > self.payment_details.shipment_total_value:
+                    raise ValueError("COD amount cannot exceed shipment total value")
+
+        return self
 
 
 # --- 5. Timeline & Tracking Schemas (Read Only) ---
@@ -353,8 +445,8 @@ class PublicTrackingRead(SQLModel):
 
 
 class RateCalculationRequest(SQLModel):
-    pickup_pincode: str
-    delivery_pincode: str
+    pickup_pincode: str = Field(..., max_length=255)
+    delivery_pincode: str = Field(..., max_length=255)
     packages: List[PackageCreate]
     service_type: ServiceType
     is_cod: bool = False
@@ -362,6 +454,7 @@ class RateCalculationRequest(SQLModel):
     shipment_total_value: float = 0.0
     shipment_type: ShipmentType = ShipmentType.FORWARD
     is_rto: bool = False
+    is_b2b: bool = False
 
 
 class RateCalculationResponse(SQLModel):
@@ -384,14 +477,15 @@ class QuoteSpecification(SQLModel):
 
 
 class BulkRateCalculationRequest(SQLModel):
-    pickup_pincode: str
-    delivery_pincode: str
+    pickup_pincode: str = Field(..., max_length=255)
+    delivery_pincode: str = Field(..., max_length=255)
     packages: List[PackageCreate]
     is_cod: bool = False
     cod_amount: float = 0.0
     shipment_total_value: float = 0.0
     shipment_type: ShipmentType = ShipmentType.FORWARD
     quotes_to_calculate: Optional[List[QuoteSpecification]] = None
+    is_b2b: bool = False
 
 
 class ServiceQuote(SQLModel):
