@@ -1,216 +1,27 @@
 // frontend/src/app/[tenant_slug]/(app)/shipments/columns.tsx
 "use client";
 
-import { PickupRead, PickupStatus } from "@/api_client";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button"; // 🔥 Imported Button
-import { cn } from "@/lib/utils";
-import { ColumnDef } from "@tanstack/react-table";
-import {
-  ArrowRight,
-  ArrowUpDown,
-  Box,
-  Calendar,
-  MessageSquare,
-  Phone,
-  Repeat,
-  Truck,
-  Zap,
-  Train,
-} from "lucide-react"; // 🔥 Imported ArrowUpDown
+/**
+ * B2C Orders grid columns. The Delhivery-style columns are shared with B2B in
+ * `components/pickups/order-columns.tsx`; this module keeps the route-local
+ * entry point.
+ */
+import type { PickupRead } from "@/api_client";
+import { buildOrderColumnsWithSelection } from "@/components/pickups/order-columns";
+import type { RowSelectionOptions } from "@/components/pickups/selection-column";
+import { ServiceFlow } from "@/lib/workspace-flow";
+import type { ColumnDef } from "@tanstack/react-table";
 
-const getStatusColor = (status: PickupStatus) => {
-  switch (status) {
-    case PickupStatus.DRAFT:
-      return "bg-slate-100 text-slate-700 border-slate-200";
-    case PickupStatus.OPEN:
-      return "bg-sky-100 text-sky-700 border-sky-200";
-    case PickupStatus.ASSIGNED:
-      return "bg-indigo-100 text-indigo-700 border-indigo-200";
-    case PickupStatus.IN_TRANSIT:
-      return "bg-blue-100 text-blue-700 border-blue-200";
-    case PickupStatus.COMPLETED:
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    case PickupStatus.CANCELLED:
-      return "bg-rose-100 text-rose-700 border-rose-200";
-    case PickupStatus.RTO_INITIATED:
-      return "bg-amber-100 text-amber-700 border-amber-200";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-};
-
-export const columns: ColumnDef<PickupRead>[] = [
-  {
-    accessorKey: "tracking_id",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          className="-ml-4 hover:bg-slate-100/50 font-bold"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Tracking / Order ID
-          <ArrowUpDown className="ml-2 h-4 w-4 text-slate-400" />
-        </Button>
-      );
-    },
-    cell: ({ row }) => {
-      const refId = row.original.order_reference_id;
-      const trackingId = row.original.tracking_id;
-
-      return (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-700 hover:text-indigo-600 hover:underline cursor-pointer text-sm font-mono tracking-wide transition-colors duration-150">
-            {trackingId || "PENDING"}
-          </span>
-          {refId ? (
-            <span className="text-[10px] text-slate-500 font-semibold mt-0.5 w-fit">
-              Ref: {refId}
-            </span>
-          ) : (
-            <span className="text-[10px] text-slate-400 italic mt-0.5">
-              No Reference
-            </span>
-          )}
-        </div>
-      );
-    },
-  },
-  {
-    id: "contact",
-    header: "Sender Contact",
-    cell: ({ row }) => {
-      const name = row.original.pickup_address?.name || "Unknown";
-      const phone = row.original.pickup_address?.phone || "N/A";
-      return (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-700 text-sm">{name}</span>
-          <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-            <Phone className="h-3 w-3 text-slate-400" /> {phone}
-          </span>
-        </div>
-      );
-    },
-  },
-  {
-    id: "logistics",
-    header: "Service & Type",
-    cell: ({ row }) => {
-      const service = row.original.service_type;
-      const type = row.original.shipment_type;
-      const isReverse = type === "REVERSE";
-
-      const renderServiceIcon = () => {
-        if (service === "AIR") {
-          return <Zap className="h-3.5 w-3.5 text-amber-500" />;
-        }
-        if (service === "SURFACE_TRAIN") {
-          return <Train className="h-3.5 w-3.5 text-indigo-600" />;
-        }
-        return <Truck className="h-3.5 w-3.5 text-slate-400" />;
-      };
-
-      return (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            {renderServiceIcon()}
-            {service.replace("_", " ")}
-          </div>
-          <div
-            className={cn(
-              "flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
-              isReverse ? "text-rose-500" : "text-slate-500"
-            )}
-          >
-            {isReverse ? (
-              <Repeat className="h-3.5 w-3.5" />
-            ) : (
-              <Box className="h-3.5 w-3.5" />
-            )}{" "}
-            {type}
-          </div>
-        </div>
-      );
-    },
-  },
-  {
-    id: "route",
-    header: "Route",
-    cell: ({ row }) => {
-      const origin = row.original.pickup_address?.city || "Unknown";
-      const dest = row.original.delivery_address?.city || "Unknown";
-      return (
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <span>{origin}</span>
-          <ArrowRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
-          <span>{dest}</span>
-        </div>
-      );
-    },
-  },
-  {
-    // 🔥 Change to accessorKey so it can sort chronologically by date!
-    accessorKey: "created_at",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          className="-ml-4 hover:bg-slate-100/50 font-bold"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Status & Date
-          <ArrowUpDown className="ml-2 h-4 w-4 text-slate-400" />
-        </Button>
-      );
-    },
-    cell: ({ row }) => {
-      const status = row.original.status;
-      const dateStr = row.original.requested_pickup_date;
-      const formattedDate = dateStr
-        ? new Date(dateStr).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })
-        : "TBD";
-
-      return (
-        <div className="flex flex-col items-start gap-1.5">
-          <Badge
-            variant="outline"
-            className={cn(
-              "px-2.5 py-0.5 shadow-none text-[10px] uppercase font-bold tracking-wider rounded-md",
-              getStatusColor(status)
-            )}
-          >
-            {status.replace("_", " ")}
-          </Badge>
-          <span className="text-xs text-slate-500 flex items-center gap-1 font-medium">
-            <Calendar className="h-3 w-3 text-slate-400" /> {formattedDate}
-          </span>
-        </div>
-      );
-    },
-  },
-  {
-    id: "comment",
-    header: "Latest Note",
-    cell: ({ row }) => {
-      const comment = row.original.latest_status_comment;
-      if (!comment)
-        return <span className="text-xs text-slate-400 italic">No notes</span>;
-      return (
-        <div className="flex items-start gap-1.5 max-w-[200px]">
-          <MessageSquare className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
-          <span
-            className="text-xs text-slate-600 line-clamp-2 leading-relaxed"
-            title={comment}
-          >
-            {comment}
-          </span>
-        </div>
-      );
-    },
-  },
-];
+/**
+ * B2C order columns with the leading "Add to pickup" checkbox.
+ *
+ * @param selection - Controlled selection state owned by the Orders page.
+ * @param canBook - Whether the user may add orders to pickups / start returns.
+ * @returns Selection column followed by the standard columns.
+ */
+export function getShipmentColumnsWithSelection(
+  selection: RowSelectionOptions<PickupRead>,
+  canBook = true
+): ColumnDef<PickupRead>[] {
+  return buildOrderColumnsWithSelection(ServiceFlow.B2C, { canBook }, selection);
+}

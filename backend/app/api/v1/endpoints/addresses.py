@@ -45,6 +45,7 @@ async def create_saved_address(
     )
 
 
+@router.put("/{address_id}", response_model=AddressRead)
 @router.patch("/{address_id}", response_model=AddressRead)
 async def update_saved_address(
     address_id: uuid.UUID,

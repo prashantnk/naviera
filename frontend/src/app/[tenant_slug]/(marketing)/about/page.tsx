@@ -1,5 +1,8 @@
 // frontend/src/app/[tenant_slug]/(marketing)/about/page.tsx
 import { getTenantBySlug } from "@/lib/api";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "About Us" };
 
 export default async function AboutPage({
   params,

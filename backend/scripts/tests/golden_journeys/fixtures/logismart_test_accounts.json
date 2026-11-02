@@ -1,0 +1,81 @@
+{
+  "tenant": {
+    "slug": "logismart-test",
+    "name": "Logismart Shipping (TEST)"
+  },
+  "accounts": [
+    {
+      "email": "owner@logismart.in",
+      "role": "owner",
+      "service_scope": "BOTH",
+      "full_name": "Owner (Test)",
+      "phone": null,
+      "is_owner": true,
+      "needs_wallet": true
+    },
+    {
+      "email": "admin@logismart.in",
+      "role": "admin",
+      "service_scope": "BOTH",
+      "full_name": "Admin (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": true
+    },
+    {
+      "email": "operations@logismart.in",
+      "role": "operations_user",
+      "service_scope": "BOTH",
+      "full_name": "Operations (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": false
+    },
+    {
+      "email": "support@logismart.in",
+      "role": "support_user",
+      "service_scope": "BOTH",
+      "full_name": "Support (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": false
+    },
+    {
+      "email": "readonly@logismart.in",
+      "role": "read_only_user",
+      "service_scope": "BOTH",
+      "full_name": "Read Only (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": false
+    },
+    {
+      "email": "customerb2c@logismart.in",
+      "role": "customer",
+      "service_scope": "B2C",
+      "full_name": "Customer B2C (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": true
+    },
+    {
+      "email": "customerb2b@logismart.in",
+      "role": "customer",
+      "service_scope": "B2B",
+      "full_name": "Customer B2B (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": true,
+      "gstin": "29AABCL4821K1Z7"
+    },
+    {
+      "email": "b2bonboarding@logismart.in",
+      "role": "customer",
+      "service_scope": "B2C",
+      "full_name": "B2B Onboarding (Test)",
+      "phone": null,
+      "is_owner": false,
+      "needs_wallet": true
+    }
+  ]
+}

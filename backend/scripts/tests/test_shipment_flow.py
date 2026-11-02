@@ -1,18 +1,11 @@
-
-import pytest
-import asyncio
-from app.core.db import async_engine
-
-
-import json
-import uuid
 from datetime import date, timedelta
+import uuid
 
-import httpx
-from supabase import Client, create_client
-
-# Import settings to get URLs and Credentials
 from app.core.config import settings
+from app.main import app
+from httpx import ASGITransport, AsyncClient
+import pytest
+from supabase import Client, create_client
 
 # --- Configuration ---
 TEST_USER_EMAIL = "naviera_test_user@naviera.com"
@@ -26,7 +19,7 @@ def get_auth_token():
     Authenticates with Supabase to get a valid JWT.
     Reused from test_auth_flow.py
     """
-    print(f"🔐 Authenticating as '{TEST_USER_EMAIL}'...")
+    print(f"🔐 Authenticating as '{TEST_USER_EMAIL}'")
     try:
         supabase: Client = create_client(
             settings.SUPABASE_URL,
@@ -46,17 +39,15 @@ def generate_dummy_payload():
     """
     Creates a rich JSON payload with New Addresses, Packages, and Payments.
     """
-    # Random Order ID to avoid Unique Constraint errors on re-runs
     random_id = str(uuid.uuid4())[:8].upper()
 
     return {
         "order_reference_id": f"ORD-{random_id}",
         "shipment_type": "FORWARD",
         "service_type": "SURFACE_ROAD",
-        "requested_pickup_date": str(date.today() + timedelta(days=1)),  # Tomorrow
+        "requested_pickup_date": str(date.today() + timedelta(days=1)),
         "pickup_time_slot": "06:00 - 10:00",
         "product_category": "ELECTRONICS",
-        # --- SCENARIO: Creating NEW Addresses (Snapshotting) ---
         "new_pickup_address": {
             "name": "Warehouse Alpha",
             "phone": "+919988776655",
@@ -78,7 +69,6 @@ def generate_dummy_payload():
             "is_saved": False,
             "address_type": "CUSTOMER",
         },
-        # --- Packages ---
         "packages": [
             {
                 "length": 30.0,
@@ -99,7 +89,7 @@ def generate_dummy_payload():
         ],
         "payment_details": {
             "invoice_numbers": ["INV-001", "INV-002"],
-            "eway_bill_numbers": ["EWAY-999"],
+            "eway_bill_numbers": ["123456789012"],
             "freight_payment_mode": "PREPAID",
             "is_cod": False,
             "cod_amount": 0.0,
@@ -109,9 +99,8 @@ def generate_dummy_payload():
             "shipment_total_value": 50000.00,
             "base_freight": 1230.00,
             "tax_amount": 248.04,
-            "total_logistics_cost": 1626.04
+            "total_logistics_cost": 1626.04,
         },
-        # --- Documents (Optional) ---
         "documents": [
             {
                 "document_type": "GST_INVOICE",
@@ -124,53 +113,122 @@ def generate_dummy_payload():
 
 @pytest.mark.asyncio
 async def test_shipment_flow():
-    
     payload = generate_dummy_payload()
+    print("\n📦 Sending Shipment Creation Request")
 
-    print("\n📦 Sending Shipment Creation Request...")
-
-    
-
-    # We use a 30s timeout because database creation might take a moment
-    
-    from app.core.dependencies import get_current_active_user, get_tenant_from_header
-    from app.models.tenants import User, Tenant
-    from app.core.db import AsyncSessionLocal, async_engine
-    from sqlmodel import select
-    import asyncio
-    from httpx import AsyncClient, ASGITransport
-    from app.main import app
-
-    
-    
-        
     headers = {"X-Tenant-Slug": "naviera"}
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post(
             f"{settings.API_V1_STR}/shipments",
             headers=headers,
             json=payload,
         )
 
-        assert response.status_code == 201, f"Failed to create shipment: {response.text}"
-        
-        data = response.json()
-        print("\n✅ SHIPMENT CREATED SUCCESSFULLY!")
-        print(f"🆔 Shipment ID: {data['id']}")
-        print(f"📍 Status: {data['status']}")
-        print(f"🚛 Pickup Address ID: {data['pickup_address']['id']}")
-        print(f"📦 Package Count: {len(data['packages'])}")
-        print(json.dumps(data, indent=2))
+        assert (
+            response.status_code == 201
+        ), f"Failed to create shipment: {response.text}"
 
-        # Assertions
+        data = response.json()
         assert data["id"] is not None
-        assert data["status"] == "DRAFT"
+        assert data["status"] == "OPEN"  # Ready to Ship immediately (Delhivery parity)
         assert data["pickup_address"]["id"] is not None
         assert len(data["packages"]) == 2
 
 
-if __name__ == "__main__":
-    for _ in range(1):
-        asyncio.run(test_shipment_flow())
+@pytest.mark.asyncio
+async def test_create_blind_pickup_success():
+    payload = generate_dummy_payload()
+    payload["is_blind_pickup"] = True
+    payload["estimated_box_count"] = 5
+    payload["packages"] = []
 
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"{settings.API_V1_STR}/shipments",
+            headers=headers,
+            json=payload,
+        )
+        assert (
+            response.status_code == 201
+        ), f"Failed to create blind shipment: {response.text}"
+        data = response.json()
+        assert data["is_blind_pickup"] is True
+        assert data["estimated_box_count"] == 5
+        assert len(data["packages"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_blind_pickup_missing_box_count():
+    payload1 = generate_dummy_payload()
+    payload1["is_blind_pickup"] = True
+    payload1["estimated_box_count"] = None
+    payload1["packages"] = []
+
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"{settings.API_V1_STR}/shipments",
+            headers=headers,
+            json=payload1,
+        )
+        assert response.status_code == 422
+        assert "estimated_box_count must be greater than 0" in response.text
+
+    payload2 = generate_dummy_payload()
+    payload2["is_blind_pickup"] = True
+    payload2["estimated_box_count"] = 0
+    payload2["packages"] = []
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"{settings.API_V1_STR}/shipments",
+            headers=headers,
+            json=payload2,
+        )
+        assert response.status_code == 422
+        assert "estimated_box_count must be greater than 0" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_manifested_pickup_missing_packages():
+    payload = generate_dummy_payload()
+    payload["is_blind_pickup"] = False
+    payload["packages"] = []
+
+    headers = {"X-Tenant-Slug": "naviera"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            f"{settings.API_V1_STR}/shipments",
+            headers=headers,
+            json=payload,
+        )
+        assert response.status_code == 400
+        assert (
+            "Package details are mandatory for manifested (non-blind) pickups"
+            in response.json()["detail"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_tracking_endpoint_not_found():
+    """Verifies unauthenticated GET /api/v1/tracking/{invalid_id} returns 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            f"{settings.API_V1_STR}/tracking/INVALID-TRACKING-123",
+            headers={"X-Tenant-Slug": "naviera"},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Shipment not found"

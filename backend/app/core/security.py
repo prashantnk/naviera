@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 from app.core.config import settings
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
@@ -14,6 +16,8 @@ class TokenPayload(SQLModel):
     sub: str
     email: str
     aud: str
+    email_verified: Optional[bool] = None
+    user_metadata: Optional[dict[str, Any]] = None
 
 
 def decode_access_token(token: str) -> TokenPayload:

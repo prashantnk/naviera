@@ -32,11 +32,8 @@ We use an auto-generated TypeScript client to ensure strict typing between our P
 Ensure your FastAPI server is running locally on port 8000, then run the following command from the `frontend/` directory:
 
 ```bash
-unset LD_LIBRARY_PATH && curl -s http://127.0.0.1:8000/openapi.json > openapi.json && npx openapi-typescript-codegen --input ./openapi.json --output ./src/api_client --client fetch && rm openapi.json
+curl -s http://127.0.0.1:8000/openapi.json -o openapi.json && npx openapi-typescript-codegen --input ./openapi.json --output ./src/api_client --client axios && rm openapi.json
 ```
-
-**Why `unset LD_LIBRARY_PATH`?**
-If you are developing inside a Linux container, Project IDX, or NixOS, system-level library paths can sometimes interfere with Node.js network requests or `curl` calls to `localhost`. Unsetting this variable temporarily for the command ensures the JSON schema is fetched securely without runtime conflicts.
 
 ## 🎨 Theming System (Chameleon Architecture)
 
@@ -59,6 +56,14 @@ A brief overview of the key directories in the `frontend` application.
 
 -   `src/app`: Contains the application's routes, following the Next.js App Router convention. The `[tenant_slug]` dynamic segment is key to the multi-tenant architecture.
 -   `src/api_client`: Houses the auto-generated TypeScript client for interacting with the backend API. **Do not edit this directory manually.**
--   `src/components`: Contains reusable React components, organized into `ui` (generic, unstyled components from shadcn/ui) and `blocks` (larger, more complex components making up sections of a page).
--   `src/lib`: A place for utility functions, API configuration (`api.ts`), and Supabase client initialization (`supabase.ts`).
--   `public`: Stores static assets like images, SVGs, and fonts.
+-   `src/components`: Contains reusable React components, organized into `ui` (shadcn/ui primitives), `blocks` (headers, sidebars, timelines), `booking` (rate-shopping option cards & `409 PRICE_CHANGED` dialog), `pricing-admin` (Settings pricing policy & Prime lanes editor), `carrier` (Ops/detail carrier AWB & billing reconciliation), `pickups`, `exceptions`, and `wallet`. All pricing math runs on the backend (`Zero Frontend Math`).
+-   `src/lib`: Utility functions, API configuration (`api.ts`), and Supabase client initialization (`supabase.ts`).
+-   `public`: Static assets (images, SVGs, fonts).
+
+## 🧪 Frontend Checks
+
+```bash
+npx tsc --noEmit          # TypeScript compiler check
+npm run test:audit        # Zero-Frontend-Math, runtime CSS variables, and Client/Server boundary audit
+npx vitest run            # Unit tests (Vitest + Testing Library)
+```

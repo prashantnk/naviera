@@ -1,83 +1,130 @@
 // .devcontainer/devcontainer.json
+// GitHub Codespaces / VS Code Dev Containers environment for the Naviera monorepo.
+//
+// Editor settings live in `.vscode/settings.json` (applied automatically in Codespaces
+// AND in any local VS Code that opens this repo), so they are not duplicated here.
+// The extension list below is installed inside the Codespace; keep it in sync with
+// `.vscode/extensions.json` (which local VS Code offers as recommendations).
 {
-  "name": "Naviera Monorepo Environment",
+  "name": "Naviera Monorepo",
   "image": "mcr.microsoft.com/devcontainers/base:bookworm",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "22"
+      "version": "20"
     },
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
     },
-    "ghcr.io/devcontainers-contrib/features/poetry:2": {},
+    "ghcr.io/devcontainers-extra/features/poetry:2": {},
     "ghcr.io/devcontainers/features/git-lfs:1": {}
+  },
+  "secrets": {
+    "DATABASE_URL": {
+      "description": "Supabase Postgres connection string (asyncpg driver via PgBouncer port 6543, e.g. postgresql+asyncpg://postgres.<ref>:<url-encoded-password>@<host>:6543/postgres)."
+    },
+    "ALEMBIC_DATABASE_URL": {
+      "description": "Database connection string used by Alembic migrations (can equal DATABASE_URL; defaults to DATABASE_URL in post-create.sh if omitted)."
+    },
+    "SECRET_KEY": {
+      "description": "Supabase project JWT secret (Project Settings -> API -> JWT Secret) used by FastAPI to verify access tokens."
+    },
+    "SUPABASE_URL": {
+      "description": "Supabase project URL (e.g. https://<project-ref>.supabase.co)."
+    },
+    "SUPABASE_ANON_KEY": {
+      "description": "Supabase public anon key (Project Settings -> API -> anon public)."
+    },
+    "JWT_ISSUER": {
+      "description": "Supabase Auth JWT issuer URL (https://<project-ref>.supabase.co/auth/v1; derived from SUPABASE_URL in post-create.sh if omitted)."
+    },
+    "ENVIRONMENT": {
+      "description": "Deployment environment name (local | staging | production; defaults to local)."
+    },
+    "ALGORITHM": {
+      "description": "Optional JWT signing algorithm (defaults to HS256)."
+    },
+    "ACCESS_TOKEN_EXPIRE_MINUTES": {
+      "description": "Optional access token expiry in minutes (defaults to 60)."
+    },
+    "DB_ECHO_LOG": {
+      "description": "Optional SQLAlchemy query echo flag (True | False; defaults to False)."
+    },
+    "CONSOLE_LOG": {
+      "description": "Optional verbose console logging flag (True | False; defaults to False)."
+    },
+    "LOGFIRE_TOKEN": {
+      "description": "Optional Pydantic Logfire telemetry write token (leave empty to disable)."
+    },
+    "PROJECT_NAME": {
+      "description": "Optional FastAPI project title (defaults to 'Naviera API')."
+    },
+    "API_V1_STR": {
+      "description": "Optional FastAPI v1 route prefix (defaults to '/api/v1')."
+    },
+    "DOCS_ENDPOINT": {
+      "description": "Optional FastAPI OpenAPI docs path (defaults to '/docs')."
+    },
+    "DELHIVERY_B2C_TOKEN": {
+      "description": "Optional Delhivery B2C (Express/Surface) API token from one.delhivery.com -> Settings -> API Setup (production). Empty = Delhivery options show 'price unavailable'. See docs/RUNBOOK.md 'Delhivery API keys'."
+    },
+    "DELHIVERY_B2C_BASE_URL": {
+      "description": "Optional Delhivery B2C API host (defaults to https://track.delhivery.com; staging prices are zero)."
+    },
+    "DELHIVERY_TENANT_ID": {
+      "description": "Optional UUID of the one tenant whose Delhivery account the keys belong to (live logismart). Required for live Delhivery prices."
+    },
+    "DELHIVERY_B2B_USERNAME": {
+      "description": "Optional Delhivery B2B Cargo (LTL) API username (POST /ums/login). Empty = 'Delhivery B2B Cargo' shows 'price unavailable'."
+    },
+    "DELHIVERY_B2B_PASSWORD": {
+      "description": "Optional Delhivery B2B Cargo (LTL) API password. A wrong password locks the Delhivery user for 10 minutes."
+    },
+    "DELHIVERY_B2B_BASE_URL": {
+      "description": "Optional Delhivery B2B Cargo API host (defaults to https://ltl-clients-api.delhivery.com; staging has no pricing)."
+    },
+    "NEXT_PUBLIC_SUPABASE_URL": {
+      "description": "Frontend Supabase project URL (e.g. https://<project-ref>.supabase.co; falls back to SUPABASE_URL in post-create.sh)."
+    },
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {
+      "description": "Frontend Supabase public anon key (falls back to SUPABASE_ANON_KEY in post-create.sh)."
+    },
+    "BACKEND_API_URL": {
+      "description": "Optional backend URL proxied by Next.js server-side rewrites (defaults to http://localhost:8000)."
+    },
+    "REVALIDATION_SECRET": {
+      "description": "Shared secret for server-to-server Next.js cache revalidation (POST /api/revalidate)."
+    }
   },
   "customizations": {
     "vscode": {
       "extensions": [
-        // --- Existing Backend Extensions (PRESERVED) ---
+        // --- Backend (Python / FastAPI) ---
         "ms-python.python",
         "ms-python.vscode-pylance",
+        "ms-python.debugpy",
         "ms-python.black-formatter",
         "ms-python.isort",
         "charliermarsh.ruff",
-        "eamodio.gitlens",
-        "ms-vsliveshare.vsliveshare",
+        // --- Frontend (Next.js / TypeScript / Tailwind) ---
+        "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        // --- Tooling ---
+        "eamodio.gitlens",
+        "mikestead.dotenv",
         "rangav.vscode-thunder-client",
         "ckolkman.vscode-postgres",
-        "mikestead.dotenv",
-        "Google.geminicodeassist",
-        "Codeium.codeium",
-        "Google.gemini-cli-vscode-ide-companion",
-        "openai.chatgpt",
-        // --- NEW: Frontend Extensions (ADDED) ---
-        "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss",
+        "ms-vsliveshare.vsliveshare",
         // --- Theme ---
         "akamud.vscode-theme-onedark"
-      ],
-      "settings": {
-        // --- Existing Python Settings (PRESERVED) ---
-        "python.defaultInterpreterPath": "/workspaces/naviera/backend/.venv/bin/python",
-        "python.terminal.activateEnvironment": false,
-        "editor.formatOnSave": true,
-        "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter",
-          "editor.codeActionsOnSave": {
-            "source.fixAll": "explicit",
-            "source.organizeImports": "explicit"
-          }
-        },
-        // These are the lines that were accidentally removed - restoring them now:
-        "python.linting.ruffEnabled": true,
-        "python.linting.enabled": true,
-        "python.analysis.reportUnknownMemberType": "none",
-        "python.analysis.typeCheckingMode": "basic",
-        "python.analysis.autoImportCompletions": true,
-
-        // --- NEW: Frontend Settings (ADDED) ---
-        "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
-        "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
-        "[typescriptreact]": {
-          "editor.defaultFormatter": "esbenp.prettier-vscode"
-        },
-        "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
-        "tailwindCSS.includeLanguages": {
-          "typescript": "javascript",
-          "typescriptreact": "javascript"
-        },
-        // We merge this carefully. For Python, it uses 'source.fixAll'.
-        // For JS/TS, we want ESLint to fix issues on save.
-        "editor.codeActionsOnSave": {
-          "source.fixAll": "explicit",
-          "source.organizeImports": "explicit",
-          "source.fixAll.eslint": "explicit" // <--- Added for Frontend
-        }
-      }
+      ]
     }
   },
-  "postCreateCommand": "sh ./.devcontainer/post-create.sh",
-  "forwardPorts": [8000, 3000],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "forwardPorts": [3000, 8000],
+  "portsAttributes": {
+    "3000": { "label": "Next.js Frontend", "onAutoForward": "notify" },
+    "8000": { "label": "FastAPI Backend", "onAutoForward": "silent" }
+  },
   "remoteUser": "vscode"
 }

@@ -1,0 +1,56 @@
+{
+  // Run from Terminal > Run Task (or Ctrl/Cmd+Shift+P > "Tasks: Run Task").
+  // Uses an interactive bash shell so nvm / poetry from ~/.bashrc are available locally too.
+  "version": "2.0.0",
+  "options": {
+    "shell": { "executable": "bash", "args": ["-ic"] },
+    "env": { "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring" }
+  },
+  "tasks": [
+    {
+      "label": "Naviera: Install Dependencies",
+      "type": "shell",
+      "command": "(cd backend && poetry config virtualenvs.in-project true && poetry install) && (cd frontend && npm install)",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Naviera: Run Backend",
+      "type": "shell",
+      "command": "poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "naviera", "panel": "dedicated" }
+    },
+    {
+      "label": "Naviera: Run Frontend",
+      "type": "shell",
+      "command": "npm run dev -- -p 3000",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "group": "naviera", "panel": "dedicated" }
+    },
+    {
+      "label": "Naviera: Run Full Stack",
+      "dependsOn": ["Naviera: Run Backend", "Naviera: Run Frontend"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "Naviera: Backend Tests",
+      "type": "shell",
+      "command": "poetry run pytest scripts/tests -v",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Naviera: Frontend Checks (tsc + audit + vitest)",
+      "type": "shell",
+      "command": "npx tsc --noEmit && npm run test:audit && npx vitest run",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}

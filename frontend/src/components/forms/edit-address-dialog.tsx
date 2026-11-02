@@ -19,15 +19,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { IconSelect } from "@/components/ui/icon-select";
+import { FormSection, RequiredMark } from "@/components/ui/form-extras";
+import { ADDRESS_CATEGORY_OPTIONS, ADDRESS_SCOPE_OPTIONS, toOptions } from "@/lib/form-options";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, User, Building2, Phone, Mail, MapPin, Tag, Eye } from "lucide-react";
+import { Loader2, User, Building2, Phone, Mail, MapPin, Tag, Eye, Contact } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -70,6 +66,10 @@ const addressSchema = z.object({
       message: "Must be a valid 6-digit Indian pincode (cannot start with 0)",
     }),
 });
+
+/** Category and sharing-scope dropdown options (icon + label + helper text). */
+const CATEGORY_SELECT_OPTIONS = toOptions(ADDRESS_CATEGORY_OPTIONS);
+const SCOPE_SELECT_OPTIONS = toOptions(ADDRESS_SCOPE_OPTIONS);
 
 export function EditAddressDialog({
   address,
@@ -170,8 +170,11 @@ export function EditAddressDialog({
             className="space-y-5 pt-4"
           >
             {/* Section 1: Identity */}
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Contact details</h4>
+            <FormSection
+              icon={Contact}
+              title="Contact details"
+              description="Who should the courier call at this address?"
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                 <FormField
                   control={form.control}
@@ -179,7 +182,7 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
-                        <User className="h-3.5 w-3.5 text-slate-400" /> Contact Name <span className="text-red-500">*</span>
+                        <User className="h-3.5 w-3.5 text-slate-400" /> Contact Name <RequiredMark />
                       </FormLabel>
                       <FormControl>
                         <Input className="bg-white" {...field} />
@@ -194,7 +197,7 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
-                        <Phone className="h-3.5 w-3.5 text-slate-400" /> Phone <span className="text-red-500">*</span>
+                        <Phone className="h-3.5 w-3.5 text-slate-400" /> Phone <RequiredMark />
                       </FormLabel>
                       <FormControl>
                         <Input className="bg-white font-mono" {...field} />
@@ -269,11 +272,14 @@ export function EditAddressDialog({
                   )}
                 />
               </div>
-            </div>
+            </FormSection>
 
             {/* Section 2: Physical address */}
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Physical address</h4>
+            <FormSection
+              icon={MapPin}
+              title="Physical address"
+              description="Changing the pincode re-verifies city and state automatically."
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                 <FormField
                   control={form.control}
@@ -283,20 +289,14 @@ export function EditAddressDialog({
                       <FormLabel className="flex items-center gap-1.5">
                         <Tag className="h-3.5 w-3.5 text-slate-400" /> Address Category
                       </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="bg-white">
-                            <SelectValue placeholder="Select Category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {Object.values(AddressCategory).map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <IconSelect
+                          options={CATEGORY_SELECT_OPTIONS}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Select category"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -308,8 +308,9 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
-                        Pincode <span className="text-red-500">*</span>
-                        {isLocating && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />}
+                        Pincode
+                        <RequiredMark />
+                        {isLocating && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
                         {geoVerified && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">✓ Verified</span>}
                       </FormLabel>
                       <FormControl>
@@ -326,7 +327,7 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem className="md:col-span-2">
                       <FormLabel>
-                        Address Line 1 <span className="text-red-500">*</span>
+                        Address Line 1 <RequiredMark />
                       </FormLabel>
                       <FormControl>
                         <Input className="bg-white" {...field} />
@@ -370,7 +371,7 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        City <span className="text-red-500">*</span>
+                        City <RequiredMark />
                       </FormLabel>
                       <FormControl>
                         <Input 
@@ -390,7 +391,7 @@ export function EditAddressDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        State <span className="text-red-500">*</span>
+                        State <RequiredMark />
                       </FormLabel>
                       <FormControl>
                         <Input 
@@ -413,17 +414,14 @@ export function EditAddressDialog({
                         <FormLabel className="flex items-center gap-1.5">
                           <Eye className="h-3.5 w-3.5 text-slate-400" /> Sharing Scope
                         </FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger className="bg-white">
-                              <SelectValue placeholder="Select Scope" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value={AddressScope.PRIVATE}>Private (Personal Use)</SelectItem>
-                            <SelectItem value={AddressScope.TENANT}>Shared (Team-wide)</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <IconSelect
+                            options={SCOPE_SELECT_OPTIONS}
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            placeholder="Select scope"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -436,7 +434,7 @@ export function EditAddressDialog({
                   </div>
                 )}
               </div>
-            </div>
+            </FormSection>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <Button

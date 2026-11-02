@@ -1,7 +1,7 @@
 // frontend/src/app/[tenant_slug]/(app)/address-book/page.tsx
 "use client";
 
-import { AddressRead, AddressesService, AddressCategory, AddressScope } from "@/api_client";
+import { AddressRead, AddressesService, AddressScope } from "@/api_client";
 import { AddAddressDialog } from "@/components/forms/add-address-dialog";
 import { EditAddressDialog } from "@/components/forms/edit-address-dialog";
 import { Button } from "@/components/ui/button";
@@ -21,16 +21,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { IconSelect } from "@/components/ui/icon-select";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  ADDRESS_CATEGORY_OPTIONS,
+  ADDRESS_SCOPE_OPTIONS,
+  toOptions,
+  withAllOption,
+} from "@/lib/form-options";
 import { ColumnDef } from "@tanstack/react-table";
 import {
-  Filter,
   Loader2,
   MapPin,
   MoreHorizontal,
@@ -38,16 +37,19 @@ import {
   Search,
   Trash2,
   BookOpen,
-  Eye,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { columns } from "./columns";
 
+/** Filter-bar options with friendly labels and icons instead of raw enum values. */
+const CATEGORY_FILTER_OPTIONS = withAllOption(toOptions(ADDRESS_CATEGORY_OPTIONS), "All categories");
+const SCOPE_FILTER_OPTIONS = withAllOption(toOptions(ADDRESS_SCOPE_OPTIONS), "All scopes");
+
 export default function AddressBookPage() {
   const [data, setData] = useState<AddressRead[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user, isAdmin } = useUser();
+  const { user, isAdmin, capabilities } = useUser();
 
   // Dialog States
   const [editOpen, setEditOpen] = useState(false);
@@ -127,7 +129,9 @@ export default function AddressBookPage() {
       {
         id: "actions",
         cell: ({ row }) => {
-          const isEditable = isAdmin || (row.original.scope === AddressScope.PRIVATE && row.original.user_id === user?.id);
+          const isEditable =
+            capabilities.canWrite &&
+            (isAdmin || (row.original.scope === AddressScope.PRIVATE && row.original.user_id === user?.id));
           if (!isEditable) return null;
 
           return (
@@ -168,10 +172,10 @@ export default function AddressBookPage() {
     return baseCols.filter(
       (col) => !('accessorKey' in col && col.accessorKey === "scope")
     );
-  }, [isAdmin, user]);
+  }, [isAdmin, user, capabilities.canWrite]);
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto pb-16 animate-in fade-in duration-300">
+    <div className="space-y-8 max-w-7xl mx-auto pb-16 animate-in fade-in duration-300">
       {/* Title and Action bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-200/60 pb-6">
         <div>
@@ -188,7 +192,7 @@ export default function AddressBookPage() {
           </p>
         </div>
         <div className="shrink-0">
-          <AddAddressDialog onSuccess={fetchAddresses} />
+          {capabilities.canWrite && <AddAddressDialog onSuccess={fetchAddresses} />}
         </div>
       </div>
 
@@ -210,34 +214,25 @@ export default function AddressBookPage() {
         {/* Dropdown Filters */}
         <div className="flex flex-wrap gap-3">
           {/* Category Select Filter */}
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[160px] bg-white border-slate-200 shadow-xs rounded-lg text-sm font-medium text-slate-700">
-              <Filter className="w-3.5 h-3.5 mr-2 text-slate-400" />
-              <SelectValue placeholder="All Categories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Categories</SelectItem>
-              {Object.values(AddressCategory).map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <IconSelect
+            aria-label="Filter by category"
+            options={CATEGORY_FILTER_OPTIONS}
+            value={categoryFilter}
+            onValueChange={setCategoryFilter}
+            placeholder="All categories"
+            triggerClassName="w-[calc(50%-0.375rem)] sm:w-[180px] border-slate-200 shadow-sm h-10 rounded-lg"
+          />
 
           {/* Scope Select Filter (Admins only) */}
           {isAdmin && (
-            <Select value={scopeFilter} onValueChange={setScopeFilter}>
-              <SelectTrigger className="w-[160px] bg-white border-slate-200 shadow-xs rounded-lg text-sm font-medium text-slate-700 animate-in fade-in duration-150">
-                <Eye className="w-3.5 h-3.5 mr-2 text-slate-400" />
-                <SelectValue placeholder="All Scopes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Scopes</SelectItem>
-                <SelectItem value={AddressScope.TENANT}>Team Shared</SelectItem>
-                <SelectItem value={AddressScope.PRIVATE}>Private Only</SelectItem>
-              </SelectContent>
-            </Select>
+            <IconSelect
+              aria-label="Filter by sharing scope"
+              options={SCOPE_FILTER_OPTIONS}
+              value={scopeFilter}
+              onValueChange={setScopeFilter}
+              placeholder="All scopes"
+              triggerClassName="w-[calc(50%-0.375rem)] sm:w-[180px] border-slate-200 shadow-sm h-10 rounded-lg animate-in fade-in duration-150"
+            />
           )}
         </div>
       </div>
@@ -245,7 +240,7 @@ export default function AddressBookPage() {
       {/* Table Block */}
       {loading ? (
         <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       ) : data.length === 0 ? (
         <div className="flex flex-col h-72 items-center justify-center border border-slate-200 rounded-xl bg-white shadow-xs space-y-4 text-center p-6">
@@ -260,9 +255,7 @@ export default function AddressBookPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-          <DataTable columns={activeColumns} data={filteredData} />
-        </div>
+        <DataTable columns={activeColumns} data={filteredData} />
       )}
 
       <EditAddressDialog

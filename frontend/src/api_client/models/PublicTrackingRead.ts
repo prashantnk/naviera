@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PackageRead } from './PackageRead';
 import type { PickupStatus } from './PickupStatus';
 import type { PublicActivityRead } from './PublicActivityRead';
 /**
@@ -13,6 +14,11 @@ export type PublicTrackingRead = {
     status: PickupStatus;
     current_location?: string;
     estimated_delivery?: (string | null);
+    carrier_name?: (string | null);
+    carrier_awb?: (string | null);
+    delivery_otp?: (string | null);
+    pod_received_by?: (string | null);
     timeline?: Array<PublicActivityRead>;
+    package_details?: Array<PackageRead>;
 };
 

@@ -29,13 +29,13 @@ export function DatePicker({ date, setDate, placeholder = "Pick a date", classNa
         <Button
           variant={"outline"}
           className={cn(
-            "w-[280px] justify-start text-left font-normal bg-white",
+            "w-full min-w-0 justify-start text-left font-normal bg-white overflow-hidden text-ellipsis",
             !date && "text-muted-foreground",
             className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, "dd/MM/yyyy") : <span>{placeholder}</span>}
+          <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+          <span className="truncate">{date ? format(date, "dd/MM/yyyy") : placeholder}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

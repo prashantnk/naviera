@@ -16,12 +16,12 @@ export const columns: ColumnDef<AddressRead>[] = [
       const initial = name.charAt(0).toUpperCase();
       return (
         <div className="flex items-center gap-3 min-w-[180px]">
-          <div className="h-9 w-9 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-xs">
+          <div className="h-9 w-9 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-xs">
             {initial}
           </div>
           <div className="flex flex-col">
             <span className="font-semibold text-slate-900 leading-tight">{name}</span>
-            {company && <span className="text-[10px] font-bold text-indigo-600/80 uppercase tracking-wider mt-0.5">{company}</span>}
+            {company && <span className="text-[10px] font-bold text-primary/85 uppercase tracking-wider mt-0.5">{company}</span>}
           </div>
         </div>
       );
@@ -76,7 +76,7 @@ export const columns: ColumnDef<AddressRead>[] = [
       
       const colors: Record<AddressCategory, string> = {
         [AddressCategory.HOME]: "bg-emerald-50 text-emerald-700 border-emerald-100",
-        [AddressCategory.OFFICE]: "bg-blue-50 text-blue-700 border-blue-100",
+        [AddressCategory.OFFICE]: "bg-sky-100 text-sky-700 border-sky-200",
         [AddressCategory.WAREHOUSE]: "bg-orange-50 text-orange-700 border-orange-100",
         [AddressCategory.STOREFRONT]: "bg-cyan-50 text-cyan-700 border-cyan-100",
         [AddressCategory.OTHER]: "bg-slate-50 text-slate-700 border-slate-100",
@@ -100,7 +100,7 @@ export const columns: ColumnDef<AddressRead>[] = [
         <div className="min-w-[110px] flex items-center">
           <Badge variant="outline" className={`font-bold tracking-wider text-[9px] uppercase px-2.5 py-1 border rounded-full shrink-0 ${
             scope === AddressScope.TENANT 
-              ? "bg-purple-50 text-purple-700 border-purple-100" 
+              ? "bg-primary/20 text-primary border-primary/30" 
               : "bg-slate-50 text-slate-600 border-slate-200"
           }`}>
             {scope === AddressScope.TENANT ? "Team Shared" : "Private"}

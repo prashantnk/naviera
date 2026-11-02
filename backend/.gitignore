@@ -12,9 +12,6 @@ __pycache__/
 venv/
 env/
 
-# Poetry
-poetry.lock
-
 # IDE
 .vscode/
 .idea/

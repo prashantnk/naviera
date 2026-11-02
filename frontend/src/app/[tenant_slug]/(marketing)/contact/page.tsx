@@ -1,6 +1,9 @@
 // frontend/src/app/[tenant_slug]/(marketing)/contact/page.tsx
 import { getTenantBySlug } from "@/lib/api";
 import { Mail, MapPin, Phone, FileText } from "lucide-react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Contact Us" };
 
 export default async function ContactPage({
   params,

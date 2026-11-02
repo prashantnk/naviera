@@ -4,6 +4,9 @@
 /* eslint-disable */
 import type { AddressCategory } from './AddressCategory';
 import type { AddressScope } from './AddressScope';
+/**
+ * Address input (booking snapshot or address book): H-06 pincode + phone checks.
+ */
 export type AddressCreate = {
     name: string;
     phone: string;

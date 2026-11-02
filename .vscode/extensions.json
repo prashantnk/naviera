@@ -1,22 +1,21 @@
 {
+  // Local VS Code shows these as "Recommended" and offers a one-click "Install All".
+  // Keep in sync with `.devcontainer/devcontainer.json` (installed in Codespaces).
   "recommendations": [
     "ms-python.python",
     "ms-python.vscode-pylance",
+    "ms-python.debugpy",
     "ms-python.black-formatter",
     "ms-python.isort",
     "charliermarsh.ruff",
-    "eamodio.gitlens",
-    "ms-vsliveshare.vsliveshare",
+    "dbaeumer.vscode-eslint",
     "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "eamodio.gitlens",
+    "mikestead.dotenv",
     "rangav.vscode-thunder-client",
     "ckolkman.vscode-postgres",
-    "mikestead.dotenv",
-    "Google.geminicodeassist",
-    "Codeium.codeium",
-    "Google.gemini-cli-vscode-ide-companion",
-    "openai.chatgpt",
-    "dbaeumer.vscode-eslint",
-    "bradlc.vscode-tailwindcss",
+    "ms-vsliveshare.vsliveshare",
     "akamud.vscode-theme-onedark"
   ]
 }

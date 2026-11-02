@@ -1,9 +1,11 @@
+"use client";
 // frontend/src/components/blocks/admin-timeline.tsx
 import { ActivityType, ShipmentActivityRead } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatIstDateTime } from "@/lib/utils";
 import {
   Activity,
   ArrowRight,
@@ -30,20 +32,24 @@ export function AdminTimeline({
   const { routeTo } = useTenant();
 
   const formatDate = (isoString: string) => {
-    return new Date(isoString).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
+    return formatIstDateTime(
+      isoString,
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      },
+      isoString
+    );
   };
 
   const getTypeColor = (type: ActivityType) => {
     switch (type) {
       case ActivityType.STATUS_CHANGE:
-        return "bg-blue-100 text-blue-700 border-blue-200";
+        return "bg-sky-100 text-sky-700 border-sky-200";
       case ActivityType.INFO_UPDATE:
         return "bg-amber-100 text-amber-700 border-amber-200";
       case ActivityType.EXCEPTION:

@@ -1,16 +1,10 @@
 // frontend/src/app/[tenant_slug]/(marketing)/services/page.tsx
 import { getTenantBySlug } from "@/lib/api";
-import { CheckCircle2, Plane, RefreshCcw, ShoppingCart, Train, Truck, Warehouse, Package } from "lucide-react";
+import { resolveServiceIcon } from "@/lib/icon-registry";
+import { CheckCircle2 } from "lucide-react";
+import type { Metadata } from "next";
 
-// Safe dynamic icon mapping
-const iconMap: Record<string, React.ElementType> = {
-    "plane": Plane,
-    "train": Train,
-    "truck": Truck,
-    "warehouse": Warehouse,
-    "shopping-cart": ShoppingCart,
-    "refresh-ccw": RefreshCcw,
-};
+export const metadata: Metadata = { title: "Our Services" };
 
 export default async function ServicesPage({ params }: { params: Promise<{ tenant_slug: string }> }) {
     const { tenant_slug } = await params;
@@ -30,7 +24,7 @@ export default async function ServicesPage({ params }: { params: Promise<{ tenan
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
                     {config.services.map((service, index) => {
-                        const Icon = iconMap[service.icon] || Package;
+                        const Icon = resolveServiceIcon(service.icon);
                         return (
                             <div key={index} className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 group">
                                 <div className="h-16 w-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-primary group-hover:text-white transition-all">
