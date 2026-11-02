@@ -1,51 +1,63 @@
 // frontend/src/app/[tenant_slug]/(marketing)/track/[tracking_id]/page.tsx
 "use client";
 
-import { PublicTrackingRead, ShipmentsService } from "@/api_client";
+import { PublicTrackingRead, TrackingService } from "@/api_client";
+import {
+  TRACKING_INPUT_PLACEHOLDER,
+  TrackingLoadError,
+  classifyTrackingError,
+  normalizeTrackingId,
+} from "@/components/blocks/tracking-display";
 import { TrackingTimeline } from "@/components/blocks/tracking-timeline";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, PackageSearch, Search } from "lucide-react";
+import { Loader2, PackageSearch, RefreshCw, Search, WifiOff } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function PublicTrackingPage() {
   const params = useParams();
   const router = useRouter();
-  const trackingId = params.tracking_id as string;
+  const rawTrackingId = decodeURIComponent((params.tracking_id as string) || "");
+  const trackingId = normalizeTrackingId(rawTrackingId);
   const { routeTo, tenantSlug } = useTenant();
 
   const [data, setData] = useState<PublicTrackingRead | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<TrackingLoadError | null>(null);
 
   const [newSearchId, setNewSearchId] = useState(trackingId);
 
-  useEffect(() => {
+  const fetchTrackingData = useCallback(async () => {
     if (!trackingId) return;
-
-    const fetchTrackingData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await ShipmentsService.trackShipment(trackingId);
-        setData(response);
-      } catch (err: unknown) {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await TrackingService.trackShipment(trackingId);
+      setData(response);
+    } catch (err: unknown) {
+      const loadError = classifyTrackingError(err);
+      // A wrong AWB is an expected outcome, not an application error.
+      if (loadError !== TrackingLoadError.NOT_FOUND) {
         console.error("Tracking Error:", err);
-        setError("We couldn't find a shipment with that Tracking ID.");
-      } finally {
-        setLoading(false);
       }
-    };
+      setData(null);
+      setError(loadError);
+    } finally {
+      setLoading(false);
+    }
+  }, [trackingId]);
 
+  useEffect(() => {
     fetchTrackingData();
-  }, [trackingId, tenantSlug]);
+  }, [fetchTrackingData, tenantSlug]);
 
   const handleNewSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newSearchId.trim()) {
-      router.push(routeTo(`/track/${newSearchId.trim()}`));
+    const normalized = normalizeTrackingId(newSearchId);
+    if (normalized) {
+      router.push(routeTo(`/track/${encodeURIComponent(normalized)}`));
     }
   };
 
@@ -65,14 +77,17 @@ export default function PublicTrackingPage() {
             className="flex w-full sm:w-auto gap-2"
           >
             <Input
-              placeholder="Enter Tracking ID..."
+              placeholder={TRACKING_INPUT_PLACEHOLDER}
+              aria-label="AWB / tracking number"
               value={newSearchId}
               onChange={(e) => setNewSearchId(e.target.value)}
-              className="w-full sm:w-64 bg-slate-50 border-slate-200 focus-visible:ring-primary"
+              autoCapitalize="characters"
+              className="w-full sm:w-64 bg-slate-50 border-slate-200 focus-visible:ring-primary uppercase placeholder:normal-case"
             />
             {/* 🔥 FIX: Changed from variant="secondary" to explicitly use the Primary brand colors */}
             <Button
               type="submit"
+              aria-label="Search"
               className="font-bold px-6 bg-primary text-primary-foreground hover:opacity-90"
             >
               <Search className="h-4 w-4 md:mr-2" />
@@ -91,15 +106,51 @@ export default function PublicTrackingPage() {
           </div>
         )}
 
-        {error && !loading && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-4 shadow-sm">
-            <div className="mx-auto w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
-              <PackageSearch className="h-8 w-8 text-red-500" />
+        {error === TrackingLoadError.NOT_FOUND && !loading && (
+          <div
+            data-testid="tracking.not-found"
+            className="bg-white border border-slate-200 rounded-2xl p-8 md:p-12 text-center space-y-4 shadow-sm"
+          >
+            <div className="mx-auto w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+              <PackageSearch className="h-8 w-8 text-destructive" />
             </div>
             <h3 className="text-xl font-bold text-slate-900">
               Shipment Not Found
             </h3>
-            <p className="text-slate-500 max-w-md mx-auto">{error}</p>
+            <p className="text-slate-500 max-w-md mx-auto break-all">
+              We couldn&apos;t find a shipment with tracking number{" "}
+              <span className="font-semibold text-slate-700">{trackingId}</span>.
+            </p>
+            <p className="text-slate-500 max-w-md mx-auto text-sm">
+              Check the number on your label or order message. New shipments can
+              take a few minutes to appear.
+            </p>
+          </div>
+        )}
+
+        {error === TrackingLoadError.UNAVAILABLE && !loading && (
+          <div
+            data-testid="tracking.unavailable"
+            className="bg-white border border-slate-200 rounded-2xl p-8 md:p-12 text-center space-y-4 shadow-sm"
+          >
+            <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <WifiOff className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">
+              Tracking is temporarily unavailable
+            </h3>
+            <p className="text-slate-500 max-w-md mx-auto">
+              We couldn&apos;t load the latest status right now. Your shipment is
+              not affected. Please try again in a moment.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="tracking.retry"
+              onClick={() => fetchTrackingData()}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" /> Try again
+            </Button>
           </div>
         )}
 

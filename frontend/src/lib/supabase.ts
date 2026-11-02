@@ -30,3 +30,67 @@ export const getSupabaseClient = (tenantSlug: string) => {
 
   return clients.get(tenantSlug);
 };
+
+export const resetSupabaseClient = (tenantSlug: string) => {
+  clients.delete(tenantSlug);
+};
+
+/** Max time we wait for Supabase's own sign-out call before clearing locally anyway. */
+const SIGN_OUT_NETWORK_TIMEOUT_MS = 1500;
+
+/**
+ * Storage key supabase-js uses when no custom `storageKey` is set
+ * (`sb-<project-ref>-auth-token`), derived from the project URL.
+ */
+function _defaultProjectStorageKey(): string | null {
+  try {
+    const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+    return projectRef ? `sb-${projectRef}-auth-token` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes every locally stored session for this tenant.
+ *
+ * @param tenantSlug - Tenant whose session keys are cleared.
+ */
+export function clearStoredSession(tenantSlug: string): void {
+  if (typeof window === "undefined") return;
+  const keys = [`sb-${tenantSlug}-auth-token`, _defaultProjectStorageKey()];
+  keys.forEach((key) => {
+    if (key) window.localStorage.removeItem(key);
+  });
+  resetSupabaseClient(tenantSlug);
+}
+
+/**
+ * Reliable logout.
+ *
+ * supabase-js calls GoTrue `/logout` first and, when that call fails (for
+ * example for backend-minted password sessions GoTrue does not know), it
+ * returns early WITHOUT clearing the stored session, so the login page would
+ * find the old session and bounce the user back into the app. We therefore
+ * give the network call a short timeout, always clear local storage
+ * ourselves, and finish with a hard navigation that drops all in-memory state
+ * (React Query caches, Supabase refresh timers).
+ *
+ * @param tenantSlug - Tenant being signed out of.
+ * @param redirectTo - Absolute or tenant-resolved path to land on (e.g. `routeTo("/login")`).
+ */
+export async function signOutAndRedirect(
+  tenantSlug: string,
+  redirectTo: string
+): Promise<void> {
+  const supabase = getSupabaseClient(tenantSlug);
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(resolve, SIGN_OUT_NETWORK_TIMEOUT_MS)
+  );
+  await Promise.race([
+    supabase.auth.signOut({ scope: "local" }).catch(() => undefined),
+    timeout,
+  ]);
+  clearStoredSession(tenantSlug);
+  window.location.replace(redirectTo);
+}

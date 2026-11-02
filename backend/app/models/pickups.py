@@ -1,11 +1,19 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import sqlalchemy as sa
 from sqlalchemy import Enum as sa_Enum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from app.models.manifests import Manifest
+
+FREIGHT_COLLECTIBLE_DEFAULT = Decimal("0.00")
+"""Default of `payment_details.freight_collectible` (server default 0, migration M-B3)."""
 
 # --- 1. Enums (The Rules) ---
 
@@ -46,6 +54,30 @@ class ServiceType(str, Enum):
     AIR = "AIR"
 
 
+class ServiceOption(str, Enum):
+    """
+    The carrier service a shipment is booked on (carrier × mode × rate source, M-P1).
+    Stored as VARCHAR(40) + CHECK `ck_pickups_service_option_valid`; a new option is a
+    CHECK swap, never an enum DDL migration.
+    DELHIVERY_SURFACE / DELHIVERY_EXPRESS are B2C parcels priced live by Delhivery's
+    Express API; PRIME_SURFACE is B2B cargo priced from Logismart's Prime rate table;
+    DELHIVERY_B2B_SURFACE is B2B cargo (LTL) priced live by Delhivery's B2B freight
+    estimate API (M-P3 adds it to the CHECK).
+    """
+
+    DELHIVERY_SURFACE = "DELHIVERY_SURFACE"
+    DELHIVERY_EXPRESS = "DELHIVERY_EXPRESS"
+    PRIME_SURFACE = "PRIME_SURFACE"
+    DELHIVERY_B2B_SURFACE = "DELHIVERY_B2B_SURFACE"
+
+
+SERVICE_OPTION_MAX_LENGTH = 40
+"""Width of `pickups.service_option` (VARCHAR(40))."""
+
+CARRIER_AWB_MAX_LENGTH = 40
+"""Width of `pickups.carrier_awb` (VARCHAR(40))."""
+
+
 class FreightPaymentMode(str, Enum):
     PREPAID = "PREPAID"
     POSTPAID = "POSTPAID"
@@ -65,17 +97,65 @@ class PickupStatus(str, Enum):
     OPEN = "OPEN"
     ASSIGNED = "ASSIGNED"
     IN_TRANSIT = "IN_TRANSIT"
+    OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY"
     EXCEPTION = "EXCEPTION"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
     RTO_INITIATED = "RTO_INITIATED"
+    RTO_IN_TRANSIT = "RTO_IN_TRANSIT"
+    RTO_DELIVERED = "RTO_DELIVERED"
+    QC_FAILED = "QC_FAILED"
+    REJECTED_AT_PICKUP = "REJECTED_AT_PICKUP"
+    LOST = "LOST"
 
 
 class NdrExceptionReason(str, Enum):
+    """
+    Why a shipment is on hold (Delhivery One "Exceptions & NDR" parity).
+    CUSTOMER_UNAVAILABLE is the legacy label of CONSIGNEE_UNAVAILABLE; both are
+    treated identically by the allowed-actions matrix (`services/ndr_rules.py`).
+    """
+
     DOCUMENT_NEEDED = "DOCUMENT_NEEDED"
     APPOINTMENT_NEEDED = "APPOINTMENT_NEEDED"
     SHORT_SHIPMENT = "SHORT_SHIPMENT"
     CUSTOMER_UNAVAILABLE = "CUSTOMER_UNAVAILABLE"
+    PAYMENT_DISPUTE = "PAYMENT_DISPUTE"
+    DAMAGED = "DAMAGED"
+    EWAY_BILL_MISSING = "EWAY_BILL_MISSING"
+    CONSIGNEE_DETAILS_REQUIRED = "CONSIGNEE_DETAILS_REQUIRED"
+    CONSIGNEE_REFUSED = "CONSIGNEE_REFUSED"
+    CONSIGNEE_UNAVAILABLE = "CONSIGNEE_UNAVAILABLE"
+    DELIVERY_RESCHEDULED = "DELIVERY_RESCHEDULED"
+    FREIGHT_COLLECTION = "FREIGHT_COLLECTION"
+    ADDITIONAL_CHARGES = "ADDITIONAL_CHARGES"
+    WEIGHT_DISCREPANCY = "WEIGHT_DISCREPANCY"
+    PICKUP_FAILED = "PICKUP_FAILED"
+
+
+class NdrAction(str, Enum):
+    """
+    The merchant's response to an exception. Which actions are allowed for a
+    given shipment is decided server-side by the allowed-actions matrix.
+    Spring Boot Equivalent: an '@Enumerated(EnumType.STRING)' command type.
+    """
+
+    REATTEMPT = "REATTEMPT"
+    RETURN_TO_ORIGIN = "RETURN_TO_ORIGIN"
+    UPDATE_CONSIGNEE = "UPDATE_CONSIGNEE"
+    UPDATE_PAYMENT_MODE = "UPDATE_PAYMENT_MODE"
+    UPDATE_EWAY_BILL = "UPDATE_EWAY_BILL"
+    UPLOAD_DOCUMENT = "UPLOAD_DOCUMENT"
+    BOOK_APPOINTMENT = "BOOK_APPOINTMENT"
+    DELIVER_WITHOUT_APPOINTMENT = "DELIVER_WITHOUT_APPOINTMENT"
+    PARTIAL_DELIVERY = "PARTIAL_DELIVERY"
+    HOLD = "HOLD"
+    REPACK_AND_DELIVER = "REPACK_AND_DELIVER"
+    ACKNOWLEDGE_CHARGES = "ACKNOWLEDGE_CHARGES"
+    ACCEPT_WEIGHT = "ACCEPT_WEIGHT"
+    DISPUTE_WEIGHT = "DISPUTE_WEIGHT"
+    RESCHEDULE_PICKUP = "RESCHEDULE_PICKUP"
+    CANCEL_PICKUP = "CANCEL_PICKUP"
 
 
 class DocumentType(str, Enum):
@@ -277,6 +357,23 @@ class PaymentDetails(SQLModel, table=True):
 
     chargeable_weight: float = Field(default=0.0, description="Weight used for billing calculation")
 
+    # Migration M-B3 (5b3c9d4eaf03): exact NUMERIC(12,2) money, read through core/money.to_money().
+    freight_collectible: Decimal = Field(
+        default=FREIGHT_COLLECTIBLE_DEFAULT,
+        sa_column=Column(
+            sa.Numeric(12, 2), nullable=False, server_default=sa.text("0")
+        ),
+        description="TO_PAY freight the rider still has to collect at the door (falls when the merchant pays it via Freight Collection).",
+    )
+
+    # Migration M-P1 (9a1b2c3d4e5f): SERVER-ONLY carrier cost (what Delhivery / the Prime
+    # transporter charges Logismart + the inputs used). Never on a read schema.
+    carrier_cost: Optional[dict] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+        description="Server-only carrier cost record (pricing redesign D2); never serialised.",
+    )
+
     pickup: "PickupRequest" = Relationship(back_populates="payment_details")
 
 
@@ -331,6 +428,25 @@ class PickupRequest(SQLModel, table=True):
     # Shipment Overview (From Screenshot)
     shipment_type: ShipmentType = Field(default=ShipmentType.FORWARD)
     service_type: ServiceType = Field(default=ServiceType.SURFACE_ROAD)
+    # Migration M-P1 (9a1b2c3d4e5f): the booked carrier service; `service_type` is derived from it.
+    service_option: ServiceOption = Field(
+        default=ServiceOption.DELHIVERY_SURFACE,
+        sa_column=Column(
+            sa_Enum(
+                ServiceOption,
+                name="serviceoption",
+                native_enum=False,
+                create_constraint=False,
+                length=SERVICE_OPTION_MAX_LENGTH,
+            ),
+            nullable=False,
+        ),
+    )
+    # Migration M-P1: the carrier's own AWB that ops paste in (unique per tenant when set).
+    carrier_awb: Optional[str] = Field(
+        default=None,
+        sa_column=Column(sa.String(CARRIER_AWB_MAX_LENGTH), nullable=True),
+    )
     status: PickupStatus = Field(default=PickupStatus.DRAFT)
 
     latest_status_comment: Optional[str] = Field(default=None)
@@ -360,12 +476,49 @@ class PickupRequest(SQLModel, table=True):
         default=None, description="Mandatory if Type is REVERSE"
     )
 
+    # Reverse Logistics Doorstep Quality Check (QC) — Prevents E-Commerce & B2B Return Fraud
+    # Real-World Use Case: When a customer returns a high-value item (e.g., iPhone or car battery),
+    # 'qc_required=True' prompts the pickup rider with 'qc_notes' (IMEI/seal check) at the doorstep.
+    # If the item fails inspection, the rider rejects it at the door ('QC_FAILED' / 'REJECTED_AT_PICKUP').
+    qc_required: bool = Field(
+        default=False,
+        sa_column=sa.Column(sa.Boolean, nullable=False, server_default=sa.text("false")),
+        description="Whether a doorstep quality check (QC) is required at pickup (for REVERSE return shipments)"
+    )
+    qc_notes: Optional[str] = Field(
+        default=None,
+        description="Step-by-step inspection checklist for the pickup executive (e.g., verify serial number & unbroken seal)"
+    )
+
     ndr_reason: Optional[NdrExceptionReason] = Field(
         default=None,
         sa_column=Column(
             sa_Enum(NdrExceptionReason, name="ndrexceptionreason", create_type=True),
             nullable=True,
         )
+    )
+    # NDR bookkeeping (Delhivery parity): failed delivery / pickup attempts,
+    # the last field-agent remark, when the current exception was raised (for
+    # server-side aging) and the charge ops entered (freight collection,
+    # additional charges or weight delta) that the merchant must acknowledge.
+    ndr_attempt_count: int = Field(
+        default=0,
+        sa_column=sa.Column(sa.Integer, nullable=False, server_default=sa.text("0")),
+    )
+    ndr_remark: Optional[str] = Field(default=None, max_length=255)
+    exception_raised_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=False), nullable=True),
+    )
+    charge_amount: Optional[float] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Numeric(12, 2, asdecimal=False), nullable=True),
+    )
+    # Migration M-B3 (5b3c9d4eaf03): boxes actually handed over on a Short Shipment
+    # partial delivery (NULL = not a partial delivery; CHECK >= 0 in the DB).
+    delivered_box_count: Optional[int] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Integer, nullable=True),
     )
 
     # Scheduling
@@ -374,6 +527,20 @@ class PickupRequest(SQLModel, table=True):
     # Foreign Keys
     pickup_address_id: uuid.UUID = Field(foreign_key="addresses.id")
     delivery_address_id: uuid.UUID = Field(foreign_key="addresses.id")
+
+    # Fleet Pickup / Truck Run-Sheet Linkage ('manifests.id' with ON DELETE SET NULL)
+    # Real-World Use Case: Links multiple B2B LRs ('pickups') to one scheduled truck ('Manifest').
+    # Uses 'ondelete="SET NULL"' so if a truck manifest is cancelled or deleted, the customer's paid
+    # shipments are never cascade-deleted—they safely detach ('manifest_id = None') and return to 'OPEN'.
+    manifest_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.Uuid,
+            sa.ForeignKey("manifests.id", ondelete="SET NULL"),
+            nullable=True
+        ),
+        description="Optional parent Fleet Manifest (Run-Sheet) ID; SET NULL on manifest cancellation/deletion"
+    )
 
     # Relationships
     packages: List[PackageDetails] = Relationship(back_populates="pickup")
@@ -384,6 +551,7 @@ class PickupRequest(SQLModel, table=True):
     )
 
     activities: List["ShipmentActivity"] = Relationship(back_populates="pickup")
+    manifest: Optional["Manifest"] = Relationship(back_populates="pickups")
 
     # Address Loading
     pickup_address: Address = Relationship(
@@ -401,9 +569,15 @@ class PickupRequest(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # PO Details
+    # Enterprise B2B Purchase Order (PO) Details
+    # Real-World Use Case: Large retail warehouses (Reliance Retail, Amazon FBA, DMart) reject trucks at
+    # the gate if the supplier's PO has expired ('po_expiry_date').
     po_number: Optional[str] = Field(default=None, max_length=255)
     po_date: Optional[date] = Field(default=None)
+    po_expiry_date: Optional[date] = Field(
+        default=None,
+        description="Enterprise consignee Purchase Order (PO) cutoff date after which dock delivery is rejected"
+    )
 
     # Appointment Slots
     appointment_id: Optional[str] = Field(default=None, max_length=100)
@@ -423,6 +597,42 @@ class PickupRequest(SQLModel, table=True):
             sa_Enum(PickupStrategy, name="pickupstrategy"),
             nullable=True,
         )
+    )
+
+    # B2B Heavy Cargo Operational Flags (Dock Blind Pickups & FOV Transit Insurance)
+    # 1. 'is_blind_pickup' + 'estimated_box_count': Allows factory staff to dispatch N cartons on a truck
+    #    without measuring LxWxH at the loading dock; true weight is billed later at the Hub DWS laser scale.
+    # 2. 'is_carriers_risk': Toggles Owner's Risk (False -> ₹0 surcharge, shipper's own insurance) vs
+    #    Carrier's Risk (True -> Logismart assumes damage liability and bills 'b2b_fov_percent' FOV fee).
+    is_blind_pickup: bool = Field(
+        default=False,
+        sa_column=sa.Column(sa.Boolean, nullable=False, server_default=sa.text("false")),
+        description="Toggle to hide package dimensions and default weight for blind factory dock pickups"
+    )
+    estimated_box_count: Optional[int] = Field(
+        default=None,
+        nullable=True,
+        description="Mandatory carton count estimate when is_blind_pickup is True so hub dispatches right truck size"
+    )
+    is_carriers_risk: bool = Field(
+        default=False,
+        sa_column=sa.Column(sa.Boolean, nullable=False, server_default=sa.text("false")),
+        description="True = Carrier's Risk (adds FOV surcharge); False = Owner's Risk (₹0 insurance fee)"
+    )
+
+    # Last-Mile 6-Digit OTP Proof of Delivery (POD) — Eliminates Fake Delivery Disputes
+    # Real-World Use Case: Generated automatically when status transitions to 'IN_TRANSIT'.
+    # Field driver cannot mark shipment 'COMPLETED' without entering the consignee's 6-digit 'delivery_otp'
+    # and capturing 'pod_received_by' (name/designation of the person who accepted the cargo).
+    delivery_otp: Optional[str] = Field(
+        default=None,
+        max_length=6,
+        description="6-digit secret OTP generated on IN_TRANSIT; mandatory to transition shipment to COMPLETED"
+    )
+    pod_received_by: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Full name / designation of the consignee representative who provided the OTP at delivery"
     )
 
 

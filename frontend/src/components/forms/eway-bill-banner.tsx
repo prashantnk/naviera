@@ -1,3 +1,5 @@
+"use client";
+
 // frontend/src/components/forms/eway-bill-banner.tsx
 
 import React, { useState } from "react";
@@ -34,7 +36,7 @@ export const EWayBillBanner: React.FC<EWayBillBannerProps> = ({ tenant }) => {
             <button
               type="button"
               onClick={handleCopy}
-              className="text-slate-400 hover:text-indigo-600 transition-all active:scale-90 focus:outline-hidden"
+              className="text-slate-400 hover:text-primary transition-all active:scale-90 focus:outline-hidden"
               title="Copy GSTIN"
             >
               {copied ? (
@@ -49,7 +51,7 @@ export const EWayBillBanner: React.FC<EWayBillBannerProps> = ({ tenant }) => {
             href="https://ewaybillgst.gov.in/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center font-bold text-indigo-600 hover:text-indigo-700 hover:underline gap-0.5 transition-colors"
+            className="inline-flex items-center font-bold text-primary hover:underline gap-0.5 transition-colors"
           >
             E-Way Bill Portal
             <ExternalLink className="h-3 w-3" />
@@ -64,7 +66,7 @@ export const EWayBillBanner: React.FC<EWayBillBannerProps> = ({ tenant }) => {
             href="https://ewaybillgst.gov.in/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center font-bold text-indigo-600 hover:text-indigo-700 hover:underline gap-0.5 transition-colors"
+            className="inline-flex items-center font-bold text-primary hover:underline gap-0.5 transition-colors"
           >
             E-Way Bill Portal
             <ExternalLink className="h-3 w-3" />

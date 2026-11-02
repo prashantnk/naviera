@@ -32,6 +32,16 @@ ruff = ">=0.14.0,<0.15.0"
 isort = ">=7.0.0,<8.0.0"
 pre-commit = ">=4.3.0,<5.0.0"
 supabase = "^2.22.0"
+aiosqlite = "^0.22.1"
+hypothesis = ">=6.170.0,<7.0.0"
+
+[tool.poetry.group.e2e]
+optional = true
+
+[tool.poetry.group.e2e.dependencies]
+# UI golden layer (backend/scripts/tests/ui_golden): attaches over CDP to Chrome :9224, no browser download.
+pytest-playwright = "^0.7"
+pypdf = "^5"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -18,4 +18,17 @@ export class SystemService {
             url: '/health',
         });
     }
+    /**
+     * Readiness Check
+     * G-06: readiness = the process is up AND the database answers `SELECT 1`. Point uptime
+     * monitoring / alerts here (`/health` stays green while the database is down).
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static readinessCheck(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/ready',
+        });
+    }
 }

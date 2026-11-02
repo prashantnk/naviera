@@ -11,105 +11,118 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { getSupabaseClient } from "@/lib/supabase";
+import { signOutAndRedirect } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
-  Bell,
+  BookOpenCheck,
+  Building2,
+  CheckCircle2,
   Globe,
-  Home,
   LogOut,
   MapPin,
   Menu,
-  Package,
   Package2,
-  PlusCircle,
-  Search,
   Settings,
-  User,
+  ShieldCheck,
+  UserPen,
+  Users,
   X,
-  ArrowUpRight,
+  Wallet,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useUser } from "@/components/auth/auth-guard";
-import { Users } from "lucide-react";
+import { ServiceScope, UserRole } from "@/api_client";
+import { WalletHeaderPill } from "@/components/wallet/wallet-header-pill";
+import { FlowSwitcher } from "@/components/blocks/flow-switcher";
+import { QuickActionsMenu } from "@/components/blocks/quick-actions-menu";
+import { NavMenu } from "@/components/blocks/nav-menu";
+import { ProfileDialog } from "@/components/blocks/profile-dialog";
+import { AdminCoordinationGuideModal } from "@/components/blocks/admin-coordination-guide-modal";
+import { getInitials } from "@/lib/initials";
 
 export function AppHeader() {
   const { routeTo, tenantSlug, tenant } = useTenant();
-  const router = useRouter();
-  const pathname = usePathname();
   const brand = tenant?.settings?.brand;
-  const supabase = getSupabaseClient(tenantSlug);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push(routeTo("/login"));
+    await signOutAndRedirect(tenantSlug, routeTo("/login"));
   };
 
-  const { isAdmin } = useUser();
+  const { user, capabilities, serviceScope } = useUser();
 
-  const baseNavItems = [
-    { name: "Dashboard", href: "/dashboard", icon: Home },
-    { name: "Shipments", href: "/shipments", icon: Package },
-    { name: "Forward Shipment", href: "/shipments/new/forward", icon: ArrowUpRight },
-    { name: "Create Booking", href: "/shipments/new", icon: PlusCircle },
-    { name: "Address Book", href: "/address-book", icon: MapPin },
-  ];
+  const userDisplayName = user?.full_name?.trim()
+    ? user.full_name.trim()
+    : user?.email
+    ? user.email
+        .split("@")[0]
+        .replace(/[._-]+/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+    : "Account User";
 
-  const adminNavItems = [
-    { name: "Team & Access", href: "/team", icon: Users },
-    { name: "Settings", href: "/settings", icon: Settings },
-  ];
+  const userInitials = getInitials(user?.full_name, user?.email);
 
-  const navItems = isAdmin ? [...baseNavItems, ...adminNavItems] : baseNavItems;
+  const roleLabel =
+    user?.role === UserRole.OWNER
+      ? "Workspace Owner"
+      : user?.role === UserRole.ADMIN
+        ? "Admin"
+        : user?.role === UserRole.OPERATIONS_USER
+          ? "Operations-User"
+          : user?.role === UserRole.SUPPORT_USER
+            ? "Support-User"
+            : user?.role === UserRole.READ_ONLY_USER
+              ? "Read access Only-User"
+              : "Customer";
 
-  const checkIsActive = (href: string) => {
-    const resolvedHref = routeTo(href);
-    if (!pathname) return false;
-    if (pathname === resolvedHref) return true;
-    if (
-      href === "/shipments" &&
-      pathname.startsWith(`${resolvedHref}/`) &&
-      !pathname.includes("/new")
-    )
-      return true;
-    return false;
-  };
+  const scopeLabel =
+    serviceScope === ServiceScope.BOTH
+      ? "Unified (B2C + B2B)"
+      : serviceScope === ServiceScope.B2B
+        ? "B2B Heavy Cargo"
+        : "B2C Express";
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 shadow-sm">
-      <div className="flex md:hidden items-center mr-2 shrink-0">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-2.5 sm:px-4 md:px-6 sticky top-0 z-40 shadow-sm">
+      <div className="flex md:hidden items-center mr-1 sm:mr-2 shrink-0">
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Open navigation menu"
           onClick={() => setIsMobileMenuOpen(true)}
         >
           <Menu className="h-5 w-5 text-slate-600" />
         </Button>
       </div>
 
-      <div className="flex items-center flex-1 max-w-md">
-        <div className="relative w-full group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
-          <Input
-            type="text"
-            placeholder="Search Tracking ID..."
-            className="w-full pl-9 pr-12 bg-slate-100/50 border-slate-200 focus-visible:bg-white focus-visible:ring-primary h-9 rounded-lg text-sm shadow-inner transition-all"
-          />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 pointer-events-none">
-            <kbd className="inline-flex h-5 items-center gap-1 rounded border bg-white px-1.5 font-mono text-[10px] font-medium text-slate-400 shadow-sm">
-              <span className="text-xs">⌘</span>K
-            </kbd>
-          </div>
-        </div>
-      </div>
+      {/* Spacer keeps actions right-aligned now that the tracking search is removed */}
+      <div className="flex-1 min-w-0" />
 
-      {/* 🔥 USER ACTIONS */}
-      <div className="flex items-center gap-3 shrink-0 ml-4">
+      {/* USER ACTIONS */}
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-1 sm:ml-4">
+        <QuickActionsMenu />
+
+        <WalletHeaderPill />
+
+        {/* STAFF DELHIVERY CO-ORDINATION GUIDE */}
+        {capabilities.isStaff && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsGuideOpen(true)}
+            data-testid="header-delhivery-guide-btn"
+            className="hidden sm:flex h-9 border-slate-200 text-slate-700 hover:text-primary font-semibold"
+          >
+            <BookOpenCheck className="mr-1.5 h-4 w-4 text-primary" />
+            Delhivery Guide
+          </Button>
+        )}
+
         {/* EXPOSED PUBLIC WEBSITE LINK */}
         <Button
           variant="outline"
@@ -123,33 +136,132 @@ export function AppHeader() {
           </Link>
         </Button>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-slate-500 hidden sm:flex h-9 w-9 rounded-full hover:bg-slate-100"
-        >
-          <Bell className="h-4 w-4" />
-        </Button>
+        {/* FLOW SWITCHER (B2C Express ⇄ B2B Cargo) — beside the profile, like Delhivery One */}
+        <FlowSwitcher variant="header" />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <div className="h-9 w-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors shadow-sm">
-              <User className="h-4 w-4" />
-            </div>
+            <button
+              type="button"
+              aria-label="My Account"
+              className="h-9 px-1.5 sm:px-2.5 rounded-full bg-slate-100 border border-slate-200 flex items-center gap-2 text-slate-700 cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-colors shadow-2xs"
+            >
+              <div className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[11px] font-bold shrink-0">
+                {userInitials}
+              </div>
+              <span className="hidden lg:inline-block text-xs font-semibold max-w-[120px] truncate">
+                {userDisplayName}
+              </span>
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="w-56 rounded-xl shadow-lg"
+            className="w-72 sm:w-80 rounded-2xl shadow-xl border-slate-200 p-2"
           >
-            <DropdownMenuLabel className="font-semibold text-slate-800">
-              My Account
+            <DropdownMenuLabel className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-1.5 font-normal">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shadow-sm shrink-0">
+                  {userInitials}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-slate-900 truncate">
+                      {userDisplayName}
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full shrink-0">
+                      <CheckCircle2 className="h-2.5 w-2.5" />
+                      Active
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 break-all leading-snug">
+                    {user?.email || "Authenticated User"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-slate-200/80 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-white rounded-lg p-2 border border-slate-100">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 block">
+                    Role
+                  </span>
+                  <span className="font-bold text-slate-800 flex items-center gap-1 mt-0.5 truncate">
+                    <ShieldCheck className="h-3 w-3 text-primary shrink-0" />
+                    {roleLabel}
+                  </span>
+                </div>
+                <div className="bg-white rounded-lg p-2 border border-slate-100">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 block">
+                    Service Scope
+                  </span>
+                  <span className="font-bold text-slate-800 block mt-0.5 truncate">
+                    {scopeLabel}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-2 bg-white rounded-lg px-2.5 py-1.5 border border-slate-100 flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-medium flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  Workspace
+                </span>
+                <span className="font-bold text-slate-800 truncate max-w-[160px]">
+                  {tenant?.name || tenantSlug}
+                </span>
+              </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
+
             <DropdownMenuItem
-              className="text-red-600 cursor-pointer font-medium focus:text-red-700 focus:bg-red-50"
+              className="cursor-pointer rounded-lg py-2"
+              onSelect={() => setIsProfileOpen(true)}
+            >
+              <UserPen className="mr-2.5 h-4 w-4 text-slate-500" />
+              <span>My profile</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
+              <Link href={routeTo("/wallet")} className="flex items-center">
+                <Wallet className="mr-2.5 h-4 w-4 text-slate-500" />
+                <span>Wallet & Billing Ledger</span>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
+              <Link href={routeTo("/address-book")} className="flex items-center">
+                <MapPin className="mr-2.5 h-4 w-4 text-slate-500" />
+                <span>Saved Address Book</span>
+              </Link>
+            </DropdownMenuItem>
+
+            {capabilities.canManageTeam && (
+              <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
+                <Link href={routeTo("/team")} className="flex items-center">
+                  <Users className="mr-2.5 h-4 w-4 text-slate-500" />
+                  <span>Team & Role Scopes</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {capabilities.canManageSettings && (
+              <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
+                <Link href={routeTo("/settings")} className="flex items-center">
+                  <Settings className="mr-2.5 h-4 w-4 text-slate-500" />
+                  <span>Workspace Settings</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2 md:hidden">
+              <Link href={routeTo("/")} className="flex items-center">
+                <Globe className="mr-2.5 h-4 w-4 text-slate-500" />
+                <span>Public Website</span>
+              </Link>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuItem
+              className="text-red-600 cursor-pointer font-semibold focus:text-red-700 focus:bg-red-50 rounded-lg py-2"
               onClick={handleLogout}
             >
-              <LogOut className="mr-2 h-4 w-4" />
+              <LogOut className="mr-2.5 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -191,34 +303,12 @@ export function AppHeader() {
               </Button>
             </div>
 
-            <nav className="flex-1 py-6 px-4 space-y-1.5 overflow-y-auto">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 px-2">
-                Menu
-              </div>
-              {navItems.map((item) => {
-                const isActive = checkIsActive(item.href);
-                return (
-                  <Link
-                    key={item.name}
-                    href={routeTo(item.href)}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium",
-                      isActive
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-100"
-                    )}
-                  >
-                    <item.icon
-                      className={cn(
-                        "h-4 w-4",
-                        isActive ? "text-primary-foreground" : "text-slate-500"
-                      )}
-                    />
-                    {item.name}
-                  </Link>
-                );
-              })}
+            <div className="px-4 pt-4 shrink-0">
+              <FlowSwitcher variant="drawer" />
+            </div>
+
+            <nav className="flex-1 py-4 px-4 overflow-y-auto">
+              <NavMenu isExpanded onNavigate={() => setIsMobileMenuOpen(false)} />
             </nav>
 
             {/* MOBILE PUBLIC LINK */}
@@ -240,6 +330,10 @@ export function AppHeader() {
             </div>
           </div>
         </div>
+      )}
+      <ProfileDialog open={isProfileOpen} onOpenChange={setIsProfileOpen} />
+      {capabilities.isStaff && (
+        <AdminCoordinationGuideModal open={isGuideOpen} onOpenChange={setIsGuideOpen} />
       )}
     </header>
   );

@@ -1,162 +1,89 @@
 # Naviera Backend 🚢
 
-This directory contains the FastAPI backend for the Naviera logistics platform. It is built with Python 3.11, SQLModel, and Alembic, connecting to a PostgreSQL database hosted on Supabase.
+FastAPI backend of the Naviera logistics platform: Python 3.11, SQLModel, Alembic, PostgreSQL on Supabase
+(through PgBouncer, port 6543). Multi-tenant: every repository query filters by `tenant_id`.
 
-The application is designed to be multi-tenant, with data isolation enforced at the database level.
-
----
-
-## 🚀 Development Environment
-
-This project is configured with a fully automated development environment using **Dev Containers**.
-
-**The recommended way to work on this project is to use GitHub Codespaces.**
-
-When you open this repository in a Codespace, it will automatically:
-
-1.  Build a container with the correct Python version and all necessary tools (Poetry, Starship, etc.).
-2.  Install all Python dependencies by running `poetry install`.
-3.  Configure your VS Code editor with the recommended extensions and settings.
-
-You can start coding immediately without any manual setup.
+Operational procedures (fork bootstrap, deploy order, migrations, golden suite, live wipe, go-live checklist)
+live in [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md).
 
 ---
 
-## 💻 Local Development Setup
+## Layout
 
-If you prefer to work on your local machine, follow these steps.
+| Path | Role (Spring analogy) |
+|---|---|
+| `app/api/v1/endpoints/` | Route controllers + dependency injection (`@RestController`) |
+| `app/services/pricing/` | Multi-carrier pricing package (`quote_service.py`, `booking.py`, `sell_price.py`, `carrier_billing.py`, `delhivery.py` / `delhivery_client.py` for B2C, `delhivery_b2b.py` / `delhivery_b2b_client.py` for B2B Cargo LTL, `prime.py` for Logismart Prime, plus `fake_delhivery.py` / `fake_delhivery_b2b.py` for `logismart-test`) |
+| `app/services/` | Business logic and transactions (`@Service`). `repricing.py` (`RepricingService`) is the only writer of price columns; `shipment_lifecycle.py` owns the status-transition map (validate every status change through it); `integrity_audit.py` backs `GET /api/v1/wallet/audit-integrity` |
+| `app/repositories/` | Database access (`JpaRepository`), always tenant-filtered |
+| `app/models/`, `app/schemas/v1/` | SQLModel tables (`@Entity`) and request/response models (DTOs) |
+| `app/core/` | Settings, DB engine (`NullPool` + PgBouncer-safe statement names), auth dependencies, `money.py` (Decimal, half-up to the paisa), `idempotency.py` |
+| `alembic/versions/` | Migrations (raw SQL for enum changes) |
+| `scripts/temporal_hooks_worker.py` | Background worker (all tenants) |
+| `scripts/seed_prime_zones.py`, `scripts/import_prime_lanes.py`, `scripts/migrate_pricing_policy.py` | Logismart Prime zone/pincode seeder, Sheet1 lane importer, and pricing-policy migration (all dry run by default) |
+| `scripts/seed_logismart_test.py`, `scripts/tenant_data_core.py`, `scripts/wipe_tenant_test_data.py`, `scripts/prepare_logismart_handover.py` | Test-tenant seed, shared FK-ordered delete core, one-time live wipe, demo cleanup (all dry run by default) |
+| `scripts/run_golden.sh`, `scripts/tests/golden_journeys/`, `scripts/tests/ui_golden/` | Golden suite: API journeys and the Playwright click-through layer on `logismart-test` |
+| `scripts/tests/` (other files) | Unit and integration tests |
 
-### 1. Prerequisites
+## Setup (GitHub Codespaces / Dev Containers)
 
--   Python 3.11
--   [Poetry](https://python-poetry.org/docs/#installation) for dependency management.
+In GitHub Codespaces, `.devcontainer/post-create.sh` automatically configures `poetry config virtualenvs.in-project true`,
+runs `poetry install --with e2e`, and populates `backend/.env` from Codespaces secrets (or copies `.env.example`).
 
-### 2. Initial Setup
-
-All commands should be run from the `naviera/backend/` directory.
-
-1.  **Create Your Environment File**:
-    This application requires a `.env` file for configuration. Copy the example file to create your own local version.
-
-    ```bash
-    cp .env.example .env
-    ```
-
-2.  **Configure the Database URL**:
-    Open the newly created `.env` file. You must set the `DATABASE_URL` to your **Supabase Connection Pooler string**. Using the pooler is required for compatibility.
-
-    ```env
-    # backend/.env
-    DATABASE_URL=postgresql+asyncpg://postgres.[your-project-ref]:[YOUR-PASSWORD]@[aws-0-ap-south-1.pooler.supabase.com:5432/postgres]
-    DB_ECHO_LOG=True # Optional: Set to True to see all SQL queries
-    ```
-
-3.  **Install Dependencies**:
-    Poetry will create a virtual environment (`.venv`) and install all packages.
-
-    ```bash
-    poetry install
-    ```
-
-4.  **Apply Database Migrations**:
-    This command connects to your database and creates all the necessary tables (`tenant`, `user`, etc.).
-
-    ```bash
-    poetry run alembic upgrade head
-    ```
-
-5.  **Seed the Database**:
-    This script populates the database with initial data (e.g., the first tenant and owner). It is safe to run multiple times.
-    ```bash
-    poetry run seed
-    ```
-
-### 3. Running the Application
-
-Once the setup is complete, start the FastAPI development server:
+Manual setup from `naviera/backend/`:
 
 ```bash
-# For local development
-poetry run uvicorn app.main:app --reload
-
-# For Codespaces
-poetry run uvicorn app.main:app --host 0.0.0.0 --reload
+export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+cp .env.example .env        # fill in every value; do not add keys that are not Settings fields
+poetry config virtualenvs.in-project true
+poetry install --with e2e   # includes pypdf + pytest-playwright for PDF label & UI golden tests
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+poetry run python -m scripts.temporal_hooks_worker             # worker, second terminal
 ```
 
-The API will be available at `http://127.0.0.1:8000`. The `--reload` flag automatically restarts the server when you save code changes.
+`backend/.env` must contain only fields of `Settings` in `app/core/config.py` (pydantic-settings rejects
+unknown keys and the app will not start). Test and tooling variables (`GOLDEN_TENANT_SLUG`,
+`GOLDEN_TEST_PASSWORD`, `UI_*`) are shell exports; see the bottom of [`.env.example`](.env.example).
 
----
+## Migrations (Alembic)
 
-## 🗃️ Database Migrations (Alembic)
+The current chain, the five lean migrations (M-B1 to M-B4, M-C1), fork bootstrap notes and rollback notes are in
+[runbook §3](../docs/RUNBOOK.md#3-migrations).
 
-Alembic manages all changes to our database schema.
+Writing a new migration:
 
-### The Workflow
+1. Change the models in `app/models/`; import any **new** model module in `app/models/__init__.py` and
+   `alembic/env.py` so autogenerate sees it.
+2. `poetry run alembic revision --autogenerate -m "<what changes>"`, then review the file:
+   - add `import sqlmodel.sql.sqltypes` if SQLModel types are used;
+   - autogenerate does **not** detect enum value changes: write raw SQL (`ALTER TYPE ... ADD VALUE IF NOT
+     EXISTS`) inside `op.get_context().autocommit_block()`; PostgreSQL cannot drop enum values, so the
+     downgrade must map rows back and rebuild the type (see `7d5ebf60c105`);
+   - dropping a table/column that owns an enum needs an explicit `DROP TYPE` in the downgrade;
+   - new tables: `tenant_id NOT NULL` + FK + an index starting with `tenant_id`; money as `NUMERIC(12,2)`.
+3. Keep migrations additive (expand only) so the running code keeps working; on a shared database apply one
+   approved revision at a time with `poetry run alembic upgrade <revision>`; confirm with
+   `poetry run alembic current`.
 
-1.  **Make changes** to your model files in `app/models/`.
-2.  **Register the Model:** If you created a *new* file (e.g. `app/models/new_feature.py`), you **must** import it into `alembic/env.py` before running autogenerate, or Alembic won't see your changes:
-    ```python
-    # backend/alembic/env.py
-    from app.models import tenants, pickups, new_feature # <-- Add it here
-    ```
-3.  **Generate a new migration script** that captures these changes.
-4.  **Review** the generated script for correctness (crucial for Enums and custom types).
-5.  **Apply** the migration to the database.
+## Tests
 
-### Common Commands
+```bash
+poetry run ruff check .
+poetry run pytest scripts/tests --collect-only -q    # no database
+poetry run alembic upgrade head --sql > /dev/null    # offline migration SQL check, no database
+GOLDEN_TEST_PASSWORD=... bash scripts/run_golden.sh  # full golden run on logismart-test (runbook §5)
+```
 
--   **Generate a new migration:**
+`poetry run pytest scripts/tests` also runs DB-backed suites. They are guarded to the `logismart-test` tenant,
+need the API on `:8000`, and must not run concurrently with another DB-touching session.
 
-    ```bash
-    # Always include a descriptive message with -m
-    poetry run alembic revision --autogenerate -m "Add last_login_at to user model"
-    ```
+## Production quick reference (Render)
 
-    **Critical Checklist (Mandatory):** After generating, always open the new file in `alembic/versions/` and check for the following:
-
-    *   **Missing SQLModel Imports:** Alembic often forgets to import SQLModel's custom string types. Ensure this exact line is at the top of your migration file:
-        ```python
-        import sqlmodel.sql.sqltypes
-        ```
-    *   **Dropping Enums (Crucial for Postgres):** If you delete a table that uses an Enum, or drop an Enum column, SQLAlchemy's autogenerator will NOT drop the Enum type from Postgres. You will get "Type already exists" errors if you ever try to recreate it. You must manually add a raw SQL drop execution in the `downgrade` function:
-        ```python
-        def downgrade() -> None:
-            op.drop_table('my_table')
-            # YOU MUST MANUALLY ADD THIS FOR ENUMS:
-            op.execute("DROP TYPE IF EXISTS userrole;")
-        ```
-
--   **Apply migrations:**
-
-    ```bash
-    # Applies all migrations up to the latest version
-    poetry run alembic upgrade head
-    ```
-
--   **Revert migrations:**
-
-    ```bash
-    # Revert the very last migration
-    poetry run alembic downgrade -1
-
-    # Revert all migrations (for a clean slate)
-    poetry run alembic downgrade base
-    ```
-
-### Troubleshooting: The "Empty Migration" Problem
-
-If you run `poetry run alembic revision --autogenerate` and it produces an empty script (with just `pass`), it means Alembic's history is out of sync with the database. This usually happens after a failed or deleted migration.
-
-If you run `poetry run alembic current`, you should see the current revision number.
-
-**The definitive fix is to manually reset the database state:**
-
-1.  Go to the Supabase dashboard and use the **Table Editor** to **delete the `alembic_version` table**. Also, delete any other application tables (`tenant`, `user`) if they are in an incorrect state.
-2.  Delete the incorrect/empty migration script file from your local `alembic/versions/` folder.
-3.  Re-run the `alembic revision --autogenerate` command again. It will now correctly generate the script.
-
-
-### 🚀 Production Deployment Quick Reference (Render)
-* **Runtime & Commands:** Python 3 environment. Build Command: `pip install poetry && poetry install`. Start Command: `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT` & we can use `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log` if we don't want to log any requests from uvicorn.
-* **Database Connection:** `DATABASE_URL` must use the Supabase Connection Pooler (Port `6543`), and special characters in the database password must be URL-encoded (e.g., `$` becomes `%24`). `DB_ECHO_LOG` must be `"False"`.
-* **Telemetry (Logfire):** Auto-tracing is strictly limited to `["app.api", "app.services", "app.repositories"]`, and the `/health` endpoint is filtered from Uvicorn logs to prevent quota drain on the free tier.
+- **Web service:** build `pip install poetry && poetry install --only main`; start
+  `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log`.
+- **Background worker:** same repo and **same commit** as the web service; start
+  `poetry run python -m scripts.temporal_hooks_worker`.
+- **Database:** `DATABASE_URL` and `ALEMBIC_DATABASE_URL` use the Supabase pooler (port `6543`) with the password
+  URL-encoded (`$` → `%24`). `DB_ECHO_LOG=False`.
+- **Telemetry (Logfire):** auto-tracing limited to `app.api`, `app.services`, `app.repositories`; `/health` is
+  filtered from Uvicorn logs.

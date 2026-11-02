@@ -12,13 +12,14 @@ export type PaymentDetailsCreate = {
     base_freight?: number;
     tax_amount?: number;
     total_logistics_cost?: number;
+    chargeable_weight?: number;
     pricing_breakdown?: Record<string, any>;
     shipment_value?: number;
     shipment_tax_value?: number;
     shipment_total_value?: number;
     hsn_code?: (string | null);
-    invoice_number?: (string | null);
+    invoice_numbers?: (Array<string> | null);
     invoice_date?: (string | null);
-    eway_bill_number?: (string | null);
+    eway_bill_numbers?: (Array<string> | null);
 };
 

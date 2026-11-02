@@ -3,7 +3,11 @@
 
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
-import { getSupabaseClient } from "@/lib/supabase";
+import {
+  clearStoredSession,
+  getSupabaseClient,
+  signOutAndRedirect,
+} from "@/lib/supabase";
 import {
   LayoutDashboard,
   LogOut,
@@ -17,9 +21,11 @@ import Link from "next/link";
 import { usePathname, useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+/** `/users/me` status meaning the stored token is invalid or expired. */
+const HTTP_UNAUTHORIZED = 401;
+
 export function Header() {
   const { tenant, routeTo } = useTenant();
-  const pathname = usePathname();
   const brand = tenant?.settings?.brand;
   const contact = tenant?.settings?.contact;
   const announcement = tenant?.settings?.announcement_bar; // 🔥 Extract from DB
@@ -36,16 +42,37 @@ export function Header() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (session) setIsLoggedIn(true);
+      if (!session) {
+        setIsLoggedIn(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/v1/users/me", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "X-Tenant-Slug": tenantSlug,
+          },
+        });
+        if (res.ok) {
+          setIsLoggedIn(true);
+          return;
+        }
+        // Only a rejected token ends the session; a 5xx during a backend restart must not
+        // log the user out of the app just because they visited a marketing page.
+        if (res.status === HTTP_UNAUTHORIZED) {
+          clearStoredSession(tenantSlug);
+        }
+        setIsLoggedIn(false);
+      } catch {
+        setIsLoggedIn(false);
+      }
     };
-    checkAuth();
+    void checkAuth();
   }, [tenantSlug]);
 
   const handleLogout = async () => {
-    const supabase = getSupabaseClient(tenantSlug);
-    await supabase.auth.signOut();
     setIsLoggedIn(false);
-    window.location.reload();
+    await signOutAndRedirect(tenantSlug, window.location.pathname);
   };
 
   return (
@@ -140,7 +167,7 @@ export function Header() {
                 <Button
                   variant="ghost"
                   onClick={handleLogout}
-                  className="font-semibold text-slate-500 hidden lg:flex hover:text-red-600 hover:bg-red-50"
+                  className="font-semibold text-slate-500 hidden lg:flex hover:text-primary hover:bg-primary/10"
                 >
                   <LogOut className="h-4 w-4 mr-2" /> Logout
                 </Button>
@@ -151,11 +178,7 @@ export function Header() {
                 asChild
                 className="font-bold text-slate-700 hidden lg:flex rounded-full px-6 border-slate-300 hover:bg-slate-100"
               >
-                <Link
-                  href={`${routeTo("/login")}?next=${encodeURIComponent(
-                    pathname
-                  )}`}
-                >
+                <Link href={routeTo("/login")}>
                   <UserCircle2 className="h-4 w-4 mr-2" /> Login
                 </Link>
               </Button>
@@ -166,7 +189,7 @@ export function Header() {
               asChild
               className="font-bold shadow-md rounded-full px-6 bg-primary text-primary-foreground hover:opacity-90 hidden md:flex"
             >
-              <Link href={routeTo("/shipments/new")}>Book Your Shipment</Link>
+              <Link href={routeTo("/shipments/new/forward")}>Book Your Shipment</Link>
             </Button>
           </div>
 
@@ -174,6 +197,9 @@ export function Header() {
             variant="ghost"
             size="icon"
             className="lg:hidden"
+            aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={isMobileMenuOpen}
+            data-testid="header.mobile-menu-toggle"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? (
@@ -241,7 +267,7 @@ export function Header() {
                     variant="ghost"
                     size="lg"
                     onClick={handleLogout}
-                    className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="w-full justify-start text-primary hover:text-primary/90 hover:bg-primary/10"
                   >
                     <LogOut className="h-5 w-5 mr-2" /> Logout
                   </Button>
@@ -253,11 +279,7 @@ export function Header() {
                   asChild
                   className="w-full justify-start border-slate-300"
                 >
-                  <Link
-                    href={`${routeTo("/login")}?next=${encodeURIComponent(
-                      pathname
-                    )}`}
-                  >
+                  <Link href={routeTo("/login")}>
                     <UserCircle2 className="h-5 w-5 mr-2" /> Customer Login
                   </Link>
                 </Button>
@@ -268,7 +290,7 @@ export function Header() {
                 asChild
                 className="w-full bg-primary text-primary-foreground hover:opacity-90"
               >
-                <Link href={routeTo("/shipments/new")}>Book Your Shipment</Link>
+                <Link href={routeTo("/shipments/new/forward")}>Book Your Shipment</Link>
               </Button>
             </div>
           </div>

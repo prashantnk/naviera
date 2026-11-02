@@ -69,6 +69,13 @@ export interface EscalationLevel {
   email: string;
 }
 
+/** Grievance Officer contact, stored under `settings.contact` (public allow-list). */
+export interface GrievanceOfficerSettings {
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
 // Now add them to the main TenantSettings interface:
 export interface TenantSettings {
   oAuthSignInEnabled?: boolean;
@@ -76,6 +83,7 @@ export interface TenantSettings {
     primary_color: string;
     secondary_color?: string;
     logo_url?: string;
+    show_logo?: boolean;
   };
   announcement_bar?: {
     is_active: boolean;
@@ -94,6 +102,11 @@ export interface TenantSettings {
       linkedin?: string;
       youtube?: string;
     };
+    /** Grievance Officer shown on `/grievance` (IT Rules / Consumer Protection Rules). */
+    grievance_officer?: GrievanceOfficerSettings;
+  };
+  support?: {
+    help_center_url?: string;
   };
   landing_page?: {
     blocks: PageBlock[];
@@ -102,6 +115,26 @@ export interface TenantSettings {
   about_page?: AboutPageConfig;
   services_page?: ServicesPageConfig;
   escalation_matrix?: EscalationLevel[];
+  wallet_config?: {
+    merchant_vpa?: string;
+    merchant_name?: string;
+    min_wallet_balance_b2c?: number;
+    min_wallet_balance_b2b?: number;
+    strict_finlock?: boolean;
+    auto_detect_upi?: boolean;
+    auto_detect_delay_seconds?: number;
+    gstin?: string;
+  };
+  pricing_config?: {
+    base_rate_per_kg?: number;
+    b2b_docket_charge?: number;
+    b2b_fov_percent?: number;
+    fuel_surcharge_percent?: number;
+    gst_tax_percent?: number;
+    network_surcharge?: number;
+    cod_fee_percent?: number;
+  };
+  gstin?: string;
 }
 
 export interface Tenant {

@@ -1,6 +1,7 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
-  "workbench.colorTheme": "Atom One Dark",
+  // Workspace settings for the Naviera monorepo.
+  // Applied automatically in GitHub Codespaces and in any local VS Code that opens this repo.
+  "workbench.colorTheme": "Solarized Dark",
   "editor.formatOnSave": true,
   "editor.wordWrap": "on",
   "files.exclude": {
@@ -8,6 +9,23 @@
     "**/.pytest_cache": true,
     "**/.ruff_cache": true
   },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.venv": true,
+    "frontend/src/api_client": true
+  },
+
+  // --- Backend (Python / FastAPI) ---
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
+  "python.terminal.activateEnvironment": false,
+  "python.analysis.extraPaths": ["${workspaceFolder}/backend"],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.reportUnknownMemberType": "none",
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}/backend",
+  "python.testing.pytestArgs": ["scripts/tests"],
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.codeActionsOnSave": {
@@ -15,14 +33,10 @@
       "source.organizeImports": "explicit"
     }
   },
-  "python.linting.ruffEnabled": true,
-  "python.linting.enabled": true,
-  "python.analysis.reportUnknownMemberType": "none",
-  "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.autoImportCompletions": true,
-  "python.terminal.activateEnvironment": false,
-  
-  // --- Frontend Settings ---
+
+  // --- Frontend (Next.js / TypeScript / Tailwind) ---
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "eslint.workingDirectories": ["frontend"],
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
@@ -33,6 +47,9 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "tailwindCSS.includeLanguages": {

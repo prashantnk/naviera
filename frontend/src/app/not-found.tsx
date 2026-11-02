@@ -20,7 +20,7 @@ export default function TenantNotFound() {
         </p>
         
         <div className="pt-6">
-          <Button asChild size="lg" className="h-12 px-8 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white">
+          <Button asChild size="lg" className="h-12 px-8 rounded-xl font-bold bg-primary hover:opacity-90 text-primary-foreground">
             <Link href="/">Return to Naviera Home</Link>
           </Button>
         </div>

@@ -17,11 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { User, Building2, Pencil, Trash2, MapPin, MapPinPlus } from "lucide-react";
+import { User, Building2, Pencil, Trash2, MapPin, MapPinPlus, BookUser } from "lucide-react";
 import { useMemo } from "react";
 import { Control, Path, PathValue, useFormContext, useWatch, FieldValues } from "react-hook-form";
 import { useUser } from "@/components/auth/auth-guard";
 import { AddAddressDialog, AddressFormValues } from "@/components/forms/add-address-dialog";
+import { OptionIconTile } from "@/components/ui/icon-select";
+import { ADDRESS_CATEGORY_OPTIONS, getOptionMeta } from "@/lib/form-options";
 
 export interface AddressFormValue {
   name?: string;
@@ -130,12 +132,12 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
 
       {/* STATE 1 & 2: ADDRESS SUMMARY CARD */}
       {(activeSavedAddress || activeTransientAddress) ? (
-        <div className="animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 relative hover:border-slate-300 transition-colors pr-16">
+        <div className="animate-in fade-in duration-200 min-w-0">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 relative hover:border-slate-300 transition-colors pr-16 min-w-0 overflow-hidden">
             {/* Absolute actions in the top-right */}
             <div className="absolute top-4 right-4 flex items-center gap-1.5 z-10">
               {activeTransientAddress && (
-                <AddAddressDialog
+                <AddAddressDialog testIdPrefix={`booking.${type}`}
                   onSaveTransient={handleSaveTransient}
                   defaultValues={activeTransientAddress as unknown as Partial<AddressFormValues>}
                   trigger={
@@ -257,39 +259,47 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
         </div>
       ) : (
         /* STATE 3: EMPTY SELECTOR SLATE */
-        <div className="space-y-2 animate-in fade-in duration-200">
+        <div className="space-y-2 animate-in fade-in duration-200 min-w-0">
           <span className="text-xs font-bold text-slate-700 pl-0.5">Select Address</span>
-          <div className="flex flex-col gap-3 pt-1 pb-0.5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1 pb-0.5 min-w-0">
             <FormField
               control={control}
               name={idField}
               render={({ field }) => (
-                <FormItem className="space-y-0 w-full">
+                <FormItem className="space-y-0 flex-1 min-w-0 w-full">
                   <Select
                     onValueChange={field.onChange}
                     value={(field.value as string) || undefined}
                   >
                     <FormControl>
-                      <SelectTrigger className="bg-white border-slate-200 shadow-3xs h-10 text-xs w-full">
-                        <SelectValue placeholder="Choose from Saved Address Book..." />
+                      <SelectTrigger data-testid={`booking.${type}.address-select`} className="bg-white border-slate-200 shadow-3xs h-10 text-xs w-full min-w-0 overflow-hidden">
+                        <SelectValue placeholder="Choose from saved address book" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent position="popper" className="max-h-80 max-w-[calc(100vw-2rem)]">
                       {savedAddresses.length === 0 && (
-                        <div className="p-3 text-xs text-slate-500 italic text-center">
-                          No saved addresses.
+                        <div className="flex flex-col items-center gap-1 px-3 py-5 text-center text-xs text-slate-500">
+                          <BookUser className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                          <span className="font-semibold text-slate-700">No saved addresses yet</span>
+                          <span>Use &ldquo;Add New Address&rdquo; to create one.</span>
                         </div>
                       )}
-                      {savedAddresses.map((addr) => (
-                        <SelectItem key={addr.id} value={addr.id} className="text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-900">{addr.name}</span>
-                            <span className="text-slate-400 text-[10px]">
-                              ({addr.category} - {addr.city}, {addr.state} - {addr.pincode})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {savedAddresses.map((addr) => {
+                        const categoryMeta = getOptionMeta(ADDRESS_CATEGORY_OPTIONS, addr.category);
+                        return (
+                          <SelectItem key={addr.id} value={addr.id} textValue={addr.name} className="text-xs py-2">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              {categoryMeta && <OptionIconTile option={categoryMeta} size="md" />}
+                              <div className="flex min-w-0 flex-col text-left">
+                                <span className="truncate font-semibold text-slate-900">{addr.name}</span>
+                                <span className="truncate text-[11px] text-slate-500">
+                                  {categoryMeta ? categoryMeta.label : addr.category} · {addr.city}, {addr.state} {addr.pincode}
+                                </span>
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -297,19 +307,16 @@ export function AddressFieldset<TFieldValues extends HasAddresses>({
               )}
             />
 
-            <div className="relative flex py-1 items-center w-full">
-              <div className="grow border-t border-slate-200/80"></div>
-              <span className="shrink mx-3 text-[9px] font-bold uppercase tracking-widest text-slate-400/80">OR</span>
-              <div className="grow border-t border-slate-200/80"></div>
-            </div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 shrink-0 text-center">OR</span>
 
-            <AddAddressDialog
+            <AddAddressDialog testIdPrefix={`booking.${type}`}
               onSaveTransient={handleSaveTransient}
               trigger={
                 <Button
+                  data-testid={`booking.${type}.add-new`}
                   type="button"
                   variant="outline"
-                  className="bg-white border-slate-200 hover:bg-slate-50 text-slate-900 cursor-pointer font-bold h-10 w-full flex items-center justify-center gap-2 rounded-lg shadow-3xs hover:border-slate-300 transition-all text-xs shrink-0"
+                  className="bg-white border-slate-200 hover:bg-slate-50 text-slate-900 cursor-pointer font-bold h-10 w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg shadow-3xs hover:border-slate-300 transition-all text-xs shrink-0"
                 >
                   <MapPinPlus className="h-4 w-4 text-primary" /> Add New Address
                 </Button>

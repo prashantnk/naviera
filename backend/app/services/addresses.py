@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
+from app.core.permissions import assert_not_read_only
 from app.models.pickups import Address, AddressCategory, AddressScope
 from app.models.tenants import Tenant, User, UserRole
 from app.repositories.addresses import AddressRepository
@@ -74,6 +75,7 @@ class AddressService:
         Checks for duplicates via the Deduplication Engine.
         """
         # Rule 3: Customers can only create private level addresses
+        assert_not_read_only(user, "create saved addresses")
         if user.role == UserRole.customer and payload.scope == AddressScope.TENANT:
             raise HTTPException(
                 status_code=403,
@@ -87,8 +89,10 @@ class AddressService:
             line2=payload.address_line2,
         )
 
-        # Query DB for a matching signature under this tenant
-        existing = await self.address_repo.get_address_by_signature(tenant.id, sig)
+        # Query DB for a matching signature under this tenant accessible to this user
+        existing = await self.address_repo.get_address_by_signature(
+            tenant.id, sig, user_id=user.id
+        )
         if existing:
             if existing.is_saved:
                 # Active duplicate found: Reuse and return the existing Address
@@ -117,14 +121,20 @@ class AddressService:
     async def update_saved_address(
         self, address_id: uuid.UUID, payload: AddressUpdate, user: User, tenant: Tenant
     ) -> Address:
+        assert_not_read_only(user, "edit saved addresses")
         address = await self.address_repo.get_address_by_id(address_id)
         if not address or address.tenant_id != tenant.id:
             raise HTTPException(status_code=404, detail="Address not found")
+        if not address.is_saved:
+            raise HTTPException(
+                status_code=400,
+                detail="Snapshot addresses cannot be modified.",
+            )
 
         # Role-Based Access Control:
-        # - Admins/Owners can edit any address in their tenant.
+        # - Admins/Owners/Operations can edit any address in their tenant.
         # - Customers can only edit PRIVATE addresses that they created.
-        is_admin = user.role in (UserRole.admin, UserRole.owner)
+        is_admin = user.role in (UserRole.admin, UserRole.owner, UserRole.operations_user)
         if not is_admin:
             if address.scope == AddressScope.TENANT:
                 raise HTTPException(
@@ -142,32 +152,71 @@ class AddressService:
                     detail="Standard customers are not allowed to share addresses with the B2B team."
                 )
 
+        editable_keys = (
+            "name",
+            "phone",
+            "alternate_phone",
+            "gstin",
+            "email",
+            "company_name",
+            "address_line1",
+            "address_line2",
+            "landmark",
+            "city",
+            "state",
+            "pincode",
+            "country",
+            "category",
+            "scope",
+        )
+        merged_values = {key: getattr(address, key) for key in editable_keys}
         update_data = payload.model_dump(exclude_unset=True)
         for key, value in update_data.items():
-            setattr(address, key, value)
+            if key in merged_values:
+                merged_values[key] = value
 
-        # Compute signature
+        # Compute signature for the updated values
         sig = generate_address_signature(
-            name=address.name,
-            phone=address.phone,
-            pincode=address.pincode,
-            line1=address.address_line1,
-            line2=address.address_line2,
+            name=merged_values["name"],
+            phone=merged_values["phone"],
+            pincode=merged_values["pincode"],
+            line1=merged_values["address_line1"],
+            line2=merged_values["address_line2"],
         )
+
+        # D-03: If this saved address is referenced by any shipment or pickup request,
+        # keep the original row untouched with is_saved=False so historical/in-transit
+        # shipment snapshots never mutate, and insert a fresh saved Address row.
+        if await self.address_repo.is_address_referenced(tenant.id, address.id):
+            address.is_saved = False
+            await self.address_repo.create_address(address)
+            new_address = Address(
+                **merged_values,
+                tenant_id=tenant.id,
+                user_id=address.user_id or user.id,
+                is_saved=True,
+                address_signature=sig,
+            )
+            return await self.address_repo.create_address(new_address)
+
+        for key, value in merged_values.items():
+            setattr(address, key, value)
         address.address_signature = sig
 
         # Check if another duplicate exists in the DB under this tenant (excluding current address ID)
-        existing = await self.address_repo.get_address_by_signature(tenant.id, sig)
+        existing = await self.address_repo.get_address_by_signature(
+            tenant.id, sig, user_id=user.id
+        )
         if existing and existing.id != address.id:
             if existing.is_saved:
                 # Soft delete current one, return existing active duplicate
                 address.is_saved = False
                 await self.address_repo.create_address(address)
                 return existing
-            else:
-                # Reactivate soft-deleted duplicate, update it with current values, soft delete current
+            if not await self.address_repo.is_address_referenced(tenant.id, existing.id):
+                # Reactivate unreferenced soft-deleted duplicate
                 existing.is_saved = True
-                for key in ["name", "phone", "alternate_phone", "gstin", "email", "company_name", "address_line1", "address_line2", "landmark", "city", "state", "pincode", "country", "category", "scope"]:
+                for key in editable_keys:
                     setattr(existing, key, getattr(address, key))
                 existing.user_id = user.id
                 await self.address_repo.create_address(existing)
@@ -181,14 +230,15 @@ class AddressService:
     async def delete_saved_address(
         self, address_id: uuid.UUID, user: User, tenant: Tenant
     ) -> dict:
+        assert_not_read_only(user, "delete saved addresses")
         address = await self.address_repo.get_address_by_id(address_id)
         if not address or address.tenant_id != tenant.id:
             raise HTTPException(status_code=404, detail="Address not found")
 
         # Role-Based Access Control:
-        # - Admins/Owners can delete any address in their tenant.
+        # - Admins/Owners/Operations can delete any address in their tenant.
         # - Customers can only delete PRIVATE addresses they created.
-        is_admin = user.role in (UserRole.admin, UserRole.owner)
+        is_admin = user.role in (UserRole.admin, UserRole.owner, UserRole.operations_user)
         if not is_admin:
             if address.scope == AddressScope.TENANT:
                 raise HTTPException(

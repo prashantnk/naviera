@@ -10,4 +10,10 @@ export enum DocumentType {
     BOX_PHOTO = 'BOX_PHOTO',
     LABEL_IMAGE = 'LABEL_IMAGE',
     OTHER = 'OTHER',
+    PO_COPY = 'PO_COPY',
+    KYC = 'KYC',
+    REGULATORY_FORM = 'REGULATORY_FORM',
+    PHOTO_ID = 'PHOTO_ID',
+    ASN = 'ASN',
+    E_INVOICE_QR = 'E_INVOICE_QR',
 }

@@ -37,5 +37,30 @@ class Settings(BaseSettings):
     # --- Logging ---
     LOGFIRE_TOKEN: str = ""
 
+    # --- Delhivery B2C (Express) API: live prices for the one tenant bound to the token ---
+    # Token from one.delhivery.com → Settings → API Setup (prod; staging prices are ₹0).
+    # Empty = Delhivery options show "price unavailable" (the fake provider serves the
+    # golden test tenant only). See docs/RUNBOOK.md "Delhivery API token".
+    DELHIVERY_B2C_TOKEN: str = ""
+    DELHIVERY_B2C_BASE_URL: str = "https://track.delhivery.com"
+    DELHIVERY_TENANT_ID: str = ""
+    """UUID of the tenant whose Delhivery account the token belongs to (live `logismart`)."""
+
+    # --- Delhivery B2B (Cargo / LTL) API: live freight estimates, same bound tenant ---
+    # Username + password of Logismart's Delhivery B2B account (`POST /ums/login` → 24 h JWT).
+    # Empty = the "Delhivery B2B Cargo" option shows "price unavailable". Production host
+    # only: staging has no pricing file. See llm_resources/.agents/pricing/delhivery_b2b_api.md.
+    DELHIVERY_B2B_USERNAME: str = ""
+    DELHIVERY_B2B_PASSWORD: str = ""
+    DELHIVERY_B2B_BASE_URL: str = "https://ltl-clients-api.delhivery.com"
+
 
 settings = Settings()  # type: ignore
+
+PRODUCTION_ENVIRONMENT = "production"
+"""`ENVIRONMENT` value on Render (docs/RUNBOOK.md go-live checklist)."""
+
+
+def is_production() -> bool:
+    """True on the live deployment (API docs hidden, no local rate-limit exemption)."""
+    return settings.ENVIRONMENT.strip().lower() == PRODUCTION_ENVIRONMENT

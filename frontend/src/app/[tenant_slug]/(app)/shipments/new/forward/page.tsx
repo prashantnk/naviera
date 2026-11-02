@@ -5,40 +5,81 @@ import {
   AddressesService,
   AddressRead,
   FreightPaymentMode,
-  PickupTimeSlot,
+  ServiceFlow,
   ServiceType,
   ShipmentType,
   DocumentType,
-  ServiceQuote,
   PackageCreate,
-  PickupCreate,
   AddressCreate,
   AddressScope,
   PickupDocumentCreate,
-  ShipmentsService,
-  BulkRateCalculationRequest,
+  PickupRead,
+  ProductCategory,
 } from "@/api_client";
 import { getSupabaseClient } from "@/lib/supabase";
+import { matchAddressByPincode, parseRateHandoff, type RateHandoff } from "@/lib/rate-handoff";
+import { B2C_PRODUCT_CATEGORIES, BOOKABLE_FREIGHT_PAYMENT_MODES } from "@/lib/form-options";
 import { ForwardFormStep } from "../_components/forward-form-step";
-import { RateShoppingStep } from "../_components/rate-shopping-step";
+import type { BookingPayload, QuoteOption } from "@/components/booking/booking-api";
+import { buildPaymentInputs, buildQuoteRequest } from "@/components/booking/booking-inputs";
+import { PriceChangedDialog } from "@/components/booking/price-changed-dialog";
+import { QuoteStep } from "@/components/booking/quote-step";
+import { useQuoteBooking } from "@/components/booking/use-quote-booking";
+import { useUser } from "@/components/auth/auth-guard";
 import { Button } from "@/components/ui/button";
+import { ScreenGuideBanner, type GuideStep } from "@/components/ui/screen-guide-banner";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
-import { format, parseISO } from "date-fns";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-banner";
+import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { forwardShipmentSchema, ForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
-import { useForm, Resolver, useWatch, useFieldArray } from "react-hook-form";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { useForm, Resolver, useFieldArray } from "react-hook-form";
 import { toast } from "sonner";
-import { formatTimeSlot } from "@/lib/utils";
+
+const B2C_CUSTOMER_GUIDE_STEPS: readonly GuideStep[] = [
+  {
+    title: "Addresses & Box Weight",
+    description:
+      "Pick sender and receiver addresses, then enter box weight and L × B × H dimensions.",
+  },
+  {
+    title: "Category & Goods Value",
+    description:
+      "Select product category and enter shipment value (E-Way Bill is only needed above ₹50,000).",
+  },
+  {
+    title: "Find Rates & Book",
+    description:
+      "Click Find Rates, pick Delhivery Surface or Express, and book directly from your wallet.",
+  },
+];
+
+const B2C_STAFF_GUIDE_STEPS: readonly GuideStep[] = [
+  {
+    title: "Route & Package Specs",
+    description:
+      "Select pickup and delivery addresses and enter accurate box weight and dimensions.",
+  },
+  {
+    title: "Value & Compliance (> ₹50k)",
+    description:
+      "Optional HSN/Invoice fields stay tucked away unless shipment value exceeds ₹50,000.",
+  },
+  {
+    title: "Book & Link Carrier AWB",
+    description:
+      "Book the order, then link the Delhivery AWB or override the final price on Shipment Detail.",
+  },
+];
 
 export default function ForwardBookingSandbox() {
   const { routeTo, tenantSlug } = useTenant();
+  const { capabilities } = useUser();
   const DRAFT_KEY = `shipment-draft-forward-${tenantSlug}`;
 
   const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
@@ -47,28 +88,31 @@ export default function ForwardBookingSandbox() {
   const hasRecoveredRef = useRef(false);
   const isSubmittedRef = useRef(false);
 
-  // Orchestration steps and carrier states
-  const [currentStep, setCurrentStep] = useState(0); // 0: Specs, 1: Pricing
-  const [rateQuotes, setRateQuotes] = useState<ServiceQuote[]>([]);
-  const [selectedQuote, setSelectedQuote] = useState<ServiceQuote | null>(null);
-  const [isLoadingRates, setIsLoadingRates] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Orchestration steps: 0 = shipment details, 1 = choose a service and book
+  const [currentStep, setCurrentStep] = useState(0);
 
-  // Timezone-proof local Tomorrow date format (resolves UTC offsets)
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const yyyy = tomorrow.getFullYear();
-  const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
-  const dd = String(tomorrow.getDate()).padStart(2, "0");
-  const defaultTomorrowString = `${yyyy}-${mm}-${dd}`;
+  /** Clears the draft and lands on the new order with the "Add to pickup" call to action. */
+  const handleBooked = useCallback(
+    (created: PickupRead) => {
+      isSubmittedRef.current = true; // Disable last-second draft writes
+      localStorage.removeItem(DRAFT_KEY);
+      window.location.href = routeTo(
+        created?.id ? buildBookedOrderHref(`/shipments/${created.id}`) : "/shipments"
+      );
+    },
+    [DRAFT_KEY, routeTo]
+  );
+  const booking = useQuoteBooking({
+    onBooked: handleBooked,
+    bookingFailedMessage: "Failed to finalize shipment booking.",
+  });
+  const isSubmitting = booking.isSubmitting;
 
   const form = useForm<ForwardShipmentFormValues>({
     resolver: zodResolver(forwardShipmentSchema) as unknown as Resolver<ForwardShipmentFormValues>,
     mode: "onChange",
     defaultValues: {
       order_reference_id: "",
-      requested_pickup_date: defaultTomorrowString, // Smart default: Tomorrow
-      pickup_time_slot: PickupTimeSlot._10_00_14_00, // Smart default: Slot 1
       service_type: ServiceType.SURFACE_ROAD,
       shipment_type: ShipmentType.FORWARD,
       product_category: undefined,
@@ -87,6 +131,7 @@ export default function ForwardBookingSandbox() {
         invoice_number: "",
         invoice_date: "",
         eway_bill_number: "",
+        eway_bill_required: false,
       },
       packages: [
         {
@@ -111,6 +156,41 @@ export default function ForwardBookingSandbox() {
     remove: removeDoc,
   } = useFieldArray({ control: form.control, name: "documents" });
 
+  /**
+   * Pre-fills the wizard from the rate calculator's "Book This Shipment" hand-off.
+   * Only raw inputs are applied (pincodes -> matching saved addresses, first box, category,
+   * COD, declared value); the price is always re-quoted by the backend.
+   */
+  const applyRateHandoff = (handoff: RateHandoff, addresses: AddressRead[]) => {
+    const opts = { shouldDirty: true, shouldValidate: false } as const;
+    const pickupId = matchAddressByPincode(addresses, handoff.originPincode);
+    const deliveryId = matchAddressByPincode(addresses, handoff.destinationPincode, pickupId);
+    if (pickupId) form.setValue("pickup_address_id", pickupId, opts);
+    if (deliveryId) form.setValue("delivery_address_id", deliveryId, opts);
+    if (handoff.productCategory) {
+      form.setValue("product_category", handoff.productCategory as ProductCategory, opts);
+    }
+    if (handoff.length) form.setValue("packages.0.length", handoff.length, opts);
+    if (handoff.breadth) form.setValue("packages.0.breadth", handoff.breadth, opts);
+    if (handoff.height) form.setValue("packages.0.height", handoff.height, opts);
+    if (handoff.weightKg) form.setValue("packages.0.weight", handoff.weightKg, opts);
+    if (handoff.boxCount) form.setValue("packages.0.box_count", handoff.boxCount, opts);
+    if (handoff.shipmentValue) form.setValue("payment_details.shipment_value", handoff.shipmentValue, opts);
+    if (handoff.isCod) {
+      form.setValue("payment_details.is_cod", true, opts);
+      if (handoff.codAmount) form.setValue("payment_details.cod_amount", handoff.codAmount, opts);
+    }
+    const missing = [
+      !pickupId && handoff.originPincode ? `pickup (${handoff.originPincode})` : null,
+      !deliveryId && handoff.destinationPincode ? `delivery (${handoff.destinationPincode})` : null,
+    ].filter(Boolean);
+    toast.info(
+      missing.length
+        ? `Pre-filled from the rate calculator. Choose or add the ${missing.join(" and ")} address.`
+        : "Pre-filled from the rate calculator."
+    );
+  };
+
   const supabase = getSupabaseClient(tenantSlug);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -120,6 +200,13 @@ export default function ForwardBookingSandbox() {
       try {
         const addresses = await AddressesService.listSavedAddresses();
         setSavedAddresses(addresses);
+
+        // A fresh "Book This Shipment" hand-off from the rate calculator wins over an old local draft.
+        const handoff = parseRateHandoff(window.location.search, B2C_PRODUCT_CATEGORIES);
+        if (handoff && !hasRecoveredRef.current) {
+          hasRecoveredRef.current = true;
+          applyRateHandoff(handoff, addresses);
+        }
 
         const savedDraft = localStorage.getItem(DRAFT_KEY);
         if (savedDraft && !hasRecoveredRef.current) {
@@ -134,12 +221,17 @@ export default function ForwardBookingSandbox() {
             if (!Object.values(ServiceType).includes(vals.service_type)) {
               vals.service_type = ServiceType.SURFACE_ROAD;
             }
-            if (!Object.values(FreightPaymentMode).includes(vals.payment_details?.freight_payment_mode)) {
+            // Old drafts may carry TO_PAY, which is off for the MVP (WP0).
+            if (!BOOKABLE_FREIGHT_PAYMENT_MODES.includes(vals.payment_details?.freight_payment_mode)) {
               if (vals.payment_details) vals.payment_details.freight_payment_mode = FreightPaymentMode.PREPAID;
             }
-            if (!Object.values(PickupTimeSlot).includes(vals.pickup_time_slot)) {
-              vals.pickup_time_slot = PickupTimeSlot._10_00_14_00;
+            // Old drafts may carry COMMERCIAL, a B2B-only category (A-02).
+            if (!B2C_PRODUCT_CATEGORIES.includes(vals.product_category)) {
+              vals.product_category = undefined;
             }
+            // Old drafts may still carry pickup date/slot; pickups are scheduled later.
+            delete vals.requested_pickup_date;
+            delete vals.pickup_time_slot;
             form.reset(vals);
           }
           toast.info("Recovered your unsaved booking draft.");
@@ -196,7 +288,7 @@ export default function ForwardBookingSandbox() {
         file_name: file.name,
         file_url: filePath,
       });
-      toast.success("Document safely encrypted and uploaded");
+      toast.success(`${file.name} uploaded and attached to this shipment.`);
     } catch (error) {
       const err = error as Error;
       toast.error(err.message || "Failed to upload document");
@@ -205,29 +297,17 @@ export default function ForwardBookingSandbox() {
     }
   };
 
-  // Dynamic calculation of total commercial value: shipment_total_value = shipment_value + shipment_tax_value
-  const watchedShipmentValue = useWatch({
-    control: form.control,
-    name: "payment_details.shipment_value",
-  });
-  const watchedShipmentTaxValue = useWatch({
-    control: form.control,
-    name: "payment_details.shipment_tax_value",
+  /** Resolves the pickup and delivery pincodes from saved or new addresses. */
+  const resolvePincodes = (values: ForwardShipmentFormValues) => ({
+    pickup: values.pickup_address_id
+      ? savedAddresses.find((a) => a.id === values.pickup_address_id)?.pincode
+      : values.new_pickup_address?.pincode,
+    delivery: values.delivery_address_id
+      ? savedAddresses.find((a) => a.id === values.delivery_address_id)?.pincode
+      : values.new_delivery_address?.pincode,
   });
 
-  useEffect(() => {
-    const base = watchedShipmentValue || 0;
-    const tax = watchedShipmentTaxValue || 0;
-    const total = base + tax;
-    if (base > 0 || tax > 0) {
-      form.setValue("payment_details.shipment_total_value", total, { shouldValidate: true });
-      if (form.getValues("payment_details.is_cod")) {
-        form.setValue("payment_details.cod_amount", total, { shouldValidate: true });
-      }
-    }
-  }, [watchedShipmentValue, watchedShipmentTaxValue, form]);
-
-  // Transition step 1 to step 2: validate & load dynamic carrier rates in bulk
+  // Step 1 -> 2: validate, then price exactly the inputs the booking will send (A-03).
   const onCompareRates = async () => {
     const isStep1Valid = await form.trigger();
     if (!isStep1Valid) {
@@ -237,128 +317,103 @@ export default function ForwardBookingSandbox() {
     }
 
     const values = form.getValues();
-    // Resolve coordinates/pincodes cleanly
-    const pPincode = values.pickup_address_id
-      ? savedAddresses.find((a) => a.id === values.pickup_address_id)?.pincode
-      : values.new_pickup_address?.pincode;
-
-    const dPincode = values.delivery_address_id
-      ? savedAddresses.find((a) => a.id === values.delivery_address_id)?.pincode
-      : values.new_delivery_address?.pincode;
-
-    if (!pPincode || !dPincode) {
+    const pins = resolvePincodes(values);
+    if (!pins.pickup || !pins.delivery) {
       toast.error("Pincode resolution failed. Please verify addresses contain valid postal codes.");
       return;
     }
 
-    setIsLoadingRates(true);
-    setCurrentStep(1); // Move to pricing view immediately, showing shimmer cards
-
-    try {
-      const bulkPayload: BulkRateCalculationRequest = {
-        pickup_pincode: pPincode,
-        delivery_pincode: dPincode,
+    setCurrentStep(1); // Show the option cards (skeletons while loading)
+    const quote = await booking.requestQuote(
+      buildQuoteRequest({
+        flow: ServiceFlow.B2C,
+        shipmentType: ShipmentType.FORWARD,
+        pickupPincode: pins.pickup,
+        deliveryPincode: pins.delivery,
         packages: values.packages as PackageCreate[],
-        is_cod: values.payment_details.is_cod,
-        cod_amount: values.payment_details.cod_amount || 0,
-        shipment_total_value: values.payment_details.shipment_total_value,
-        shipment_type: ShipmentType.FORWARD,
-      };
-
-      const res = await ShipmentsService.calculateBulkShippingRates(bulkPayload);
-      setRateQuotes(res.quotes);
-    } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || "Pricing endpoint failure during bulk calculations.");
-      setCurrentStep(0); // Rollback on error
-    } finally {
-      setIsLoadingRates(false);
-    }
-  };
-
-  // Final booking action confirmation
-  const onConfirmBooking = async () => {
-    if (!selectedQuote || !selectedQuote.quote) {
-      toast.error("Please select an active, serviceable delivery carrier speed.");
+        payment: buildPaymentInputs(values.payment_details, addShippingToCod),
+      })
+    );
+    if (!quote) {
+      setCurrentStep(0);
       return;
     }
-
-    setIsSubmitting(true);
-    try {
-      const data = form.getValues();
-      const quoteDetails = selectedQuote.quote;
-
-      // Safety Net #4: Address scoping book mappings
-      const newPickupAddress = data.pickup_address_id
-        ? undefined
-        : data.new_pickup_address
-        ? ({
-            ...data.new_pickup_address,
-            is_saved: data.new_pickup_address.save_to_address_book,
-            scope: data.new_pickup_address.is_shared_with_team
-              ? AddressScope.TENANT
-              : AddressScope.PRIVATE,
-          } as unknown as AddressCreate)
-        : undefined;
-
-      const newDeliveryAddress = data.delivery_address_id
-        ? undefined
-        : data.new_delivery_address
-        ? ({
-            ...data.new_delivery_address,
-            is_saved: data.new_delivery_address.save_to_address_book,
-            scope: data.new_delivery_address.is_shared_with_team
-              ? AddressScope.TENANT
-              : AddressScope.PRIVATE,
-          } as unknown as AddressCreate)
-        : undefined;
-
-      // Safety Net #3: Empty string nullifications for Pydantic specs
-      const payload: PickupCreate = {
-        order_reference_id: data.order_reference_id || undefined,
-        shipment_type: ShipmentType.FORWARD,
-        service_type: selectedQuote.service_type,
-        requested_pickup_date: data.requested_pickup_date,
-        pickup_time_slot: data.pickup_time_slot,
-        product_category: data.product_category,
-        other_category_description: data.other_category_description || undefined,
-        pickup_address_id: data.pickup_address_id || undefined,
-        new_pickup_address: newPickupAddress,
-        delivery_address_id: data.delivery_address_id || undefined,
-        new_delivery_address: newDeliveryAddress,
-        packages: data.packages as PackageCreate[],
-        payment_details: {
-          freight_payment_mode: data.payment_details.freight_payment_mode,
-          is_cod: data.payment_details.is_cod,
-          cod_amount: data.payment_details.is_cod ? (data.payment_details.cod_amount || 0) : 0,
-          add_shipping_to_cod: data.payment_details.freight_payment_mode === FreightPaymentMode.TO_PAY ? true : addShippingToCod,
-          shipment_value: data.payment_details.shipment_value,
-          shipment_tax_value: data.payment_details.shipment_tax_value,
-          shipment_total_value: data.payment_details.shipment_total_value,
-          base_freight: quoteDetails.base_charge,
-          tax_amount: quoteDetails.tax_amount,
-          total_logistics_cost: quoteDetails.total_amount,
-          pricing_breakdown: quoteDetails.pricing_breakdown || {},
-          hsn_code: data.payment_details.hsn_code || undefined,
-          invoice_number: data.payment_details.invoice_number || undefined,
-          invoice_date: data.payment_details.invoice_date || undefined,
-          eway_bill_number: data.payment_details.eway_bill_number || undefined,
-        },
-        documents: data.documents ? (data.documents as PickupDocumentCreate[]) : undefined,
-      };
-
-      await ShipmentsService.createShipment(payload);
-      isSubmittedRef.current = true; // Set flag to disable last-second draft writes
-      localStorage.removeItem(DRAFT_KEY); // Clear localStorage on successful book (Safety Net #1)
-      toast.success("Shipment booked successfully!");
-      window.location.href = routeTo("/shipments");
-    } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || "Failed to finalize shipment booking.");
-    } finally {
-      setIsSubmitting(false);
+    // The valuation may not have caught up with the last keystroke: trust the quote.
+    if (quote.eway_bill_required && !values.payment_details.eway_bill_number) {
+      form.setValue("payment_details.shipment_total_value", quote.shipment_total_value);
+      form.setValue("payment_details.eway_bill_required", true);
+      setCurrentStep(0);
+      await form.trigger("payment_details.eway_bill_number");
+      toast.error("An E-Way Bill is required for this goods value. Please add it to continue.");
     }
   };
+
+  /** Maps the chosen card + the form to the booking body (same inputs as the quote). */
+  const buildBookingPayload = (option: QuoteOption): BookingPayload => {
+    const data = form.getValues();
+
+    // Safety Net #4: Address scoping book mappings
+    const newPickupAddress = data.pickup_address_id
+      ? undefined
+      : data.new_pickup_address
+      ? ({
+          ...data.new_pickup_address,
+          is_saved: data.new_pickup_address.save_to_address_book,
+          scope: data.new_pickup_address.is_shared_with_team
+            ? AddressScope.TENANT
+            : AddressScope.PRIVATE,
+        } as unknown as AddressCreate)
+      : undefined;
+
+    const newDeliveryAddress = data.delivery_address_id
+      ? undefined
+      : data.new_delivery_address
+      ? ({
+          ...data.new_delivery_address,
+          is_saved: data.new_delivery_address.save_to_address_book,
+          scope: data.new_delivery_address.is_shared_with_team
+            ? AddressScope.TENANT
+            : AddressScope.PRIVATE,
+        } as unknown as AddressCreate)
+      : undefined;
+
+    // Safety Net #3: Empty string nullifications for Pydantic specs
+    return {
+      service_flow: ServiceFlow.B2C,
+      service_option: option.service_option,
+      expected_total: option.total_amount ?? 0,
+      order_reference_id: data.order_reference_id || undefined,
+      shipment_type: ShipmentType.FORWARD,
+      // Delhivery flow: the order is "manifested" today; the pickup date and
+      // slot are chosen later on the Pickup Request ("Add to pickup").
+      requested_pickup_date: todayApiDate(),
+      product_category: data.product_category,
+      other_category_description: data.other_category_description || undefined,
+      pickup_address_id: data.pickup_address_id || undefined,
+      new_pickup_address: newPickupAddress,
+      delivery_address_id: data.delivery_address_id || undefined,
+      new_delivery_address: newDeliveryAddress,
+      packages: data.packages as PackageCreate[],
+      payment_details: {
+        ...buildPaymentInputs(data.payment_details, addShippingToCod),
+        hsn_code: data.payment_details.hsn_code || undefined,
+        invoice_numbers: data.payment_details.invoice_number ? [data.payment_details.invoice_number] : undefined,
+        invoice_date: data.payment_details.invoice_date || undefined,
+        eway_bill_numbers: data.payment_details.eway_bill_number ? [data.payment_details.eway_bill_number] : undefined,
+      },
+      documents: data.documents ? (data.documents as PickupDocumentCreate[]) : undefined,
+    };
+  };
+
+  const onConfirmBooking = () => booking.book(buildBookingPayload);
+
+  const formValues = form.getValues();
+  const pickupAddress = formValues.pickup_address_id
+    ? savedAddresses.find((a) => a.id === formValues.pickup_address_id)
+    : formValues.new_pickup_address;
+  const deliveryAddress = formValues.delivery_address_id
+    ? savedAddresses.find((a) => a.id === formValues.delivery_address_id)
+    : formValues.new_delivery_address;
 
   if (isLoading) {
     return (
@@ -393,6 +448,18 @@ export default function ForwardBookingSandbox() {
         </div>
       </div>
 
+      {currentStep === 0 && (
+        <ScreenGuideBanner
+          guideId="b2c-forward-booking"
+          title="Quick Start: Book a B2C Parcel in 3 Simple Steps"
+          staffTitle="Staff Guide: Fast B2C Booking & Compliance"
+          delhiveryEquivalent="Delhivery One: Orders → Create Shipment"
+          steps={B2C_CUSTOMER_GUIDE_STEPS}
+          staffSteps={B2C_STAFF_GUIDE_STEPS}
+          isStaff={capabilities.isStaff}
+        />
+      )}
+
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 md:p-8">
         <Form {...form}>
           <form onSubmit={(e) => {
@@ -401,7 +468,7 @@ export default function ForwardBookingSandbox() {
             
             {currentStep === 0 ? (
               <>
-                {/* TOP ROW: Order ID Ref, Pickup Date & Pickup Windows */}
+                {/* TOP ROW: Order ID only (no pickup options, like Delhivery) */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
                   <FormField
                     control={form.control}
@@ -416,48 +483,9 @@ export default function ForwardBookingSandbox() {
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="requested_pickup_date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-bold text-slate-700">Requested Pickup Date *</FormLabel>
-                        <FormControl>
-                          <DatePicker 
-                            date={field.value ? parseISO(field.value) : undefined}
-                            setDate={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="pickup_time_slot"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs font-bold text-slate-700">Preferred Pickup Slot *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger className="h-9 text-xs bg-white">
-                              <SelectValue placeholder="Choose slot" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {Object.values(PickupTimeSlot).map((slot) => (
-                              <SelectItem key={slot} value={slot} className="text-xs">
-                                {formatTimeSlot(slot)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <p className="md:col-span-2 self-end text-xs text-slate-500">
+                    Pickup date and slot are chosen later, when you add this order to a pickup request.
+                  </p>
                 </div>
 
                 {/* MAIN DECOUPLED FORM STEP */}
@@ -481,29 +509,36 @@ export default function ForwardBookingSandbox() {
                     type="button"
                     onClick={onCompareRates}
                     className="cursor-pointer text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-2 px-6 py-2 h-9 rounded-lg shadow-md"
+                    data-testid="booking.actions.next"
                   >
                     Find Rates <Sparkles className="h-3.5 w-3.5 text-primary" />
                   </Button>
                 </div>
               </>
             ) : (
-              <RateShoppingStep
-                rateQuotes={rateQuotes}
-                isLoadingRates={isLoadingRates}
-                selectedQuote={selectedQuote}
-                setSelectedQuote={setSelectedQuote}
+              <QuoteStep
+                quote={booking.quote}
+                isLoading={booking.isQuoting}
+                selectedOption={booking.selectedOption}
+                onSelect={booking.selectOption}
                 onBack={() => setCurrentStep(0)}
                 onSubmit={onConfirmBooking}
                 isSubmitting={isSubmitting}
                 isCod={!!form.watch("payment_details.is_cod")}
-                addShippingToCod={addShippingToCod}
-                savedAddresses={savedAddresses}
+                pickup={pickupAddress}
+                delivery={deliveryAddress}
               />
             )}
 
           </form>
         </Form>
       </div>
+      <PriceChangedDialog
+        change={booking.priceChange}
+        isSubmitting={isSubmitting}
+        onConfirm={booking.confirmPriceChange}
+        onCancel={booking.cancelPriceChange}
+      />
     </div>
   );
 }

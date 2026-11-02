@@ -7,9 +7,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getTenantBySlug } from "@/lib/api";
+import type { Metadata } from "next";
 import { Loader2, Package2 } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { Suspense } from "react";
+
+export const metadata: Metadata = { title: "Sign In" };
 
 export default async function LoginPage({
   params,

@@ -1,17 +1,23 @@
+"""
+Creates the demo `naviera` and `logismart` tenant rows on an empty database (`poetry run seed`).
+
+Create-only: a tenant whose slug already exists is left untouched (its settings are never
+overwritten). No user rows are inserted, so the first account that signs up on a tenant at
+`/<slug>/login` becomes its Owner (`TenantService.get_or_create_user`). For the fully seeded
+test tenant with role accounts use `python -m scripts.seed_logismart_test` instead.
+"""
+
 import asyncio
 
 from sqlmodel import select
 
 from app.core.db import AsyncSessionLocal
-from app.models.tenants import Tenant, User, UserRole
-
-OWNER_SUPABASE_ID = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+from app.models.tenants import Tenant
 
 TENANTS = [
     {
         "name": "Naviera",
         "slug": "naviera",
-        "email": "pashantnk2001@gmail.com",
         "settings": {
             "brand": {
                 "primary_color": "#2563eb",
@@ -21,9 +27,9 @@ TENANTS = [
             "announcement_bar": {"is_active": False, "text": ""},  # Hidden for Naviera
             "contact": {
                 "toll_free": "1800-000-0000",
-                "phones": ["9430650271"],
-                "emails": ["pashantnk2001@gmail.com"],
-                "address": "Naviera HQ\nCPR Brindavanam, Hyderabad - 500081",
+                "phones": [],
+                "emails": ["contact@example.com"],
+                "address": "Naviera HQ",
             },
             "landing_page": {
                 "blocks": [
@@ -48,7 +54,6 @@ TENANTS = [
     {
         "name": "Logismart",
         "slug": "logismart",
-        "email": "admin@logismart.com",
         "settings": {
             "brand": {
                 "primary_color": "#dc2626",  # Logismart Red
@@ -249,55 +254,28 @@ TENANTS = [
 ]
 
 
-async def seed_data():
-    print("Seeding database with tenants...")
+async def seed_data() -> None:
+    """Inserts every tenant in `TENANTS` whose slug does not exist yet."""
+    print("Seeding database with tenants (create-only)...")
 
     async with AsyncSessionLocal() as session:  # type: ignore
         for t_data in TENANTS:
-            # 1. Upsert Tenant
             statement = select(Tenant).where(Tenant.slug == t_data["slug"])
             result = await session.exec(statement)
-            tenant = result.first()
+            if result.first():
+                print(f"Skipping existing tenant: {t_data['slug']} (settings left unchanged)")
+                continue
 
-            if tenant:
-                print(f"Updating existing tenant: {t_data['name']}")
-                tenant.settings = t_data["settings"]
-                session.add(tenant)
-            else:
-                print(f"Creating tenant: {t_data['name']}")
-                tenant = Tenant(
-                    name=t_data["name"],
-                    slug=t_data["slug"],
-                    settings=t_data["settings"],
-                )
-                session.add(tenant)
-
-            await session.commit()
-            await session.refresh(tenant)
-
-            # 2. Check and Create Admin User
-            statement = select(User).where(
-                User.supabase_user_id == OWNER_SUPABASE_ID, User.tenant_id == tenant.id
+            print(f"Creating tenant: {t_data['name']} (no users; first signup becomes Owner)")
+            session.add(
+                Tenant(name=t_data["name"], slug=t_data["slug"], settings=t_data["settings"])
             )
-            result = await session.exec(statement)
-            user = result.first()
-
-            if not user:
-                print(f"Creating owner user: {t_data['email']}")
-                user = User(
-                    email=t_data["email"],
-                    supabase_user_id=OWNER_SUPABASE_ID,
-                    tenant_id=tenant.id,
-                    role=UserRole.owner,
-                    is_active=True,
-                )
-                session.add(user)
-                await session.commit()
+            await session.commit()
 
     print("Seeding finished.")
 
 
-def main_wrapper():
+def main_wrapper() -> None:
     asyncio.run(seed_data())
 
 

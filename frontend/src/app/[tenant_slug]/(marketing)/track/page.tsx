@@ -1,6 +1,10 @@
 // src/app/[tenant_slug]/(marketing)/track/page.tsx
 "use client";
 
+import {
+    TRACKING_INPUT_PLACEHOLDER,
+    normalizeTrackingId,
+} from "@/components/blocks/tracking-display";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +19,9 @@ export default function TrackIndexPage() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (trackingId.trim()) {
-            router.push(routeTo(`/track/${trackingId.trim()}`));
+        const normalized = normalizeTrackingId(trackingId);
+        if (normalized) {
+            router.push(routeTo(`/track/${encodeURIComponent(normalized)}`));
         }
     };
 
@@ -37,8 +42,10 @@ export default function TrackIndexPage() {
                     <Input
                         value={trackingId}
                         onChange={(e) => setTrackingId(e.target.value)}
-                        placeholder="e.g. NAVIERA-123456"
-                        className="h-14 text-lg bg-slate-50 px-4"
+                        placeholder={TRACKING_INPUT_PLACEHOLDER}
+                        aria-label="AWB / tracking number"
+                        autoCapitalize="characters"
+                        className="h-14 text-lg bg-slate-50 px-4 uppercase placeholder:normal-case"
                         autoFocus
                     />
                     <Button type="submit" size="lg" className="h-14 px-8 text-lg font-semibold">

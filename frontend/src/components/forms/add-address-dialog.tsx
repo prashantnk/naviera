@@ -8,14 +8,14 @@ import {
     Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-    Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+    Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { IconSelect } from "@/components/ui/icon-select";
+import { FormSection, RequiredMark } from "@/components/ui/form-extras";
+import { ADDRESS_CATEGORY_OPTIONS, ADDRESS_SCOPE_OPTIONS, toOptions } from "@/lib/form-options";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, User, Building2, Phone, Mail, MapPin, Tag, Eye } from "lucide-react";
+import { Loader2, Plus, User, Building2, Phone, Mail, MapPin, Tag, Eye, Contact } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -65,7 +65,12 @@ const addressSchema = z.object({
 
 export type AddressFormValues = z.infer<typeof addressSchema>;
 
+/** Category and sharing-scope dropdown options (icon + label + helper text). */
+const CATEGORY_SELECT_OPTIONS = toOptions(ADDRESS_CATEGORY_OPTIONS);
+const SCOPE_SELECT_OPTIONS = toOptions(ADDRESS_SCOPE_OPTIONS);
+
 interface AddAddressDialogProps {
+    testIdPrefix?: string;
     onSuccess?: () => void;
     onSaveTransient?: (data: AddressFormValues) => void;
     trigger?: React.ReactNode;
@@ -81,6 +86,7 @@ export function AddAddressDialog({
     open: controlledOpen,
     onOpenChange: controlledOnOpenChange,
     defaultValues,
+    testIdPrefix,
 }: AddAddressDialogProps) {
     const [localOpen, setLocalOpen] = useState(false);
     const isControlled = controlledOpen !== undefined;
@@ -236,41 +242,44 @@ export function AddAddressDialog({
                     >
 
                         {/* Section 1: Identity */}
-                        <div className="space-y-4">
-                            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Contact details</h4>
+                        <FormSection
+                            icon={Contact}
+                            title="Contact details"
+                            description="Who should the courier call at this address?"
+                        >
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                                 <FormField control={form.control} name="name" render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel className="flex items-center gap-1.5"><User className="h-3.5 w-3.5 text-slate-400" /> Contact Name <span className="text-red-500">*</span></FormLabel>
-                                        <FormControl><Input placeholder="John Doe" className="bg-white" {...field} /></FormControl>
+                                        <FormLabel className="flex items-center gap-1.5"><User className="h-3.5 w-3.5 text-slate-400" /> Contact Name <RequiredMark /></FormLabel>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.name` : undefined} placeholder="John Doe" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
                                 <FormField control={form.control} name="phone" render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Phone Number <span className="text-red-500">*</span></FormLabel>
-                                        <FormControl><Input placeholder="9876543210" className="bg-white font-mono" {...field} /></FormControl>
+                                        <FormLabel className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Phone Number <RequiredMark /></FormLabel>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.phone` : undefined} placeholder="9876543210" className="bg-white font-mono" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
                                 <FormField control={form.control} name="email" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-slate-400" /> Email Address</FormLabel>
-                                        <FormControl><Input placeholder="john.doe@example.com" className="bg-white" {...field} /></FormControl>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.email` : undefined} placeholder="john.doe@example.com" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
                                 <FormField control={form.control} name="alternate_phone" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" /> Alternate Phone</FormLabel>
-                                        <FormControl><Input placeholder="9876543211" className="bg-white font-mono" {...field} /></FormControl>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.alternate_phone` : undefined} placeholder="9876543211" className="bg-white font-mono" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
                                 <FormField control={form.control} name="company_name" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-slate-400" /> Company Name</FormLabel>
-                                        <FormControl><Input placeholder="e.g. Acme Corp" className="bg-white" {...field} /></FormControl>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.company_name` : undefined} placeholder="e.g. Acme Corp" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
@@ -289,23 +298,26 @@ export function AddAddressDialog({
                                     </FormItem>
                                 )} />
                             </div>
-                        </div>
+                        </FormSection>
 
                         {/* Section 2: Physical address */}
-                        <div className="space-y-4">
-                            <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Physical address</h4>
+                        <FormSection
+                            icon={MapPin}
+                            title="Physical address"
+                            description="Enter the pincode first; city and state fill in automatically."
+                        >
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                                 <FormField control={form.control} name="category" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-slate-400" /> Address Category</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                            <FormControl><SelectTrigger className="bg-white"><SelectValue placeholder="Select Category" /></SelectTrigger></FormControl>
-                                            <SelectContent>
-                                                {Object.values(AddressCategory).map((cat) => (
-                                                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <FormControl>
+                                            <IconSelect
+                                                options={CATEGORY_SELECT_OPTIONS}
+                                                value={field.value}
+                                                onValueChange={field.onChange}
+                                                placeholder="Select category"
+                                            />
+                                        </FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
@@ -313,12 +325,13 @@ export function AddAddressDialog({
                                 <FormField control={form.control} name="pincode" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel className="flex items-center gap-1.5">
-                                            Pincode <span className="text-red-500">*</span>
-                                            {isLocating && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />}
+                                            Pincode
+                                            <RequiredMark />
+                                            {isLocating && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
                                             {geoVerified && <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">✓ Verified</span>}
                                         </FormLabel>
                                         <FormControl>
-                                            <Input placeholder="400001" className="bg-white" {...field} />
+                                            <Input data-testid={testIdPrefix ? `${testIdPrefix}.pincode` : undefined} placeholder="400001" className="bg-white" {...field} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -326,8 +339,8 @@ export function AddAddressDialog({
 
                                 <FormField control={form.control} name="address_line1" render={({ field }) => (
                                     <FormItem className="md:col-span-2">
-                                        <FormLabel>Address Line 1 <span className="text-red-500">*</span></FormLabel>
-                                        <FormControl><Input placeholder="Flat, Building, Street" className="bg-white" {...field} /></FormControl>
+                                        <FormLabel>Address Line 1 <RequiredMark /></FormLabel>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.address-line1` : undefined} placeholder="Flat, Building, Street" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
@@ -335,7 +348,7 @@ export function AddAddressDialog({
                                 <FormField control={form.control} name="address_line2" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Address Line 2</FormLabel>
-                                        <FormControl><Input placeholder="Area, Sector (Optional)" className="bg-white" {...field} /></FormControl>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.address-line2` : undefined} placeholder="Area, Sector (Optional)" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
@@ -343,16 +356,17 @@ export function AddAddressDialog({
                                 <FormField control={form.control} name="landmark" render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Landmark</FormLabel>
-                                        <FormControl><Input placeholder="Near Apollo Hospital (Optional)" className="bg-white" {...field} /></FormControl>
+                                        <FormControl><Input data-testid={testIdPrefix ? `${testIdPrefix}.landmark` : undefined} placeholder="Near Apollo Hospital (Optional)" className="bg-white" {...field} /></FormControl>
                                         <FormMessage />
                                     </FormItem>
                                 )} />
 
                                 <FormField control={form.control} name="city" render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>City <span className="text-red-500">*</span></FormLabel>
+                                        <FormLabel>City <RequiredMark /></FormLabel>
                                         <FormControl>
                                             <Input 
+                                                data-testid={testIdPrefix ? `${testIdPrefix}.city` : undefined}
                                                 placeholder="Mumbai" 
                                                 className="bg-white" 
                                                 {...field} 
@@ -365,9 +379,10 @@ export function AddAddressDialog({
 
                                 <FormField control={form.control} name="state" render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>State <span className="text-red-500">*</span></FormLabel>
+                                        <FormLabel>State <RequiredMark /></FormLabel>
                                         <FormControl>
                                             <Input 
+                                                data-testid={testIdPrefix ? `${testIdPrefix}.state` : undefined}
                                                 placeholder="MH" 
                                                 className="bg-white" 
                                                 {...field} 
@@ -382,13 +397,14 @@ export function AddAddressDialog({
                                     <FormField control={form.control} name="scope" render={({ field }) => (
                                         <FormItem className="md:col-span-2 animate-in fade-in duration-150">
                                             <FormLabel className="flex items-center gap-1.5"><Eye className="h-3.5 w-3.5 text-slate-400" /> Sharing Scope</FormLabel>
-                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                                <FormControl><SelectTrigger className="bg-white"><SelectValue placeholder="Select Scope" /></SelectTrigger></FormControl>
-                                                <SelectContent>
-                                                    <SelectItem value={AddressScope.PRIVATE}>Private (Personal Use)</SelectItem>
-                                                    <SelectItem value={AddressScope.TENANT}>Shared (Team-wide)</SelectItem>
-                                                </SelectContent>
-                                            </Select>
+                                            <FormControl>
+                                                <IconSelect
+                                                    options={SCOPE_SELECT_OPTIONS}
+                                                    value={field.value}
+                                                    onValueChange={field.onChange}
+                                                    placeholder="Select scope"
+                                                />
+                                            </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )} />
@@ -400,11 +416,11 @@ export function AddAddressDialog({
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </FormSection>
 
                         <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                             <Button type="button" variant="outline" className="cursor-pointer" onClick={() => setOpen(false)}>Cancel</Button>
-                            <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 cursor-pointer" disabled={isSubmitting}>
+                            <Button data-testid={testIdPrefix ? `${testIdPrefix}.save` : undefined} type="submit" className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 cursor-pointer" disabled={isSubmitting}>
                                 {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : "Save Address"}
                             </Button>
                         </div>

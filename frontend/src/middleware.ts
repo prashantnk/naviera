@@ -4,8 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const config = {
   matcher: [
-    // Added a regex group at the end to ignore all common image files
-    "/((?!api|_next/static|_next/image|favicon.ico|health|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Added a regex group at the end to ignore all common image files and proxies
+    "/((?!api|supabase-proxy|_next/static|_next/image|favicon.ico|health|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
 

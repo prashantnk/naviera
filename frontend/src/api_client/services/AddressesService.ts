@@ -92,6 +92,36 @@ export class AddressesService {
         });
     }
     /**
+     * Update Saved Address
+     * Edit an existing address.
+     * @param addressId
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns AddressRead Successful Response
+     * @throws ApiError
+     */
+    public static updateSavedAddress1(
+        addressId: string,
+        requestBody: AddressUpdate,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<AddressRead> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/addresses/{address_id}',
+            path: {
+                'address_id': addressId,
+            },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Delete Saved Address
      * Remove an address from the Address Book.
      * @param addressId

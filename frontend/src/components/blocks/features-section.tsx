@@ -18,73 +18,16 @@ const iconMap: Record<string, React.ElementType> = {
   package: PackageCheck,
 };
 
-// 🔥 RESTORED: Smart Brand Logo Mapper (Brings back the beautiful typography!)
-function TrustedBrandLogo({ brand }: { brand: ClientLogo }) {
+/**
+ * Renders a client name set by the tenant in `landing_page` settings as plain,
+ * neutral text (C-15). No third-party logos, brand colours or trade dress are
+ * hard-coded here: the tenant is responsible for every name it lists.
+ */
+function ClientName({ brand }: { brand: ClientLogo | string }) {
   // Handle both old string format and new object format gracefully
   const name = typeof brand === "string" ? brand : brand.name;
-  const n = name.toUpperCase();
-
-  if (n === "NESTLE")
-    return (
-      <span className="text-2xl font-bold text-blue-800 tracking-tight">
-        Nestle
-      </span>
-    );
-  if (n === "ITC LIMITED")
-    return (
-      <span className="text-3xl font-black text-red-600 tracking-tighter">
-        ITC Limited
-      </span>
-    );
-  if (n === "JOCKEY")
-    return (
-      <span className="text-2xl font-extrabold text-slate-900 italic">
-        JOCKEY
-      </span>
-    );
-  if (n === "WILLS LIFESTYLE")
-    return (
-      <span className="text-2xl font-bold text-slate-800 uppercase tracking-widest">
-        Wills Lifestyle
-      </span>
-    );
-  if (n === "MICROMAX")
-    return (
-      <span className="text-2xl font-bold text-blue-600">
-        micro<span className="font-light">max</span>
-      </span>
-    );
-  if (n === "MRF")
-    return (
-      <span className="text-3xl font-black text-red-700 italic pr-2">MRF</span>
-    );
-  if (n === "ASHOK LEYLAND")
-    return (
-      <span className="text-2xl font-bold text-slate-900 uppercase">
-        Ashok Leyland
-      </span>
-    );
-  if (n === "HERO")
-    return <span className="text-3xl font-bold text-red-500">Hero</span>;
-  if (n === "DR.REDDY'S" || n === "DR.REDDYS")
-    return (
-      <span className="text-2xl font-semibold text-blue-700">
-        Dr.Reddy&apos;s
-      </span>
-    );
-  if (n === "NIVEA")
-    return <span className="text-2xl font-bold text-blue-900">NIVEA</span>;
-  if (n === "BRITANNIA")
-    return <span className="text-2xl font-bold text-green-700">BRITANNIA</span>;
-
-  // Generic Fallback
-  const fallbackColor =
-    typeof brand === "object" && brand.color ? brand.color : "inherit";
   return (
-    <span
-      className="text-2xl font-bold tracking-tight uppercase"
-      style={{ color: fallbackColor }}
-    >
+    <span className="text-2xl font-bold tracking-tight uppercase text-slate-500">
       {name}
     </span>
   );
@@ -218,7 +161,7 @@ export function FeaturesSection({
           })}
         </div>
 
-        {/* REAL LOGISMART CLIENTS LOGO WALL */}
+        {/* Client names configured in the tenant landing_page settings (C-15) */}
         {content.clientLogos && content.clientLogos.length > 0 && (
                     <div className="border-t border-slate-200 pt-16 mt-16">
                         <div className="text-center mb-10">
@@ -232,14 +175,14 @@ export function FeaturesSection({
                                 {/* We duplicate the array multiple times to guarantee enough width to loop seamlessly */}
                                 {[...content.clientLogos, ...content.clientLogos, ...content.clientLogos].map((logo, index) => (
                                     <div key={index} className="hover:scale-105 transition-transform duration-300 cursor-default">
-                                        <TrustedBrandLogo brand={logo} />
+                                        <ClientName brand={logo} />
                                     </div>
                                 ))}
                             </div>
                             <div className="flex shrink-0 animate-marquee items-center gap-16 pr-16 hover:[animation-play-state:paused]" aria-hidden="true" style={{ animationDuration: '120s' }}>
                                 {[...content.clientLogos, ...content.clientLogos, ...content.clientLogos].map((logo, index) => (
                                     <div key={`copy-${index}`} className="hover:scale-105 transition-transform duration-300 cursor-default">
-                                        <TrustedBrandLogo brand={logo} />
+                                        <ClientName brand={logo} />
                                     </div>
                                 ))}
                             </div>

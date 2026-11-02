@@ -9,7 +9,6 @@ __pycache__/
 .venv/
 .env
 *.egg-info/
-poetry.lock
 __pypackages__/
 
 # IDE / Editor
@@ -22,3 +21,23 @@ Thumbs.db
 
 # LLM Resource documents
 llm_resources/
+
+# Agent Scratch, Local Context & Non-Generic Skills
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/verify-frontend-compliance/
+
+# Stray agent/test debris (scratch scripts & logs belong in llm_resources/.agents/)
+/*.py
+/*.sh
+/*.patch
+*.log
+*.orig
+*.rej
+backend/*_log.txt
+
+# Local Testing Logs & Next.js 16 Auto-Generated Agent Files
+frontend/logs/
+frontend/AGENTS.md
+frontend/CLAUDE.md

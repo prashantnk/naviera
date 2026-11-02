@@ -5,7 +5,6 @@ from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -18,13 +17,20 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # --- CUSTOM SETUP FOR OUR PROJECT ---
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel  # noqa: E402
 
 # We will add future model files here, e.g., from app.models import pickup_models
-from app.core.config import settings
+from app.core.config import settings  # noqa: E402
 
 # Explicitly import the modules containing your models. This is the most robust way.
-from app.models import pickups, tenants  # noqa: F401
+from app.models import (  # noqa: E402, F401
+    delhivery_modules,
+    manifests,
+    pickups,
+    repricing,
+    tenants,
+    wallet,
+)
 
 target_metadata = SQLModel.metadata
 
