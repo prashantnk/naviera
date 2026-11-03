@@ -40,6 +40,7 @@ from app.services.pricing.delhivery import (
     _Fetched,
     fetch_with_cache,
     slab_grams,
+    tenant_cache_key,
 )
 from app.services.pricing.delhivery_b2b_client import (
     DelhiveryB2BApi,
@@ -51,9 +52,9 @@ from app.services.pricing.delhivery_client import (
     DelhiveryUnavailableError,
     flag,
     is_embargoed,
+    is_fake_tenant,
     live_api_if_configured,
 )
-from app.services.pricing.fake_delhivery import FAKE_PROVIDER_TENANT_SLUGS
 from app.services.pricing.fake_delhivery_b2b import FakeDelhiveryB2BApi
 from app.services.pricing.types import (
     CarrierLeg,
@@ -205,16 +206,17 @@ class B2CFallbackDelhiveryB2BApi:
 
 def delhivery_b2b_api_for(tenant: Tenant) -> Optional[DelhiveryB2BApi]:
     """
-    The fake for the golden test tenant, the live B2B LTL client when B2B credentials
-    are configured, else the B2C Surface fallback when the B2C token is configured.
+    The fake for `DELHIVERY_FAKE_TENANT_SLUGS` (test harness only); for a live-bound tenant the
+    live B2B LTL client when B2B credentials are configured, else the B2C Surface fallback when
+    the B2C token is configured.
     """
-    if tenant.slug in FAKE_PROVIDER_TENANT_SLUGS:
+    if is_fake_tenant(tenant.slug):
         return FakeDelhiveryB2BApi(tenant.slug)
     tid = str(tenant.id)
-    b2b_api = live_b2b_api_if_configured(tid)
+    b2b_api = live_b2b_api_if_configured(tid, tenant.slug)
     if b2b_api is not None:
         return b2b_api
-    b2c_api = live_api_if_configured(tid)
+    b2c_api = live_api_if_configured(tid, tenant.slug)
     if b2c_api is not None:
         return B2CFallbackDelhiveryB2BApi(b2c_api)
     return None
@@ -509,7 +511,7 @@ class DelhiveryB2BProvider:
         return await fetch_with_cache(
             self.cache,
             self.tenant.id,
-            cache_key(body),
+            tenant_cache_key(self.tenant, cache_key(body)),
             body,
             freshness,
             lambda: self.api.estimate(body),  # type: ignore[union-attr]
@@ -518,7 +520,7 @@ class DelhiveryB2BProvider:
     async def _rto_leg(self, spec: ParcelSpec) -> Optional[CarrierLeg]:
         """Return-lane leg at booking: stored ≤ 24 h, else one call; None when Delhivery can't answer."""
         body = estimate_body(spec, CarrierLegKind.RTO)
-        cached = await self.cache.get(self.tenant.id, cache_key(body))
+        cached = await self.cache.get(self.tenant.id, tenant_cache_key(self.tenant, cache_key(body)))
         if cached is not None and _utc_now_naive() - cached.fetched_at <= FALLBACK_MAX_AGE:
             stored = _Fetched(dict(cached.response), cached.fetched_at, PriceSource.CACHED)
             return leg_from_estimate(CarrierLegKind.RTO, stored, None, spec)

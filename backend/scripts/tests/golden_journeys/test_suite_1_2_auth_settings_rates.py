@@ -538,9 +538,15 @@ async def test_j07_rate_calculator_unserviceable_pincode_and_volumetric_divisors
         )
         assert b2b_ok.status_code == 200, b2b_ok.text
         b2b_opts = {o["service_option"]: o for o in b2b_ok.json()["options"]}
-        assert set(b2b_opts.keys()) == {ServiceOption.PRIME_SURFACE.value}
+        assert set(b2b_opts.keys()) == {
+            ServiceOption.DELHIVERY_B2B_SURFACE.value,
+            ServiceOption.PRIME_SURFACE.value,
+        }
         assert b2b_opts[ServiceOption.PRIME_SURFACE.value]["serviceable"] is True
         assert b2b_opts[ServiceOption.PRIME_SURFACE.value]["total_amount"] == 1699.20
+        # Fake B2B: 10 kg -> 20 kg minimum, ₹298 below the ₹400 minimum LR -> ₹400 + 18 % GST.
+        assert b2b_opts[ServiceOption.DELHIVERY_B2B_SURFACE.value]["serviceable"] is True
+        assert b2b_opts[ServiceOption.DELHIVERY_B2B_SURFACE.value]["total_amount"] == 472.00
 
         b2b_no_lane = await client.post(
             "/api/v1/quotes",
@@ -564,9 +570,14 @@ async def test_j07_rate_calculator_unserviceable_pincode_and_volumetric_divisors
         )
         assert b2b_no_lane.status_code == 200, b2b_no_lane.text
         b2b_nl_opts = {o["service_option"]: o for o in b2b_no_lane.json()["options"]}
-        assert set(b2b_nl_opts.keys()) == {ServiceOption.PRIME_SURFACE.value}
+        assert set(b2b_nl_opts.keys()) == {
+            ServiceOption.DELHIVERY_B2B_SURFACE.value,
+            ServiceOption.PRIME_SURFACE.value,
+        }
         assert b2b_nl_opts[ServiceOption.PRIME_SURFACE.value]["serviceable"] is False
         assert b2b_nl_opts[ServiceOption.PRIME_SURFACE.value]["unavailable_code"] == "NO_PRIME_LANE"
+        # Delhivery B2B needs no Prime lane.
+        assert b2b_nl_opts[ServiceOption.DELHIVERY_B2B_SURFACE.value]["serviceable"] is True
 
         # 3. 50x40x30 CM (60,000 cm3), 1.0 kg actual -> Delhivery divisor 5000 -> 12.0 kg for both Surface & Express
         vol_resp = await client.post(

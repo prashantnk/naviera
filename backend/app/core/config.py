@@ -37,14 +37,19 @@ class Settings(BaseSettings):
     # --- Logging ---
     LOGFIRE_TOKEN: str = ""
 
-    # --- Delhivery B2C (Express) API: live prices for the one tenant bound to the token ---
+    # --- Delhivery B2C (Express) API: live prices for the tenants bound to the token ---
     # Token from one.delhivery.com → Settings → API Setup (prod; staging prices are ₹0).
-    # Empty = Delhivery options show "price unavailable" (the fake provider serves the
-    # golden test tenant only). See docs/RUNBOOK.md "Delhivery API token".
+    # Empty = Delhivery options show "price unavailable". See docs/RUNBOOK.md "Delhivery API token".
     DELHIVERY_B2C_TOKEN: str = ""
     DELHIVERY_B2C_BASE_URL: str = "https://track.delhivery.com"
     DELHIVERY_TENANT_ID: str = ""
     """UUID of the tenant whose Delhivery account the token belongs to (live `logismart`)."""
+    DELHIVERY_LIVE_TENANT_SLUGS: str = ""
+    """Comma-separated slugs that also use the live Delhivery accounts (e.g. `logismart,logismart-test`)."""
+    DELHIVERY_FAKE_TENANT_SLUGS: str = ""
+    """Comma-separated slugs priced by the deterministic fake instead; wins over the live binding. Set
+    only by the test harness (`run_golden.sh`, `scripts/tests/conftest.py`) and the Cloudtop
+    `backend/.env` whose `:8000` serves the UI golden phase. Unset on Render."""
 
     # --- Delhivery B2B (Cargo / LTL) API: live freight estimates, same bound tenant ---
     # Username + password of Logismart's Delhivery B2B account (`POST /ums/login` → 24 h JWT).

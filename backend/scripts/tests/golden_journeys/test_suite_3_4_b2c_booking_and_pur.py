@@ -30,6 +30,7 @@ from app.models.pickups import (
     ServiceType,
 )
 from app.models.wallet import WalletTransaction, WalletTxnStatus, WalletTxnType
+from app.services import mvp_scope
 from app.services.cod_payout import (
     carrier_freight_collected,
     cod_payout_amount,
@@ -370,7 +371,7 @@ async def test_j11_b2c_to_pay_plus_cod_zero_upfront_wallet_debit():
             json=order3_payload,
         )
         assert refused_resp.status_code == 400, refused_resp.text
-        assert "to-pay" in refused_resp.json()["detail"].lower()
+        assert refused_resp.json()["detail"] == mvp_scope.TO_PAY_DISABLED_DETAIL
 
         # Seed legacy TO_PAY Order #3 via allow_to_pay_bookings() to verify legacy row invariants (D26, J32)
         with allow_to_pay_bookings():

@@ -250,6 +250,7 @@
     "enabled_options": [
       "DELHIVERY_SURFACE",
       "DELHIVERY_EXPRESS",
+      "DELHIVERY_B2B_SURFACE",
       "PRIME_SURFACE"
     ]
   },

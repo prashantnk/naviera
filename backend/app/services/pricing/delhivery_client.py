@@ -18,7 +18,7 @@ import asyncio
 import logging
 import time
 from collections import deque
-from typing import Any, Deque, Dict, Mapping, Optional, Protocol, Tuple
+from typing import Any, Deque, Dict, FrozenSet, Mapping, Optional, Protocol, Tuple
 
 import httpx
 
@@ -186,18 +186,47 @@ def flag(record: Mapping[str, Any], name: str) -> bool:
     return str(record.get(name) or "").upper() == YES_FLAG
 
 
-def live_api_if_configured(tenant_id: str) -> Optional[LiveDelhiveryApi]:
+def _slug_set(raw: str) -> FrozenSet[str]:
+    """The slugs of a comma-separated `Settings` value (blanks ignored)."""
+    return frozenset(slug.strip() for slug in raw.split(",") if slug.strip())
+
+
+def is_fake_tenant(tenant_slug: str) -> bool:
+    """True when `DELHIVERY_FAKE_TENANT_SLUGS` binds the tenant to the fake (set by the test harness only)."""
+    return tenant_slug in _slug_set(settings.DELHIVERY_FAKE_TENANT_SLUGS)
+
+
+def is_live_tenant(tenant_id: str, tenant_slug: str = "") -> bool:
     """
-    The live client for the one tenant bound to the Delhivery token, else None.
+    True when the tenant may use the live Delhivery accounts: its slug is in
+    `DELHIVERY_LIVE_TENANT_SLUGS` or its id is `DELHIVERY_TENANT_ID`, and the fake does not
+    claim it (the fake wins, so the test harness never spends the live token or rate limit).
 
     Args:
         tenant_id: The tenant UUID as a string.
+        tenant_slug: The tenant slug (empty = match by id only).
+    """
+    if is_fake_tenant(tenant_slug):
+        return False
+    bound_id = settings.DELHIVERY_TENANT_ID.strip()
+    return (bool(bound_id) and tenant_id == bound_id) or tenant_slug in _slug_set(
+        settings.DELHIVERY_LIVE_TENANT_SLUGS
+    )
+
+
+def live_api_if_configured(tenant_id: str, tenant_slug: str = "") -> Optional[LiveDelhiveryApi]:
+    """
+    The live client for a tenant bound to the Delhivery token, else None.
+
+    Every live client shares this module's price limiter and lookup cache (process-wide).
+
+    Args:
+        tenant_id: The tenant UUID as a string.
+        tenant_slug: The tenant slug (empty = match by id only).
 
     Returns:
-        A client when `DELHIVERY_B2C_TOKEN` is set and the tenant is `DELHIVERY_TENANT_ID`.
+        A client when `DELHIVERY_B2C_TOKEN` is set and `is_live_tenant` holds.
     """
-    if not settings.DELHIVERY_B2C_TOKEN or not settings.DELHIVERY_TENANT_ID:
-        return None
-    if tenant_id != settings.DELHIVERY_TENANT_ID.strip():
+    if not settings.DELHIVERY_B2C_TOKEN or not is_live_tenant(tenant_id, tenant_slug):
         return None
     return LiveDelhiveryApi(settings.DELHIVERY_B2C_TOKEN, settings.DELHIVERY_B2C_BASE_URL)

@@ -19,8 +19,7 @@ from pydantic import ValidationError
 from app.models.tenants import Tenant
 from app.schemas.v1.pricing import PricingPolicy, PricingPolicyRead
 from app.services.pricing.delhivery_b2b_client import live_b2b_api_if_configured
-from app.services.pricing.delhivery_client import live_api_if_configured
-from app.services.pricing.fake_delhivery import FAKE_PROVIDER_TENANT_SLUGS
+from app.services.pricing.delhivery_client import is_fake_tenant, live_api_if_configured
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +55,20 @@ def policy_of(tenant: Tenant) -> Optional[PricingPolicy]:
 
 def delhivery_configured(tenant: Tenant) -> bool:
     """True when Delhivery prices can be fetched for this tenant (live token or the test fake)."""
-    if tenant.slug in FAKE_PROVIDER_TENANT_SLUGS:
+    if is_fake_tenant(tenant.slug):
         return True
-    return live_api_if_configured(str(tenant.id)) is not None
+    return live_api_if_configured(str(tenant.id), tenant.slug) is not None
 
 
 def delhivery_b2b_configured(tenant: Tenant) -> bool:
     """True when Delhivery B2B estimates can be fetched for this tenant (live login, B2C fallback, or test fake)."""
-    if tenant.slug in FAKE_PROVIDER_TENANT_SLUGS:
+    if is_fake_tenant(tenant.slug):
         return True
     tid = str(tenant.id)
-    return live_b2b_api_if_configured(tid) is not None or live_api_if_configured(tid) is not None
+    return (
+        live_b2b_api_if_configured(tid, tenant.slug) is not None
+        or live_api_if_configured(tid, tenant.slug) is not None
+    )
 
 
 def to_read(tenant: Tenant, policy: PricingPolicy) -> PricingPolicyRead:

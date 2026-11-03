@@ -33,6 +33,7 @@ from app.services.pricing.delhivery_client import (
     DelhiveryRefusedError,
     DelhiveryUnavailableError,
     _SlidingWindowLimiter,
+    is_live_tenant,
 )
 
 logger = logging.getLogger(__name__)
@@ -325,25 +326,25 @@ class LiveDelhiveryB2BApi:
 
 
 def b2b_credentials_configured() -> bool:
-    """True when the Delhivery B2B username, password and bound tenant are all set."""
-    return bool(
-        settings.DELHIVERY_B2B_USERNAME.strip()
-        and settings.DELHIVERY_B2B_PASSWORD
-        and settings.DELHIVERY_TENANT_ID.strip()
-    )
+    """True when the Delhivery B2B username and password are both set."""
+    return bool(settings.DELHIVERY_B2B_USERNAME.strip() and settings.DELHIVERY_B2B_PASSWORD)
 
 
-def live_b2b_api_if_configured(tenant_id: str) -> Optional[LiveDelhiveryB2BApi]:
+def live_b2b_api_if_configured(tenant_id: str, tenant_slug: str = "") -> Optional[LiveDelhiveryB2BApi]:
     """
-    The live B2B client for the one tenant bound to the Delhivery account, else None.
+    The live B2B client for a tenant bound to the Delhivery account, else None.
+
+    Every live client shares this module's JWT cache, estimate limiter and lookup cache
+    (process-wide, keyed by account, never by tenant).
 
     Args:
         tenant_id: The tenant UUID as a string.
+        tenant_slug: The tenant slug (empty = match by id only).
 
     Returns:
-        A client when `DELHIVERY_B2B_USERNAME/PASSWORD` are set and the tenant is `DELHIVERY_TENANT_ID`.
+        A client when `DELHIVERY_B2B_USERNAME/PASSWORD` are set and `is_live_tenant` holds.
     """
-    if not b2b_credentials_configured() or tenant_id != settings.DELHIVERY_TENANT_ID.strip():
+    if not b2b_credentials_configured() or not is_live_tenant(tenant_id, tenant_slug):
         return None
     return LiveDelhiveryB2BApi(
         settings.DELHIVERY_B2B_USERNAME.strip(), settings.DELHIVERY_B2B_PASSWORD, settings.DELHIVERY_B2B_BASE_URL
