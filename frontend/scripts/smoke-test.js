@@ -172,7 +172,7 @@ function pollServer(url, timeoutMs, intervalMs) {
         return;
       }
 
-      const req = http.get(url, (res) => {
+      const req = http.get(url, () => {
         // Any response means server is listening
         clearInterval(timer);
         resolve();

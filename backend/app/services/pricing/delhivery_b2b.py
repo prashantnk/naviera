@@ -41,7 +41,10 @@ from app.services.pricing.delhivery import (
     fetch_with_cache,
     slab_grams,
 )
-from app.services.pricing.delhivery_b2b_client import DelhiveryB2BApi, live_b2b_api_if_configured
+from app.services.pricing.delhivery_b2b_client import (
+    DelhiveryB2BApi,
+    live_b2b_api_if_configured,
+)
 from app.services.pricing.delhivery_client import (
     DelhiveryApi,
     DelhiveryRefusedError,

@@ -6,11 +6,10 @@ margin fields, non-JSON bodies pass through untouched. No database, no Naviera a
 
 import httpx
 import pytest
+from response_audit import ResponseAuditMiddleware, forbidden_keys
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
-
-from response_audit import ResponseAuditMiddleware, forbidden_keys
 
 STAFF_LANES_PATH = "/api/v1/pricing/prime-lanes"
 CARRIER_BILLING_PATH = "/api/v1/shipments/5f0c/carrier-billing"
@@ -67,3 +66,22 @@ async def test_middleware_passes_clean_json_and_non_json_through() -> None:
     assert clean.status_code == 200 and clean.json() == {"total": "159.30"}
     pdf = await _get(_app(b"%PDF-1.4 gross carrier_cost", "application/pdf"), "/label")
     assert pdf.content.startswith(b"%PDF")
+
+
+async def test_middleware_respects_dependency_overrides_for_staff_vs_customer() -> None:
+    """#699 (2): `dependency_overrides[get_current_active_user]` resolves staff vs customer."""
+    async def get_current_active_user():
+        return None
+
+    class _FakeUser:
+        def __init__(self, role: str) -> None:
+            self.role = role
+
+    app = _app({"items": [{"transporter_name": "SAMEER TRANSPORT"}]})
+    app.dependency_overrides = {get_current_active_user: lambda: _FakeUser("admin")}  # type: ignore[attr-defined]
+    res_staff = await _get(app, "/api/v1/shipments")
+    assert res_staff.status_code == 200
+
+    app.dependency_overrides = {get_current_active_user: lambda: _FakeUser("customer")}  # type: ignore[attr-defined]
+    with pytest.raises(AssertionError, match=r"\$\.items\[0\]\.transporter_name"):
+        await _get(app, "/api/v1/shipments")

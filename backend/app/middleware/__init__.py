@@ -1,6 +1,7 @@
+from fastapi import FastAPI
+
 from app.middleware.logging import log_requests
 from app.middleware.security_headers import add_security_headers
-from fastapi import FastAPI
 
 
 def register_middleware(app: FastAPI):

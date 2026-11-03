@@ -1,9 +1,8 @@
 """
 Exhaustive HTTP wire & contract tests for the live Delhivery B2C integration
-(`app/services/pricing/delhivery_client.py`, `app/services/pricing/delhivery.py`,
-and `llm_resources/.agents/pricing/p0_delhivery_prod_checks.py`).
+(`app/services/pricing/delhivery_client.py`, `app/services/pricing/delhivery.py`).
 
-Covers all 5 verification areas requested in board #437:
+Covers:
 (a) Pincode serviceability (`delivery_codes[].postal_code`, `pre_paid`, `cod`, `is_oda`,
     embargo `REMARK`/`remarks`, empty list = unserviceable, 24h lookup cache).
 (b) `kinko/v1/invoice/charges/.json` (`md=S|E`, `ss=Delivered|RTO|DTO`, `pt=Pre-paid|COD`,
@@ -11,15 +10,11 @@ Covers all 5 verification areas requested in board #437:
 (c) 50 req / 5 min (`PRICE_CALLS_PER_WINDOW = 45`) sliding-window rate limiter.
 (d) 3s HTTP timeout & 5xx/429/403 fallback to `delhivery_price_cache`
     (≤30m fresh cache hit, ≤24h fallback with `PriceSource.CACHED`, >24h -> 503).
-(e) `p0_delhivery_prod_checks.py` self-test (skip when token unset + full 7-probe run).
 """
 
-import importlib.util
-import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock
@@ -615,71 +610,3 @@ async def test_timeout_and_5xx_429_cache_fallback_30m_24h_and_expired_503(monkey
         )
     assert exc_503.value.status_code == 503
     assert "unavailable" in str(exc_503.value.detail).lower()
-
-
-# =============================================================================
-# (e) `p0_delhivery_prod_checks.py` self-test
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_p0_delhivery_prod_checks_script_self_test(tmp_path: Path, monkeypatch) -> None:
-    """
-    Loads `llm_resources/.agents/pricing/p0_delhivery_prod_checks.py` and verifies:
-    1. When `DELHIVERY_B2C_TOKEN` is empty, `run_checks()` returns `{"skipped": True}`.
-    2. When given a `LiveDelhiveryApi` backed by `MockTransport`, `run_checks()` executes
-       all 7 read-only probes and writes scrubbed JSON without leaking the token.
-    """
-    script_path = (
-        Path(__file__).resolve().parents[3]
-        / "llm_resources"
-        / ".agents"
-        / "pricing"
-        / "p0_delhivery_prod_checks.py"
-    )
-    spec = importlib.util.spec_from_file_location("p0_delhivery_prod_checks", script_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    monkeypatch.setattr(module.settings, "DELHIVERY_B2C_TOKEN", None)
-    skipped = await module.run_checks(api=None, out_path=tmp_path / "skipped.json")
-    assert skipped["skipped"] is True
-
-    delhivery_client._LOOKUP_CACHE.clear()
-    delhivery_client._PRICE_LIMITER._calls.clear()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/pin-codes/json/"):
-            return httpx.Response(200, json=_recorded_pincode_payload(pin=400001))
-        if request.url.path.endswith("/expected_tat"):
-            mot = request.url.params.get("mot", "S")
-            return httpx.Response(200, json={"success": True, "data": {"tat": 2 if mot == "E" else 4}})
-        return httpx.Response(200, json=[_recorded_kinko_row()])
-
-    api = LiveDelhiveryApi(
-        token="super-secret-prod-token",
-        base_url="https://track.delhivery.com",
-        transport=httpx.MockTransport(handler),
-    )
-    out_file = tmp_path / "p0_results.json"
-    results = await module.run_checks(api=api, out_path=out_file)
-
-    expected_keys = {
-        "1_prepaid_500g",
-        "1_cod_500g",
-        "2_dims_probe",
-        "3_rto_500g",
-        "5_dto_500g",
-        "6_tat_surface",
-        "6_tat_express",
-        "7_pincode_dest",
-    }
-    assert set(results.keys()) == expected_keys
-    assert out_file.exists()
-    raw_text = out_file.read_text()
-    assert "super-secret-prod-token" not in raw_text
-    parsed = json.loads(raw_text)
-    assert parsed["6_tat_surface"] == 4
-    assert parsed["6_tat_express"] == 2
-    assert parsed["7_pincode_dest"]["pin"] == 400001

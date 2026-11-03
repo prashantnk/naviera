@@ -23,6 +23,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from app.api.v1.endpoints import pricing_prime
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.pickups import DimensionUnit, ServiceOption, ShipmentType, WeightUnit
 from app.models.prime import PrimeDeliveryType, PrimeLane, PrimeLaneMode, PrimeZone
@@ -30,9 +31,13 @@ from app.models.tenants import UserRole
 from app.repositories.prime_rates import LaneWithZones, PincodeZone, ZoneWithCount
 from app.schemas.v1.pickups import PackageCreate
 from app.schemas.v1.prime import PrimeLanePatch
-from app.api.v1.endpoints import pricing_prime
 from app.services.pricing.prime import PrimeLaneTerms, PrimeProvider, price_on_terms
-from app.services.pricing.types import CarrierLegKind, ParcelSpec, PriceSource, QuoteUnavailableCode
+from app.services.pricing.types import (
+    CarrierLegKind,
+    ParcelSpec,
+    PriceSource,
+    QuoteUnavailableCode,
+)
 from app.services.prime_admin import (
     LANE_CSV_COLUMNS,
     PrimeAdminService,
@@ -42,7 +47,12 @@ from app.services.prime_admin import (
     plan_lane_import,
 )
 from scripts.import_prime_lanes import choose_active_lanes, read_sheet1
-from scripts.seed_prime_zones import ALIAS_INDEX, PincodeRecord, match_pincodes, zone_for_place
+from scripts.seed_prime_zones import (
+    ALIAS_INDEX,
+    PincodeRecord,
+    match_pincodes,
+    zone_for_place,
+)
 
 TENANT_ID = uuid.uuid4()
 DELHI = "Delhi NCR"

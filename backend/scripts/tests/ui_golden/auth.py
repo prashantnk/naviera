@@ -15,19 +15,14 @@ be logged in by this harness).
 
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import time
+import uuid
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
-import uuid
 
-
-# pytest (prepend import mode) puts `backend/scripts/tests` on sys.path and names
-# the golden package `golden_journeys`; importing it by that same name shares one
-# module object (account cache, run lock) with the golden API suites.
-from app.core.config import settings as app_settings
 from golden_journeys.golden_env import (
     GOLDEN_TENANT_SLUG,
     assert_email_is_test_actor,
@@ -35,6 +30,11 @@ from golden_journeys.golden_env import (
     load_accounts,
     mint_jwt,
 )
+
+# pytest (prepend import mode) puts `backend/scripts/tests` on sys.path and names
+# the golden package `golden_journeys`; importing it by that same name shares one
+# module object (account cache, run lock) with the golden API suites.
+from app.core.config import settings as app_settings
 
 from .browser_session import CdpSession
 from .hud import StepBanner

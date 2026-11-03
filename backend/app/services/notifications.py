@@ -16,13 +16,13 @@ so they never roll back a committed financial or operational transaction.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
+import smtplib
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import EmailMessage
-import logging
-import os
-import smtplib
 from typing import Deque, List, Optional
 
 logger = logging.getLogger(__name__)

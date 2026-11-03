@@ -8,7 +8,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models.manifests import ServiceFlow
 from app.models.pickups import NdrExceptionReason, PickupStatus
 from app.models.tenants import User, UserRole
-from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 from app.repositories.dashboard import (
     DashboardRepository,
     ShipmentScope,
@@ -23,6 +22,7 @@ from app.schemas.v1.dashboard import (
     DashboardPerformance,
     DashboardSummaryResponse,
 )
+from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 
 PERCENT_MULTIPLIER = 100.0
 METRIC_DECIMALS = 1

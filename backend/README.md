@@ -25,10 +25,11 @@ live in [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md).
 | `scripts/run_golden.sh`, `scripts/tests/golden_journeys/`, `scripts/tests/ui_golden/` | Golden suite: API journeys and the Playwright click-through layer on `logismart-test` |
 | `scripts/tests/` (other files) | Unit and integration tests |
 
-## Setup (GitHub Codespaces / Dev Containers)
+## Setup
 
-In GitHub Codespaces, `.devcontainer/post-create.sh` automatically configures `poetry config virtualenvs.in-project true`,
-runs `poetry install --with e2e`, and populates `backend/.env` from Codespaces secrets (or copies `.env.example`).
+In GitHub Codespaces, `.devcontainer/post-create.sh` runs `poetry install --with e2e` (venv in `backend/.venv`) and
+copies `.env.example` to `backend/.env` when it is missing; Codespaces secrets with the same names arrive as
+environment variables, which take precedence over `.env`.
 
 Manual setup from `naviera/backend/`:
 

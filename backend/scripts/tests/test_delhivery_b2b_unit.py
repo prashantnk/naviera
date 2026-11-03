@@ -33,14 +33,32 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.manifests import ServiceFlow
-from app.models.pickups import DimensionUnit, ProductCategory, ServiceOption, ServiceType
+from app.models.pickups import (
+    DimensionUnit,
+    ProductCategory,
+    ServiceOption,
+    ServiceType,
+)
 from app.repositories.shipments import B2B_SERVICE_OPTIONS
 from app.schemas.v1.pickups import PackageCreate, PickupCreate, carrier_display_name
 from app.schemas.v1.pricing import PricingPolicy, QuoteRequest
-from app.schemas.v1.tenant_settings import MarkupMode, OptionMarkup, PricingPolicySettings
+from app.schemas.v1.tenant_settings import (
+    MarkupMode,
+    OptionMarkup,
+    PricingPolicySettings,
+)
 from app.services.pricing import delhivery_b2b, delhivery_b2b_client, fake_delhivery_b2b
-from app.services.pricing.booking import PRICE_CHANGED_CODE, price_booking, service_type_for
-from app.services.pricing.delhivery import PriceFreshness, _Fetched, leg_from_response, return_only_leg
+from app.services.pricing.booking import (
+    PRICE_CHANGED_CODE,
+    price_booking,
+    service_type_for,
+)
+from app.services.pricing.delhivery import (
+    PriceFreshness,
+    _Fetched,
+    leg_from_response,
+    return_only_leg,
+)
 from app.services.pricing.delhivery_b2b import (
     NO_BOXES_REASON,
     NOT_CONNECTED_REASON,
@@ -62,7 +80,10 @@ from app.services.pricing.delhivery_b2b_client import (
     error_text,
     live_b2b_api_if_configured,
 )
-from app.services.pricing.delhivery_client import DelhiveryRefusedError, DelhiveryUnavailableError
+from app.services.pricing.delhivery_client import (
+    DelhiveryRefusedError,
+    DelhiveryUnavailableError,
+)
 from app.services.pricing.fake_delhivery import FakeDelhiveryApi
 from app.services.pricing.policy import delhivery_b2b_configured, policy_of, to_read
 from app.services.pricing.prime import PrimeProvider
@@ -77,7 +98,13 @@ from app.services.pricing.quote_service import (
     price_option,
 )
 from app.services.pricing.sell_price import SellTerms, terms_for
-from app.services.pricing.types import CarrierLegKind, CarrierQuote, ParcelSpec, PriceSource, QuoteUnavailableCode
+from app.services.pricing.types import (
+    CarrierLegKind,
+    CarrierQuote,
+    ParcelSpec,
+    PriceSource,
+    QuoteUnavailableCode,
+)
 from app.services.repricing import _option_for_service_type
 
 BASE_URL = "https://ltl.example.test"

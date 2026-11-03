@@ -14,10 +14,18 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.manifests import ServiceFlow
-from app.models.pickups import FreightPaymentMode, PickupStrategy, ProductCategory, ServiceOption, ServiceType, ShipmentType
+from app.models.pickups import (
+    FreightPaymentMode,
+    PickupStrategy,
+    ProductCategory,
+    ServiceOption,
+    ServiceType,
+    ShipmentType,
+)
 from app.schemas.v1.pickups import PickupCreate
 from app.services import mvp_scope
-from app.services.pricing import booking, delhivery as delhivery_module, fake_delhivery
+from app.services.pricing import booking, fake_delhivery
+from app.services.pricing import delhivery as delhivery_module
 from app.services.pricing.booking import (
     COMMERCIAL_IS_B2B_DETAIL,
     PRICE_CHANGED_CODE,

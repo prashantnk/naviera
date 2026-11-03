@@ -30,7 +30,11 @@ from app.repositories.tenants import TenantRepository
 from app.schemas.v1.pricing import PricingPolicy
 from app.services.pricing.fake_delhivery import FAKE_PROVIDER_TENANT_SLUGS
 from app.services.pricing.policy import PRICING_POLICY_SETTINGS_KEY
-from scripts.tenant_data_core import apply_transaction_timeouts, lock_tenant_row, require_tenant
+from scripts.tenant_data_core import (
+    apply_transaction_timeouts,
+    lock_tenant_row,
+    require_tenant,
+)
 
 LEGACY_RATE_CARD_KEY = "pricing_config"
 TEST_TENANT_COD_FEE_PERCENT = 2.0

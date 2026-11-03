@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ApiError,
   UpiIntentResponse,
   WalletService,
 } from "@/api_client";
@@ -18,7 +17,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { InputAdornment } from "@/components/ui/form-extras";
@@ -55,10 +53,8 @@ export function WalletRechargeDialog({
   const [amountInput, setAmountInput] = useState<string>("1000");
   const [intent, setIntent] = useState<UpiIntentResponse | null>(null);
   const [utrNumber, setUtrNumber] = useState<string>("");
-  const [showManualUtr, setShowManualUtr] = useState<boolean>(false);
   const [loadingIntent, setLoadingIntent] = useState<boolean>(false);
   const [confirmingPayment, setConfirmingPayment] = useState<boolean>(false);
-  const [verifyingUtr, setVerifyingUtr] = useState<boolean>(false);
 
   const handlePaymentCompleted = useCallback(
     (creditedAmount: number, newBalance: number, receiptNumber?: string | null) => {
@@ -69,7 +65,6 @@ export function WalletRechargeDialog({
       );
       setIntent(null);
       setUtrNumber("");
-      setShowManualUtr(false);
       onOpenChange(false);
       window.dispatchEvent(new CustomEvent("wallet-updated"));
       if (onSuccess) {
@@ -126,7 +121,6 @@ export function WalletRechargeDialog({
         tenantSlug
       );
       setIntent(response);
-      setShowManualUtr(false);
     } catch (err: unknown) {
       toast.error(
         extractApiErrorMessage(err, "Failed to generate UPI QR intent.")
@@ -162,7 +156,6 @@ export function WalletRechargeDialog({
       );
       setIntent(null);
       setUtrNumber("");
-      setShowManualUtr(false);
       onOpenChange(false);
       window.dispatchEvent(new CustomEvent("wallet-updated"));
       if (onSuccess) {
@@ -184,7 +177,6 @@ export function WalletRechargeDialog({
     if (!nextOpen) {
       setIntent(null);
       setUtrNumber("");
-      setShowManualUtr(false);
       setConfirmingPayment(false);
     }
     onOpenChange(nextOpen);
@@ -369,7 +361,7 @@ export function WalletRechargeDialog({
                 type="button"
                 variant="outline"
                 onClick={() => setIntent(null)}
-                disabled={confirmingPayment || verifyingUtr}
+                disabled={confirmingPayment}
               >
                 Change Amount
               </Button>

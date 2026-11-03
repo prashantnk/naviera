@@ -1,3 +1,8 @@
+"""
+Dashboard summary endpoint (`GET /api/v1/dashboard/summary`) integration tests:
+stage keys, live counts, and customer scoping on `logismart-test`.
+"""
+
 import uuid
 from datetime import date
 
@@ -9,7 +14,7 @@ from app.core.dependencies import get_current_active_user
 from app.main import app
 from app.models.tenants import User, UserRole
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 SUMMARY_URL = f"{settings.API_V1_STR}/dashboard/summary"
 SHIPMENTS_URL = f"{settings.API_V1_STR}/shipments"
 MANIFESTS_URL = f"{settings.API_V1_STR}/manifests"
@@ -18,6 +23,7 @@ B2C_STAGE_KEYS = {
     "to_be_shipped",
     "awaiting_pickup",
     "in_transit",
+    "out_for_delivery",
     "ndr_exceptions",
     "delivered",
     "rto",
@@ -25,6 +31,7 @@ B2C_STAGE_KEYS = {
 B2B_STAGE_KEYS = {
     "lrs_manifested",
     "in_transit",
+    "out_for_delivery",
     "exceptions",
     "consignee_unreachable",
     "delivered",

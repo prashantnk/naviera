@@ -25,7 +25,10 @@ import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 
+from sqlmodel import select
+
 import app.main  # noqa: F401  (loads the service graph in the app's own order: the
+
 # wallet <-> integrity_audit <-> repricing <-> delhivery_modules imports form a cycle that only
 # resolves in that order)
 from app.core.db import AsyncSessionLocal, async_engine
@@ -40,7 +43,6 @@ from scripts.tenant_data_core import (
     next_gst_serials,
     require_tenant,
 )
-from sqlmodel import select
 
 EXIT_OK = 0
 EXIT_FAILED = 1

@@ -50,7 +50,8 @@ function _stage(
   return { stage, track, isClosed };
 }
 
-const { FORWARD, RTO } = ShipmentTrack;
+const FORWARD = ShipmentTrack.FORWARD;
+const RTO = ShipmentTrack.RTO;
 const S = ShipmentStepperStage;
 
 /**

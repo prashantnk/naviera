@@ -8,9 +8,18 @@ Consolidated unit and edge-case test suite for the Temporal Hooks Worker
 4. Batch pagination stress testing (1,000 overdue appointments processed without OOM)
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
-import uuid
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import ARRAY
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel, select
 
 from app.models.manifests import Manifest
 from app.models.pickups import (
@@ -27,17 +36,8 @@ from app.models.pickups import (
     ShipmentActivity,
     ShipmentType,
 )
-import pytest
-import pytest_asyncio
-from scripts.temporal_hooks_worker import check_appointments, check_eway_bills
-from sqlalchemy import ARRAY
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel, select
-
 from app.models.tenants import Tenant, User
+from scripts.temporal_hooks_worker import check_appointments, check_eway_bills
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

@@ -21,7 +21,6 @@ from fastapi import HTTPException, Request, status
 from app.core.config import is_production
 from app.schemas.v1.tenants import PasswordLoginRequest
 
-
 SECONDS_PER_MINUTE = 60
 FORWARDED_FOR_HEADER = "x-forwarded-for"
 """Render / Vercel put the real client IP first in this header."""

@@ -1,7 +1,6 @@
 {
   // Workspace settings for the Naviera monorepo.
   // Applied automatically in GitHub Codespaces and in any local VS Code that opens this repo.
-  "workbench.colorTheme": "Solarized Dark",
   "editor.formatOnSave": true,
   "editor.wordWrap": "on",
   "files.exclude": {
@@ -15,6 +14,17 @@
     "**/.venv": true,
     "frontend/src/api_client": true
   },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/llm_resources/**": true
+  },
 
   // --- Backend (Python / FastAPI) ---
   "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
@@ -24,10 +34,11 @@
   "python.analysis.autoImportCompletions": true,
   "python.analysis.reportUnknownMemberType": "none",
   "python.testing.pytestEnabled": true,
+  "python.testing.autoTestDiscoverOnSaveEnabled": false,
   "python.testing.cwd": "${workspaceFolder}/backend",
   "python.testing.pytestArgs": ["scripts/tests"],
   "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.codeActionsOnSave": {
       "source.fixAll": "explicit",
       "source.organizeImports": "explicit"

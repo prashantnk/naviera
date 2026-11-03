@@ -1111,10 +1111,10 @@ class LabelGenerator:
             
             y_offset -= 15
             box_counter = 0
-            for idx, pkg in enumerate(shipment.packages):
+            for _idx, pkg in enumerate(shipment.packages):
                 dim_unit = pkg.dimension_unit.value
                 w_unit = pkg.weight_unit.value
-                for b in range(pkg.box_count):
+                for _b in range(pkg.box_count):
                     box_counter += 1
                     if box_counter <= 4:
                         child_awb = f"{shipment.tracking_id}-B{box_counter}"

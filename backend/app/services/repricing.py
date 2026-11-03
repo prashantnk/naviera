@@ -29,14 +29,29 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 from app.core.db import get_session
-from app.core.money import ZERO_MONEY, is_billable_delta, money_to_float, to_money, to_weight
+from app.core.money import (
+    ZERO_MONEY,
+    is_billable_delta,
+    money_to_float,
+    to_money,
+    to_weight,
+)
 from app.core.permissions import is_tenant_staff
 from app.models.delhivery_modules import BillingInvoice, InvoiceNoteType
 from app.models.manifests import ServiceFlow
@@ -70,7 +85,12 @@ from app.models.repricing import (  # noqa: F401  (money definitions are re-expo
     wallet_txn_type,
 )
 from app.models.tenants import Tenant, User, UserRole
-from app.models.wallet import WalletServiceCategory, WalletTransaction, WalletTxnStatus, WalletTxnType
+from app.models.wallet import (
+    WalletServiceCategory,
+    WalletTransaction,
+    WalletTxnStatus,
+    WalletTxnType,
+)
 from app.repositories import delhivery_modules as delhivery_modules_repository
 from app.repositories.repricing import RepricingRepository
 from app.repositories.shipments import is_b2b_shipment
@@ -88,7 +108,7 @@ from app.services.pricing.quote_service import (
     flow_of_option,
 )
 from app.services.pricing.types import ParcelSpec
-
+from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 
 BILL_ADJUSTMENTS_KEY = "bill_adjustments"
 """`pricing_breakdown` key: GST-inclusive extras added to the bill (Freight Collection, manual weight charge)."""

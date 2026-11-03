@@ -11,7 +11,10 @@ from app.models.manifests import Manifest
 from app.models.pickups import Address, PickupRequest
 from app.models.tenants import Tenant, User
 from app.models.wallet import WalletTransaction, WalletTxnType
-from app.services.delhivery_modules import render_gst_document, resolve_supplier_gst_profile
+from app.services.delhivery_modules import (
+    render_gst_document,
+    resolve_supplier_gst_profile,
+)
 from app.services.wallet import IST
 
 RECEIPT_TIMESTAMP_FORMAT = "%d %b %Y, %I:%M %p IST"

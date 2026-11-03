@@ -371,7 +371,6 @@ function ReverseBookingContent() {
   const onCompareRates = async () => {
     const isStep1Valid = await form.trigger();
     if (!isStep1Valid) {
-      console.error("Reverse specs validation fail:", form.formState.errors);
       toast.error(
         "Please fill out all required return fields and addresses first."
       );

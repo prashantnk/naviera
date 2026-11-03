@@ -10,6 +10,7 @@ Pure unit tests for Batch 2 backend items:
   `INTERVAL '5 hours 30 minutes'` before `date(...)`.
 """
 
+import asyncio
 import uuid
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
@@ -271,8 +272,6 @@ def test_dashboard_ist_window_and_sql_offset_f02() -> None:
                     return (None, None, None)
 
             return _Result()
-
-    import asyncio
 
     repo = DashboardRepository(_CapturingSession())  # type: ignore[arg-type]
     scope = ShipmentScope(

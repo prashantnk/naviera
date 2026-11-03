@@ -18,13 +18,25 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.manifests import ServiceFlow
-from app.models.pickups import DimensionUnit, FreightPaymentMode, ServiceOption, ShipmentType, WeightUnit
+from app.models.pickups import (
+    DimensionUnit,
+    FreightPaymentMode,
+    ServiceOption,
+    ShipmentType,
+    WeightUnit,
+)
 from app.schemas.v1.pickups import PackageCreate
 from app.schemas.v1.pricing import PricingPolicy
 from app.services import mvp_scope
 from app.services.pricing import delhivery as delhivery_module
 from app.services.pricing import fake_delhivery, weights
-from app.services.pricing.delhivery import DelhiveryProvider, PriceFreshness, cache_key, price_params, slab_grams
+from app.services.pricing.delhivery import (
+    DelhiveryProvider,
+    PriceFreshness,
+    cache_key,
+    price_params,
+    slab_grams,
+)
 from app.services.pricing.policy import policy_of
 from app.services.pricing.quote_service import (
     SellInputs,
@@ -37,7 +49,12 @@ from app.services.pricing.quote_service import (
     valuation,
 )
 from app.services.pricing.sell_price import SellTerms, cod_fee_for, marked_up, terms_for
-from app.services.pricing.types import CarrierLegKind, ParcelSpec, PriceSource, QuoteUnavailableCode
+from app.services.pricing.types import (
+    CarrierLegKind,
+    ParcelSpec,
+    PriceSource,
+    QuoteUnavailableCode,
+)
 
 TEST_TENANT = SimpleNamespace(id=uuid.uuid4(), slug="logismart-test", settings={})
 LIVE_TENANT = SimpleNamespace(id=uuid.uuid4(), slug="logismart", settings={})

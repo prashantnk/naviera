@@ -65,7 +65,12 @@ from app.services.pricing.policy import policy_of
 from app.services.pricing.prime import PrimeLaneTerms, price_on_terms
 from app.services.pricing.quote_service import PriceResult, SellInputs, price_option
 from app.services.pricing.sell_price import terms_for
-from app.services.pricing.types import CarrierLegKind, CarrierQuote, ParcelSpec, PriceSource
+from app.services.pricing.types import (
+    CarrierLegKind,
+    CarrierQuote,
+    ParcelSpec,
+    PriceSource,
+)
 
 LIVE_PRICING_POLICY = PricingPolicy(cod_fee_percent=2.0, cod_fee_min=1.0).model_dump(mode="json")
 TENANT = SimpleNamespace(

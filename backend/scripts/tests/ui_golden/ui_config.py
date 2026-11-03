@@ -6,8 +6,8 @@ different Chrome or frontend without code edits. Spring analogy: a
 `@ConfigurationProperties("ui-golden")` bean.
 """
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 

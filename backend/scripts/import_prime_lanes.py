@@ -38,11 +38,25 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.core.db import AsyncSessionLocal, async_engine
 from app.core.money import to_money
-from app.models.prime import DEFAULT_PRIME_MARKUP_PERCENT, PrimeDeliveryType, PrimeLaneMode
+from app.models.prime import (
+    DEFAULT_PRIME_MARKUP_PERCENT,
+    PrimeDeliveryType,
+    PrimeLaneMode,
+)
 from app.repositories.prime_rates import PrimeRatesRepository
 from app.schemas.v1.prime import PrimeImportIssue
-from app.services.prime_admin import LaneImportPlan, LaneInput, apply_lane_plan, plan_lane_import
-from scripts.seed_prime_zones import ZoneSpec, has_routing_text, normalize_place, zone_for_place
+from app.services.prime_admin import (
+    LaneImportPlan,
+    LaneInput,
+    apply_lane_plan,
+    plan_lane_import,
+)
+from scripts.seed_prime_zones import (
+    ZoneSpec,
+    has_routing_text,
+    normalize_place,
+    zone_for_place,
+)
 from scripts.tenant_data_core import apply_transaction_timeouts, get_tenant_by_slug
 
 EXIT_OK = 0

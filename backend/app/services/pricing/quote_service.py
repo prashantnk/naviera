@@ -23,7 +23,11 @@ from app.core.money import ZERO_MONEY, money_to_float, to_money, to_weight
 from app.models.manifests import ServiceFlow
 from app.models.pickups import FreightPaymentMode, ServiceOption, ShipmentType
 from app.models.tenants import Tenant
-from app.schemas.v1.pickups import EWAY_BILL_MANDATORY_THRESHOLD, PackageCreate, declared_total_value
+from app.schemas.v1.pickups import (
+    EWAY_BILL_MANDATORY_THRESHOLD,
+    PackageCreate,
+    declared_total_value,
+)
 from app.schemas.v1.pricing import (
     PricingPolicy,
     QuoteOption,
@@ -34,9 +38,19 @@ from app.schemas.v1.pricing import (
 )
 from app.services import mvp_scope
 from app.services.pricing import weights
-from app.services.pricing.delhivery import SS_FORWARD, SS_REVERSE, DelhiveryProvider, PriceFreshness, price_params
+from app.services.pricing.delhivery import (
+    SS_FORWARD,
+    SS_REVERSE,
+    DelhiveryProvider,
+    PriceFreshness,
+    price_params,
+)
 from app.services.pricing.delhivery_b2b import DelhiveryB2BProvider, estimate_body
-from app.services.pricing.policy import COD_DISABLED_REASON, POLICY_INVALID_REASON, policy_of
+from app.services.pricing.policy import (
+    COD_DISABLED_REASON,
+    POLICY_INVALID_REASON,
+    policy_of,
+)
 from app.services.pricing.prime import PrimeProvider
 from app.services.pricing.sell_price import (
     BreakdownContext,

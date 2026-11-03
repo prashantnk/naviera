@@ -10,7 +10,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.pickups import NdrAction, NdrExceptionReason, PickupStatus, ShipmentType
+from app.models.tenants import UserRole
 from app.repositories.shipments import parse_held_from
+from app.schemas.v1.exceptions import NdrActionRequest
 from app.services import ndr_rules
 from app.services.exceptions import ExceptionsService
 from app.services.shipment import ShipmentService
@@ -185,8 +187,6 @@ def _user(role):
 
 @pytest.mark.parametrize("target", [S.LOST, S.RTO_INITIATED])
 def test_operations_user_cannot_lose_or_rto(target: PickupStatus) -> None:
-    from app.models.tenants import UserRole
-
     with pytest.raises(HTTPException) as exc:
         ShipmentService._assert_status_change_role(
             _user(UserRole.operations_user), target, S.IN_TRANSIT, cancel_converted=False
@@ -198,13 +198,13 @@ def test_operations_user_cannot_lose_or_rto(target: PickupStatus) -> None:
 
 
 def test_operations_user_cannot_mark_lost_found_but_can_run_normal_moves() -> None:
-    from app.models.tenants import UserRole
-
     ops = _user(UserRole.operations_user)
     with pytest.raises(HTTPException):
         ShipmentService._assert_status_change_role(ops, S.IN_TRANSIT, S.LOST, False)
     ShipmentService._assert_status_change_role(ops, S.OUT_FOR_DELIVERY, S.IN_TRANSIT, False)
-    ShipmentService._assert_status_change_role(ops, S.RTO_INITIATED, S.IN_TRANSIT, True)
+    # A shipper's post-pickup cancel that converts to RTO is a customer/admin decision, never ops.
+    with pytest.raises(HTTPException):
+        ShipmentService._assert_status_change_role(ops, S.RTO_INITIATED, S.IN_TRANSIT, True)
 
 
 def test_manual_exception_exit_must_match_held_stage() -> None:
@@ -246,9 +246,6 @@ def test_charge_amount_payable_adds_gst_only_to_gst_exclusive_charges() -> None:
 
 
 def test_shipper_cannot_send_logismart_liable() -> None:
-    from app.models.tenants import UserRole
-    from app.schemas.v1.exceptions import NdrActionRequest
-
     request = NdrActionRequest(action=NdrAction.RETURN_TO_ORIGIN, logismart_liable=True)
     with pytest.raises(HTTPException) as exc:
         ExceptionsService._assert_liability_flag_allowed(request, _user(UserRole.customer))

@@ -30,6 +30,7 @@ from golden_journeys.golden_env import (
     release_run_lock,
 )
 from httpx import ASGITransport
+from sqlalchemy import delete
 
 from app.core.db import AsyncSessionLocal
 from app.main import app
@@ -41,8 +42,11 @@ from app.models.prime import PrimeLane
 from app.models.tenants import Tenant
 from app.repositories.prime_rates import PrimeRatesRepository
 from scripts.seed_prime_zones import apply_test_fixture
-from scripts.tenant_data_core import assert_test_tenant_slug, require_tenant, reset_test_tenant
-from sqlalchemy import delete
+from scripts.tenant_data_core import (
+    assert_test_tenant_slug,
+    require_tenant,
+    reset_test_tenant,
+)
 
 # --- Module-Level Constants ---
 ASGI_BASE_URL = "http://test"

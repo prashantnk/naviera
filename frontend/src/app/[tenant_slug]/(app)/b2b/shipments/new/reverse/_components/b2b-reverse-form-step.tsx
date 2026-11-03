@@ -4,7 +4,6 @@
 import {
   AddressRead,
   ProductCategory,
-  FreightPaymentMode,
   DocumentType,
   PickupStrategy,
 } from "@/api_client";
@@ -58,7 +57,6 @@ import { useRef, useEffect } from "react";
 export const CATEGORY_LABELS: Record<ProductCategory, string> = optionLabels(PRODUCT_CATEGORY_OPTIONS);
 
 const CATEGORY_SELECT_OPTIONS = toOptions(PRODUCT_CATEGORY_OPTIONS);
-const BILLING_SELECT_OPTIONS = toOptions(FREIGHT_PAYMENT_MODE_OPTIONS);
 const STRATEGY_SELECT_OPTIONS = toOptions(PICKUP_STRATEGY_OPTIONS);
 const DOC_TYPE_SELECT_OPTIONS = toOptions(DOCUMENT_TYPE_OPTIONS);
 

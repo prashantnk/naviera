@@ -1,10 +1,11 @@
 from typing import Any, Optional
 
-from app.core.config import settings
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlmodel import SQLModel
+
+from app.core.config import settings
 
 
 class TokenPayload(SQLModel):

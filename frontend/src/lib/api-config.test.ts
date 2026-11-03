@@ -9,6 +9,7 @@ import {
   redirectToLoginOnUnauthorized,
   resetUnauthorizedRedirectStateForTests,
 } from "./api-config";
+import { getTenantBySlug, isValidTenantSlug } from "./api";
 import { clearStoredSession } from "./supabase";
 
 vi.mock("./supabase", () => ({
@@ -99,5 +100,22 @@ describe("redirectToLoginOnUnauthorized (F-07)", () => {
   it("does nothing before a tenant is configured", () => {
     resetUnauthorizedRedirectStateForTests(null);
     expect(redirectToLoginOnUnauthorized(401, "/api/v1/shipments", true, navigate)).toBe(false);
+  });
+});
+
+describe("getTenantBySlug slug guard", () => {
+  it.each(["$", "%24", "favicon.ico", "favicon.png", "robots.txt", "", "   ", "-bad", "bad-"])(
+    "rejects non-slug %s without calling fetch",
+    async (invalidSlug) => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      expect(isValidTenantSlug(invalidSlug)).toBe(false);
+      await expect(getTenantBySlug(invalidSlug)).resolves.toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      fetchSpy.mockRestore();
+    },
+  );
+
+  it.each(["logismart", "logismart-test", "naviera"])("accepts valid slug %s", (validSlug) => {
+    expect(isValidTenantSlug(validSlug)).toBe(true);
   });
 });

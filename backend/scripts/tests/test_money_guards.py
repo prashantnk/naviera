@@ -13,6 +13,7 @@ import uuid
 from datetime import date
 
 import pytest
+from golden_journeys.golden_env import allow_to_pay_bookings, make_utr
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
@@ -24,7 +25,6 @@ from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.models.wallet import WalletTransaction, WalletTxnType
 from app.schemas.v1.pricing import PricingPolicy
 from app.services.pricing.quote_service import OPTION_DISABLED_REASON
-from golden_journeys.golden_env import allow_to_pay_bookings, make_utr
 
 HEADERS = {"X-Tenant-Slug": "naviera"}
 API = settings.API_V1_STR

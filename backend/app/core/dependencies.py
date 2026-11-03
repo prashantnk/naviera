@@ -1,12 +1,13 @@
 from typing import Optional
 
-from app.core.db import get_session
-from app.core.security import TokenPayload, decode_access_token
-from app.models.tenants import Tenant, User
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.db import get_session
+from app.core.security import TokenPayload, decode_access_token
+from app.models.tenants import Tenant, User
 
 oauth2_scheme = HTTPBearer(scheme_name="JWT")
 

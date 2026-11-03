@@ -4,7 +4,8 @@ from enum import Enum
 from typing import List, Optional
 
 import sqlalchemy as sa
-from sqlalchemy import Column, Enum as SAEnum, Index, JSON, UniqueConstraint
+from sqlalchemy import JSON, Column, Index, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, Relationship, SQLModel
 

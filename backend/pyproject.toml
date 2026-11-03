@@ -50,9 +50,20 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 seed = "scripts.seed:main_wrapper"
 
+[tool.ruff]
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+preview = true
+select = ["E4", "E7", "E9", "F", "I", "B007", "T201", "PLC0415"]
+
 [tool.ruff.lint.per-file-ignores]
-# Ignore "E402: Module vel imleport not at top of file" for main.py
+# setup_logging() must run before importing app routers so Logfire auto-tracing hooks imports
 "app/main.py" = ["E402"]
+# Alembic env.py kept byte-identical to origin/master
+"alembic/env.py" = ["I001", "T201", "PLC0415"]
+# CLI/ops/test scripts intentionally print progress and reports to stdout
+"scripts/**" = ["T201"]
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider --assert=plain"
 asyncio_default_fixture_loop_scope = "session"

@@ -38,7 +38,12 @@ from typing import Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal, async_engine
-from app.models.prime import PrimeDeliveryType, PrimeLaneMode, PrimeZone, PrimeZonePincode
+from app.models.prime import (
+    PrimeDeliveryType,
+    PrimeLaneMode,
+    PrimeZone,
+    PrimeZonePincode,
+)
 from app.repositories.prime_rates import PrimeRatesRepository
 from app.services.prime_admin import LaneInput, apply_lane_plan, plan_lane_import
 from scripts.tenant_data_core import (

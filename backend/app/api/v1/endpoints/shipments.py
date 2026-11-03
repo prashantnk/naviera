@@ -5,18 +5,20 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
+
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.core.idempotency import IdempotencyContext, require_idempotency
 from app.core.money import to_money, to_weight
-from app.models.pickups import PickupStatus, ShipmentType
+from app.core.permissions import is_tenant_staff
+from app.models.pickups import PickupRequest, PickupStatus, ShipmentType
 from app.models.tenants import Tenant, User
 from app.schemas.v1.common import PaginatedResponse
 from app.schemas.v1.pickups import (
+    AppointmentUpdate,
     NdrExceptionResolveRequest,
     PickupCreate,
     PickupRead,
     PickupUpdate,
-    AppointmentUpdate,
     ShipmentActivityRead,
 )
 from app.schemas.v1.pricing import (
@@ -70,6 +72,15 @@ IDEMPOTENCY_CANCEL = "shipments.cancel"
 IDEMPOTENCY_AUDIT_WEIGHT = "shipments.audit_weight"
 IDEMPOTENCY_MEASUREMENTS = "shipments.measurements"
 IDEMPOTENCY_ADMIN_CHARGE = "shipments.admin_charge"
+
+
+def _serialize_shipment(shipment: PickupRequest, user: User) -> PickupRead:
+    """Serializes a shipment to `PickupRead`, exposing `transporter_name` only to tenant staff."""
+    ShipmentService._attach_staff_transporter(shipment, user)
+    body = PickupRead.model_validate(shipment)
+    if not is_tenant_staff(user):
+        body.transporter_name = None
+    return body
 
 
 def _to_measurement_input(payload: MeasurementCreate) -> MeasurementInput:
@@ -135,7 +146,7 @@ async def create_shipment(
     )
 
     logger.info(f"API Success: Created Shipment ID {shipment.id}")
-    body = PickupRead.model_validate(shipment)
+    body = _serialize_shipment(shipment, current_user)
     await idem.store(body, status_code=status.HTTP_201_CREATED)
     return body
 
@@ -178,7 +189,7 @@ async def update_shipment(
     )
 
     logger.info(f"API Success: Updated Shipment {shipment_id}")
-    body = PickupRead.model_validate(updated_shipment)
+    body = _serialize_shipment(updated_shipment, current_user)
     await idem.store(body)
     return body
 
@@ -222,7 +233,7 @@ async def list_shipments(
     # Calculate total pages
     total_pages = math.ceil(total / size) if size > 0 else 0
 
-    parsed_items = [PickupRead.model_validate(item) for item in items]
+    parsed_items = [_serialize_shipment(item, current_user) for item in items]
 
     return PaginatedResponse(
         items=parsed_items, total=total, page=page, size=size, pages=total_pages
@@ -287,7 +298,7 @@ async def get_shipment_details(
     )
 
     # 2. Convert the SQLModel into our Pydantic Response Schema
-    return PickupRead.model_validate(shipment)
+    return _serialize_shipment(shipment, current_user)
 
 
 @router.get("/{shipment_id}/label")
@@ -401,7 +412,7 @@ async def audit_shipment_weight(
         tenant=current_tenant,
         override_total_price=payload.override_total_price,
     )
-    body = PickupRead.model_validate(updated)
+    body = _serialize_shipment(updated, current_user)
     await idem.store(body)
     return body
 
@@ -446,7 +457,7 @@ async def record_shipment_measurement(
             None,
         )
     body = MeasurementResult(
-        shipment=PickupRead.model_validate(shipment), adjustment=adjustment
+        shipment=_serialize_shipment(shipment, current_user), adjustment=adjustment
     )
     await idem.store(body)
     return body
@@ -548,7 +559,7 @@ async def cancel_shipment(
     )
 
     logger.info(f"API Success: Cancelled Shipment {shipment_id}")
-    body = PickupRead.model_validate(updated_shipment)
+    body = _serialize_shipment(updated_shipment, current_user)
     await idem.store(body)
     return body
 
@@ -576,7 +587,7 @@ async def update_appointment(
     )
 
     logger.info(f"API Success: Updated Appointment for Shipment {shipment_id}")
-    return updated_shipment
+    return _serialize_shipment(updated_shipment, current_user)
 
 
 @router.post("/{shipment_id}/resolve-exception", response_model=PickupRead)
@@ -604,7 +615,7 @@ async def resolve_shipment_exception(
         tenant=current_tenant,
     )
     logger.info(f"API Success: Resolved Exception for Shipment {shipment_id}")
-    return updated_shipment
+    return _serialize_shipment(updated_shipment, current_user)
 
 
 @router.get("/{shipment_id}/carrier-billing", response_model=CarrierBillingRead)

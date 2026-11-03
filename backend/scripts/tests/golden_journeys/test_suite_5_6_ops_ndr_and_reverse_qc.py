@@ -41,13 +41,13 @@ from app.models.pickups import (
 from app.models.wallet import WalletTransaction, WalletTxnStatus, WalletTxnType
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     CUSTOMER_B2C_EMAIL,
     GOLDEN_TENANT_SLUG,
     OPERATIONS_EMAIL,
     OWNER_EMAIL,
     SUPPORT_EMAIL,
+    GoldenSessionLocal,
     document_prefix,
     load_state,
     order_ref,

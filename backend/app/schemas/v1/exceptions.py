@@ -8,7 +8,8 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field as PydanticField, model_validator
+from pydantic import BaseModel, model_validator
+from pydantic import Field as PydanticField
 from sqlmodel import Field, SQLModel
 
 from app.models.exceptions import ExceptionCategory

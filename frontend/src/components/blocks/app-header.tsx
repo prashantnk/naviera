@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOutAndRedirect } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
 import {
   BookOpenCheck,
   Building2,

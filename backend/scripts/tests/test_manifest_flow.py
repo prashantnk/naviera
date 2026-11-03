@@ -1,18 +1,25 @@
+"""
+Delhivery-parity Pickup Request (Manifest / PUR) integration tests for B2C and B2B flows.
+"""
+
 import uuid
-import pytest
 from datetime import date
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user
+from app.main import app
 from app.models.manifests import Manifest, ManifestStatus
 from app.models.pickups import PickupRequest, PickupStatus
 from app.models.tenants import User, UserRole
-from app.services.manifests import ManifestService, PICKED_SHIPMENT_STATUSES
+from app.services.manifests import PICKED_SHIPMENT_STATUSES, ManifestService
+
 
 @pytest.mark.asyncio
 async def test_create_manifest_and_list():
-    headers = {"X-Tenant-Slug": "naviera"}
+    headers = {"X-Tenant-Slug": "logismart-test"}
     
     # 1. Create a shipment to assign to a manifest
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -25,7 +32,7 @@ async def test_create_manifest_and_list():
             "product_category": "ELECTRONICS",
             "is_carriers_risk": True,
             "new_pickup_address": {
-                "name": "Warehouse A", "phone": "9999999999", "address_line1": "Road 1", "city": "Delhi", "state": "DL", "pincode": "110001"
+                "name": "Warehouse A", "phone": "9999999999", "address_line1": "Road 1", "city": "Gurugram", "state": "HR", "pincode": "122001"
             },
             "new_delivery_address": {
                 "name": "Customer B", "phone": "8888888888", "address_line1": "Road 2", "city": "Mumbai", "state": "MH", "pincode": "400001"
@@ -99,25 +106,25 @@ async def test_create_manifest_and_list():
 # Delhivery-parity Pickup Requests (PUR) for B2C and B2B flows
 # =============================================================================
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 MANIFESTS_URL = f"{settings.API_V1_STR}/manifests"
 SHIPMENTS_URL = f"{settings.API_V1_STR}/shipments"
 PUR_NUMBER_LENGTH = 9
 
 
-def _pickup_location(tag: str, pincode: str = "560034") -> dict:
+def _pickup_location(tag: str, pincode: str = "122001") -> dict:
     """A unique warehouse per test so assertions never collide with other tenant data."""
     return {
         "name": f"PUR Warehouse {tag}",
         "phone": "9000000001",
-        "address_line1": f"Plot {tag}, Koramangala",
-        "city": "Bengaluru",
-        "state": "KA",
+        "address_line1": f"Plot {tag}, Udyog Vihar",
+        "city": "Gurugram",
+        "state": "HR",
         "pincode": pincode,
     }
 
 
-def _shipment_payload(pickup: dict, *, b2b: bool, box_count: int = 1) -> dict:
+def _shipment_payload(pickup: dict, *, b2b: bool, box_count: int = 1, blind: bool = False) -> dict:
     """B2C parcel by default; B2B cargo is flagged through carrier's risk (shared classifier)."""
     return {
         "order_reference_id": f"PUR-{uuid.uuid4().hex[:6]}",
@@ -127,6 +134,8 @@ def _shipment_payload(pickup: dict, *, b2b: bool, box_count: int = 1) -> dict:
         "pickup_time_slot": "10:00 - 14:00",
         "product_category": "ELECTRONICS",
         "is_carriers_risk": b2b,
+        "is_blind_pickup": blind,
+        "estimated_box_count": box_count if blind else None,
         "new_pickup_address": dict(pickup),
         "new_delivery_address": {
             "name": "Consignee",
@@ -136,16 +145,20 @@ def _shipment_payload(pickup: dict, *, b2b: bool, box_count: int = 1) -> dict:
             "state": "MH",
             "pincode": "400001",
         },
-        "packages": [
-            {
-                "length": 20.0,
-                "breadth": 20.0,
-                "height": 10.0,
-                "weight": 1.0,
-                "box_count": box_count,
-                "description": "Box",
-            }
-        ],
+        "packages": (
+            []
+            if blind
+            else [
+                {
+                    "length": 20.0,
+                    "breadth": 20.0,
+                    "height": 10.0,
+                    "weight": 1.0,
+                    "box_count": box_count,
+                    "description": "Box",
+                }
+            ]
+        ),
         "payment_details": {
             "freight_payment_mode": "PREPAID",
             "is_cod": False,
@@ -156,12 +169,12 @@ def _shipment_payload(pickup: dict, *, b2b: bool, box_count: int = 1) -> dict:
 
 
 async def _create_open_shipment(
-    client: AsyncClient, pickup: dict, *, b2b: bool, box_count: int = 1
+    client: AsyncClient, pickup: dict, *, b2b: bool, box_count: int = 1, blind: bool = False
 ) -> dict:
     """Creates a shipment (each one gets its OWN pickup address snapshot) and moves it to OPEN."""
     res = await client.post(
         SHIPMENTS_URL,
-        json=_shipment_payload(pickup, b2b=b2b, box_count=box_count),
+        json=_shipment_payload(pickup, b2b=b2b, box_count=box_count, blind=blind),
         headers=HEADERS,
     )
     assert res.status_code == 201, res.text
@@ -271,7 +284,7 @@ async def test_b2c_pickup_request_create_and_rules():
         assert all(m["id"] != pur["id"] for m in res.json())
         res = await client.get(
             MANIFESTS_URL,
-            params={"status": "SCHEDULED", "scheduled_date": str(date.today())},
+            params={"status": "SCHEDULED", "scheduled_date": pur["scheduled_date"]},
             headers=HEADERS,
         )
         assert any(m["id"] == pur["id"] for m in res.json())
@@ -282,9 +295,16 @@ async def test_b2b_pickup_request_blind_and_flow_check():
     pickup = _pickup_location(uuid.uuid4().hex[:6])
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         b2b_ship = await _create_open_shipment(client, pickup, b2b=True, box_count=4)
+        blind_lr = await _create_open_shipment(client, pickup, b2b=True, box_count=12, blind=True)
         location_id = b2b_ship["pickup_address"]["id"]
 
+        # D-07: a B2B blind pickup without at least one linked LR is rejected with 400.
         res = await _create_pur(client, location_id, [], flow="B2B", blind=True, total_boxes=12)
+        assert res.status_code == 400, res.text
+
+        res = await _create_pur(
+            client, location_id, [blind_lr["id"]], flow="B2B", blind=True, total_boxes=12
+        )
         assert res.status_code == 201, res.text
         blind = res.json()
         assert blind["service_flow"] == "B2B"
@@ -297,21 +317,22 @@ async def test_b2b_pickup_request_blind_and_flow_check():
         assert manifested["total_boxes"] == 4
         assert manifested["pickup_request_number"] != blind["pickup_request_number"]
 
-        # Labels need linked shipments
+        # Labels work because D-07 requires at least one linked LR on a blind pickup
         res = await client.get(f"{MANIFESTS_URL}/{blind['id']}/labels", headers=HEADERS)
-        assert res.status_code == 400
+        assert res.status_code == 200
+        assert res.content.startswith(b"%PDF")
 
 
 @pytest.mark.asyncio
 async def test_eligible_shipments_filter_by_flow_and_location():
     tag = uuid.uuid4().hex[:6]
-    pickup = _pickup_location(tag, pincode="560035")
+    pickup = _pickup_location(tag, pincode="122001")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         b2c_ship = await _create_open_shipment(client, pickup, b2b=False, box_count=2)
         b2c_ship_2 = await _create_open_shipment(client, pickup, b2b=False)
         b2b_ship = await _create_open_shipment(client, pickup, b2b=True)
         elsewhere = await _create_open_shipment(
-            client, _pickup_location(f"{tag}y", pincode="560035"), b2b=False
+            client, _pickup_location(f"{tag}y", pincode="122001"), b2b=False
         )
         location_id = b2c_ship["pickup_address"]["id"]
 

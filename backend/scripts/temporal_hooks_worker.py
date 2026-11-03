@@ -21,19 +21,19 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Set
 
-from sqlmodel import select
 from sqlalchemy import func
+from sqlmodel import select
 
 from app.core.db import AsyncSessionLocal
-from app.models.tenants import User
 from app.models.pickups import (
-    PickupRequest,
-    PaymentDetails,
-    PickupStatus,
-    NdrExceptionReason,
-    ShipmentActivity,
     ActivityType,
+    NdrExceptionReason,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
+    ShipmentActivity,
 )
+from app.models.tenants import User
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

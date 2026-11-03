@@ -15,6 +15,7 @@ Spring analogy: a test-scope `OncePerRequestFilter` that inspects every response
 """
 
 import base64
+import inspect
 import json
 import re
 from typing import Any, Iterator, Pattern, Sequence, Tuple
@@ -40,6 +41,17 @@ STAFF_EMAIL_PREFIXES: Tuple[str, ...] = (
     "operations@",
     "support@",
     "readonly@",
+)
+STAFF_ROLE_VALUES = frozenset(
+    {
+        "owner",
+        "admin",
+        "operations_user",
+        "support_user",
+        "read_only_user",
+        "support_agent",
+        "read_only",
+    }
 )
 JSON_CONTENT_TYPE = b"application/json"
 
@@ -86,7 +98,6 @@ class ResponseAuditMiddleware:
             return
         start: list[Message] = []
         body = bytearray()
-        staff_caller = _is_staff_scope(scope)
 
         async def audited_send(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -101,6 +112,7 @@ class ResponseAuditMiddleware:
             body.extend(message.get("body", b""))
             if message.get("more_body", False):
                 return
+            staff_caller = await _resolve_is_staff_caller(scope)
             _audit(bytes(body), scope.get("path", ""), is_staff_caller=staff_caller)
             await send(start[0])
             await send({"type": "http.response.body", "body": bytes(body), "more_body": False})
@@ -112,6 +124,41 @@ def _is_json(start: Message) -> bool:
     """True when the response start message declares a JSON body."""
     headers = dict(start.get("headers", []))
     return headers.get(b"content-type", b"").startswith(JSON_CONTENT_TYPE)
+
+
+def _is_staff_user(user: Any) -> bool:
+    """True when a resolved User object has a tenant-staff role."""
+    role = getattr(user, "role", None)
+    role_val = getattr(role, "value", role)
+    return str(role_val) in STAFF_ROLE_VALUES
+
+
+async def _resolve_is_staff_caller(scope: Scope) -> bool:
+    """
+    Resolves whether the caller is tenant staff, checking FastAPI `dependency_overrides`
+    for `get_current_active_user` first (used by savepoint unit/integration suites) and
+    falling back to the Bearer JWT claims (used by golden API journeys).
+    """
+    fastapi_app = scope.get("app")
+    overrides = getattr(fastapi_app, "dependency_overrides", None) or {}
+    for dep_fn, override_fn in overrides.items():
+        if getattr(dep_fn, "__name__", "") == "get_current_active_user":
+            try:
+                sig = inspect.signature(override_fn)
+                required = [
+                    p
+                    for p in sig.parameters.values()
+                    if p.default is inspect.Parameter.empty
+                    and p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                ]
+                if not required:
+                    result = override_fn()
+                    if inspect.isawaitable(result):
+                        result = await result
+                    return _is_staff_user(result)
+            except Exception:
+                break
+    return _is_staff_scope(scope)
 
 
 def _is_staff_scope(scope: Scope) -> bool:
@@ -128,6 +175,9 @@ def _is_staff_scope(scope: Scope) -> bool:
         claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
     except Exception:
         return False
+    role_claim = str(claims.get("user_role") or "").strip().lower()
+    if role_claim in STAFF_ROLE_VALUES:
+        return True
     email = str(claims.get("email") or "").strip().lower()
     return email.startswith(STAFF_EMAIL_PREFIXES)
 

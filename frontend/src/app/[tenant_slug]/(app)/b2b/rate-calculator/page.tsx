@@ -61,15 +61,8 @@ import {
   Plus,
   Trash2,
   Truck,
-  Plane,
-  Train,
-  Check,
-  ShieldAlert,
-  Info,
   IndianRupee,
   ArrowRight,
-  ShieldCheck,
-  Percent,
   Warehouse,
 } from "lucide-react";
 import Link from "next/link";
@@ -252,7 +245,7 @@ const rateCalculatorSchema = z
 type RateCalculatorFormValues = z.infer<typeof rateCalculatorSchema>;
 
 export default function B2BRateCalculatorPage() {
-  const { tenantSlug, routeTo } = useTenant();
+  const { routeTo } = useTenant();
   const isB2BFlow = isB2BCalculatorPath(usePathname());
   const flowLabel = isB2BFlow ? "B2B" : "B2C";
   const [isCalculating, setIsCalculating] = useState(false);

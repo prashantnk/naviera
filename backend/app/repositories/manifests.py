@@ -47,13 +47,25 @@ class ManifestRepository:
         await self.session.flush()
         return manifest
 
-    async def get_manifest_by_id(self, manifest_id: uuid.UUID, tenant_id: uuid.UUID) -> Manifest | None:
-        query = select(Manifest).where(
-            Manifest.id == manifest_id,
-            Manifest.tenant_id == tenant_id,
-        ).options(
-            selectinload(Manifest.pickups).options(*self._shipment_eager_options())
-        ).execution_options(populate_existing=True)
+    async def get_manifest_by_id(
+        self,
+        manifest_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        for_update: bool = False,
+    ) -> Manifest | None:
+        query = (
+            select(Manifest)
+            .where(
+                Manifest.id == manifest_id,
+                Manifest.tenant_id == tenant_id,
+            )
+            .options(
+                selectinload(Manifest.pickups).options(*self._shipment_eager_options())
+            )
+            .execution_options(populate_existing=True)
+        )
+        if for_update:
+            query = query.with_for_update()
         result = await self.session.exec(query)
         return result.first()
 

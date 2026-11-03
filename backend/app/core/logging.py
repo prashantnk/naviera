@@ -5,6 +5,8 @@ import logfire
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class EndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -25,7 +27,6 @@ def setup_logging():
             environment=settings.ENVIRONMENT,
             console=settings.CONSOLE_LOG,
         )
-        print("✅ Logfire configured successfully (Console output silenced).")
 
         # 🔥 FIX: Target specific business logic modules instead of the whole "app" folder.
         # This completely stops the middleware from generating empty "auto-tracing" spans!
@@ -42,8 +43,8 @@ def setup_logging():
             isinstance(h, logfire.LogfireLoggingHandler) for h in root_logger.handlers
         ):
             root_logger.addHandler(logfire.LogfireLoggingHandler())
-            print("✅ Logfire handler attached to root logger.")
+            logger.info("Logfire configured and handler attached to root logger.")
 
     else:
-        print("⚠️ LOGFIRE_TOKEN not set. Logging will be local only.")
         logging.basicConfig(level=logging.INFO)
+        logger.debug("LOGFIRE_TOKEN not set; using standard local logging.")

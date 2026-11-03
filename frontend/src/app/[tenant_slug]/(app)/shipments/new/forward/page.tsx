@@ -311,7 +311,6 @@ export default function ForwardBookingSandbox() {
   const onCompareRates = async () => {
     const isStep1Valid = await form.trigger();
     if (!isStep1Valid) {
-      console.error("Outbound specs validation fail:", form.formState.errors);
       toast.error("Please correct all validation errors in Shipment Specs first.");
       return;
     }

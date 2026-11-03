@@ -7,16 +7,15 @@ UI pricing journeys (Pricing Redesign Step D9, `llm_resources/.agents/pricing/DE
 5. Ops AWB + Delhivery charged weight/amount entry -> backend billing gap alert & gap ₹ badge.
 """
 
-from decimal import Decimal
 import re
-from typing import Dict
 import uuid
+from decimal import Decimal
+from typing import Dict
 
 import pytest
 
 pytest.importorskip("playwright.async_api")
 
-from app.models.pickups import ServiceOption  # noqa: E402
 from golden_journeys.golden_env import (  # noqa: E402
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
@@ -24,6 +23,8 @@ from golden_journeys.golden_env import (  # noqa: E402
     OPERATIONS_EMAIL,
 )
 from playwright.async_api import Page, Route, expect  # noqa: E402
+
+from app.models.pickups import ServiceOption  # noqa: E402
 
 from .db_oracle import DbOracle  # noqa: E402
 from .money import to_paisa  # noqa: E402

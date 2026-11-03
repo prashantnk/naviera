@@ -14,7 +14,11 @@ from typing import List, Optional
 from playwright.async_api import expect
 
 from ..testids import BookingIds, ShipmentDetailIds
-from ..ui_config import ELEMENT_TIMEOUT_MS, MONEY_WRITE_TIMEOUT_MS, NAVIGATION_TIMEOUT_MS
+from ..ui_config import (
+    ELEMENT_TIMEOUT_MS,
+    MONEY_WRITE_TIMEOUT_MS,
+    NAVIGATION_TIMEOUT_MS,
+)
 from .base_page import BasePage
 
 

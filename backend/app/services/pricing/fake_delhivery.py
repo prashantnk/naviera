@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, Mapping, Optional
 
 from app.core.money import to_money
-from app.services.pricing.delhivery_client import DelhiveryRefusedError, DelhiveryUnavailableError
+from app.services.pricing.delhivery_client import (
+    DelhiveryRefusedError,
+    DelhiveryUnavailableError,
+)
 
 FAKE_PROVIDER_TENANT_SLUGS: FrozenSet[str] = frozenset({"logismart-test"})
 """Mirror of `scripts/tenant_data_core.ALLOWED_TEST_SLUGS`: the only tenants the fake serves."""

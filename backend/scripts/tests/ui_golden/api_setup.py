@@ -13,6 +13,7 @@ Spring analogy: a `TestRestTemplate` helper used by Selenium tests for fixture d
 from datetime import date
 from typing import Any, Dict, Mapping, Sequence
 
+import httpx
 from golden_journeys.golden_env import (
     ADMIN_EMAIL,
     headers,
@@ -20,7 +21,6 @@ from golden_journeys.golden_env import (
     make_utr,
     read_otp_as_merchant,
 )
-import httpx
 
 from .ui_fixtures import api_url
 

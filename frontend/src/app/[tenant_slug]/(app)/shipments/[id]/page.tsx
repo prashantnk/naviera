@@ -65,7 +65,6 @@ import {
   Box,
   Building2,
   Calendar,
-  CheckCircle2,
   Copy,
   CreditCard,
   FileText,
@@ -82,7 +81,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CATEGORY_LABELS } from "../new/page";
 
@@ -354,7 +353,7 @@ export default function ShipmentDetailsPage() {
     toast.success("Tracking ID copied to clipboard!");
   };
 
-  const fetchDetails = async () => {
+  const fetchDetails = useCallback(async () => {
     if (!shipmentId) return;
     try {
       const [shipmentData, timelineData] = await Promise.all([
@@ -379,11 +378,11 @@ export default function ShipmentDetailsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [shipmentId, tenantSlug]);
 
   useEffect(() => {
     fetchDetails();
-  }, [shipmentId]);
+  }, [fetchDetails]);
 
   const handlePrintLabel = async () => {
     setIsPrinting(true);

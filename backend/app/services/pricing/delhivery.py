@@ -38,7 +38,10 @@ from app.services.pricing.delhivery_client import (
     is_embargoed,
     live_api_if_configured,
 )
-from app.services.pricing.fake_delhivery import FAKE_PROVIDER_TENANT_SLUGS, FakeDelhiveryApi
+from app.services.pricing.fake_delhivery import (
+    FAKE_PROVIDER_TENANT_SLUGS,
+    FakeDelhiveryApi,
+)
 from app.services.pricing.types import (
     CarrierLeg,
     CarrierLegKind,

@@ -21,6 +21,7 @@ from datetime import date
 from typing import List, Optional
 
 import pytest
+from golden_journeys.golden_env import allow_to_pay_bookings
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
@@ -29,7 +30,13 @@ from app.core.dependencies import get_current_active_user, get_tenant_from_heade
 from app.core.money import to_money
 from app.main import app
 from app.models.delhivery_modules import BillingInvoice, CodRemittance, InvoiceNoteType
-from app.models.pickups import NdrAction, NdrExceptionReason, PaymentDetails, PickupRequest, PickupStatus
+from app.models.pickups import (
+    NdrAction,
+    NdrExceptionReason,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
+)
 from app.models.repricing import BillingChannel
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.models.wallet import UserWallet, WalletTransaction, WalletTxnType
@@ -39,7 +46,6 @@ from app.services.delhivery_modules import SEPARATE_CHARGE_LINE_FLAG, tenant_gst
 from app.services.label import LabelGenerator
 from app.services.shipment import RTO_FREIGHT_REMARK_TEMPLATE
 from app.services.wallet import indian_financial_year_label, today_ist
-from golden_journeys.golden_env import allow_to_pay_bookings
 
 HEADERS = {"X-Tenant-Slug": "naviera"}
 API = settings.API_V1_STR

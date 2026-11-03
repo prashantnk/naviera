@@ -1,19 +1,11 @@
 {
-  // Run from Terminal > Run Task (or Ctrl/Cmd+Shift+P > "Tasks: Run Task").
-  // Uses an interactive bash shell so nvm / poetry from ~/.bashrc are available locally too.
+  // Terminal > Run Task. An interactive bash shell makes nvm / poetry from ~/.bashrc available.
   "version": "2.0.0",
   "options": {
     "shell": { "executable": "bash", "args": ["-ic"] },
     "env": { "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring" }
   },
   "tasks": [
-    {
-      "label": "Naviera: Install Dependencies",
-      "type": "shell",
-      "command": "(cd backend && poetry config virtualenvs.in-project true && poetry install) && (cd frontend && npm install)",
-      "options": { "cwd": "${workspaceFolder}" },
-      "problemMatcher": []
-    },
     {
       "label": "Naviera: Run Backend",
       "type": "shell",
@@ -39,18 +31,11 @@
       "problemMatcher": []
     },
     {
-      "label": "Naviera: Backend Tests",
+      "label": "Naviera: Quick Checks (ruff, tsc, audit, vitest, pure unit tests)",
       "type": "shell",
-      "command": "poetry run pytest scripts/tests -v",
+      "command": "bash scripts/run_golden.sh --quick",
       "options": { "cwd": "${workspaceFolder}/backend" },
       "problemMatcher": []
-    },
-    {
-      "label": "Naviera: Frontend Checks (tsc + audit + vitest)",
-      "type": "shell",
-      "command": "npx tsc --noEmit && npm run test:audit && npx vitest run",
-      "options": { "cwd": "${workspaceFolder}/frontend" },
-      "problemMatcher": ["$tsc"]
     }
   ]
 }

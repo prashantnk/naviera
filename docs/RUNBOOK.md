@@ -3,11 +3,11 @@
 Operational steps for deploying Naviera, applying migrations, running the golden test suite on
 `logismart-test`, wiping test data from live `logismart`, and the go-live check.
 
-Background and decisions: the ship-readiness plan (Phases A to F) and [`.agents/TASKS.md`](../.agents/TASKS.md).
+Background and decisions: the ship-readiness plan (Phases A to F) and [`docs/BACKLOG.md`](BACKLOG.md).
 Architecture: [`README.md`](../README.md) and [`.agents/AGENTS.md`](../.agents/AGENTS.md).
 
 > [!CAUTION]
-> **There is one Supabase project** (`exuvtihsfpzauijzhczo`). Local dev, the golden tests and
+> **There is one Supabase project** (`<project-ref>.supabase.co`). Local dev, the golden tests and
 > production all use the same database. Every `alembic upgrade` changes the **live** schema, and
 > every script run with `--execute` writes **live** rows. There is no staging copy to try a
 > migration on first.
@@ -33,9 +33,7 @@ export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring   # poetry without a
 `GOLDEN_TEST_PASSWORD` is the shared password of the seeded `@logismart.in` test accounts. Keep it in a
 password manager and `export` it per shell. Never write it into a tracked file or `backend/.env`.
 
-In **GitHub Codespaces**, `.devcontainer/devcontainer.json` declares all required secrets and
-`.devcontainer/post-create.sh` automatically populates `backend/.env` and `frontend/.env.local` on
-first boot (or copies `.env.example` and prints whichever secret names still need values).
+In **GitHub Codespaces**, `.devcontainer/post-create.sh` installs dependencies (`poetry install --with e2e` + `npm ci`) and copies `backend/.env.example` → `backend/.env` and `frontend/.env.example` → `frontend/.env.local` if missing; Codespaces secrets arrive directly as environment variables, which override `.env`.
 
 ### 1.2 Bootstrapping a fresh fork (empty Supabase database)
 
@@ -43,7 +41,7 @@ If you forked this repository and created a brand-new, empty Supabase project:
 
 1. **Create a Supabase project & configure secrets:**
    - Grab the **Transaction Pooler URL** (port `6543`) for `DATABASE_URL`, the **Session Pooler / Direct URL** (port `5432`) for `ALEMBIC_DATABASE_URL`, the **JWT Secret** for `SECRET_KEY`, and your project URL + `anon` key.
-   - Set them as GitHub Codespaces repository secrets (see [`.devcontainer/devcontainer.json`](../.devcontainer/devcontainer.json)) or fill `backend/.env` and `frontend/.env.local` from their `.env.example` templates.
+   - Set them as GitHub Codespaces secrets (which arrive as environment variables; see [`.devcontainer/devcontainer.json`](../.devcontainer/devcontainer.json)) or fill `backend/.env` and `frontend/.env.local` from their `.env.example` templates.
 2. **Apply the Alembic migration chain (`2dc7f2258368` → `c6d7e8f9a0b1`, 36 revisions):**
    ```bash
    cd backend
@@ -78,8 +76,7 @@ If you forked this repository and created a brand-new, empty Supabase project:
      `backend/scripts/tests/golden_journeys/fixtures/logismart_test_settings.json` as a starting point
      with `environment` set to `"production"`.
 4. **Start the application:**
-   - Run `run-backend` (`uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app`) in Terminal 1.
-   - Run `run-frontend` (`npm run dev` on `:3000`) in Terminal 2.
+   - Run the VS Code task `Naviera: Run Full Stack` (or `cd backend && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app` in Terminal 1 and `cd frontend && npm run dev -- -p 3000` in Terminal 2).
    - Optional background worker: `cd backend && poetry run python -m scripts.temporal_hooks_worker`.
 
 ### 1.3 Delhivery API token (B2C) and B2B Cargo credentials
@@ -111,7 +108,7 @@ offers Surface + Express at a higher rate. Bookings on one.delhivery.com must us
    (a wrong password locks the user for 10 minutes). "Pricing File Not exist" = ask Delhivery to load the rate card.
 4. Delhivery expires LTL passwords every 180 days: put a calendar reminder to rotate it.
 
-Until the password is set, "Delhivery B2B Cargo" shows "price unavailable" and **Logismart Prime** is the B2B option.
+When `DELHIVERY_B2B_PASSWORD` is empty, **Delhivery B2B Cargo** prices live via the B2C-token fallback (`B2CFallbackDelhiveryB2BApi` using `DELHIVERY_B2C_TOKEN`, divisor `4500`, `20 kg` minimum) alongside **Logismart Prime**; setting `DELHIVERY_B2B_PASSWORD` switches to the native LTL `/ums/login` + `/freight/estimate` endpoint.
 
 **Apply / rotate a key:** update the value in Render (API **and** worker) and in your local `backend/.env`, then
 restart the API. Keys are read once at startup (pydantic `Settings`); nothing is stored in the database.
@@ -138,7 +135,7 @@ for this tenant; it does not prove the key is valid) and `delhivery_b2b_configur
 
 ### 1.4 Supabase production hardening (exposed schemas, custom SMTP & auth redirects)
 
-Before opening live traffic on Supabase (`exuvtihsfpzauijzhczo`), verify these three dashboard settings:
+Before opening live traffic on Supabase (`<project-ref>.supabase.co`), verify these three dashboard settings:
 
 1. **Disable PostgREST on `public` schema (`M-01`):**
    - All 24 application tables in `public` have Row-Level Security (RLS) enabled with a deny-all policy for direct PostgREST callers (because all data access goes through FastAPI using the `postgres` DB role).
@@ -147,7 +144,7 @@ Before opening live traffic on Supabase (`exuvtihsfpzauijzhczo`), verify these t
    - Supabase's built-in mail server is rate-limited to ~3–4 emails/hour, which blocks customer OTP logins and password resets in production.
    - Open **Supabase Dashboard → Authentication → SMTP Settings**, enable **Custom SMTP**, and configure Resend (`smtp.resend.com`, port `465` SSL) or AWS SES with a verified sender domain (e.g. `no-reply@logismart.in`).
 3. **Allowed Auth Redirect URLs (`D-01`):**
-   - Open **Supabase Dashboard → Authentication → URL Configuration** and ensure `Site URL` is set to the production domain (`https://logismart.in` or `https://logismart.naviera.com`) and `Redirect URLs` includes `https://**/auth/callback` and `http://localhost:3000/**` for local development.
+   - Open **Supabase Dashboard → Authentication → URL Configuration** and ensure `Site URL` is set to the production domain (`https://logismart.in` or `https://logismart.naviera.com`) and `Redirect URLs` includes `https://**/<slug>/callback` (e.g. `https://*.naviera.com/callback`, rewritten by `middleware.ts` to `frontend/src/app/[tenant_slug]/callback/page.tsx`) and `http://localhost:3000/**` for local development.
 
 ---
 
@@ -203,30 +200,28 @@ poetry run alembic upgrade <revision>
 poetry run alembic current    # must print the revision just applied
 ```
 
-### 3.2 Current chain (live `alembic current` = `b5c6d7e8f9a0`, applied 2026-10-30)
+### 3.2 Current chain (live `alembic current` = `c6d7e8f9a0b1`, head)
 
 | Revision | File (`backend/alembic/versions/`) | What | Git state |
 |---|---|---|---|
-| `c4e8f1a2b3d5` | `c4e8f1a2b3d5_add_pickup_request_flow_to_manifests.py` | Pickup Requests for B2C + B2B (`service_flow`, 9-digit PUR number, `NOT_PICKED`) | **untracked** |
-| `d1e2f3a4b5c6` | `d1e2f3a4b5c6_add_delivery_exception_ndr_fields.py` | NDR reasons, attempt count, remark, `charge_amount` | **untracked** |
-| `e2f3a4b5c6d7` | `e2f3a4b5c6d7_add_tenant_settings_history.py` | `tenant_settings_history` | **untracked** |
-| `f3a4b5c6d7e8` | `f3a4b5c6d7e8_delhivery_one_parity_modules.py` | Support tickets, COD remittances, billing invoices, weight disputes, user profile fields | **untracked** |
-| `a8b9c0d1e2f3` | `a8b9c0d1e2f3_unify_user_role_enum.py` | Unified `UserRole` enum, `delhivery_role` dropped | **untracked** |
-| `3f9a1c2b7d01` | M-B1 `3f9a1c2b7d01_add_shipment_charge_adjustments.py` | Append-only `shipment_charge_adjustments` (audit of every price change) | **untracked** |
-| `4a2b8c3d9e02` | M-B2 `4a2b8c3d9e02_add_shipment_measurements.py` | `shipment_measurements` (one active row per shipment = billing basis) | **untracked** |
-| `5b3c9d4eaf03` | M-B3 `5b3c9d4eaf03_add_freight_collectible_and_delivered_box_count.py` | `payment_details.freight_collectible`, `pickups.delivered_box_count` | **untracked** |
-| `6c4dae5fb004` | M-B4 `6c4dae5fb004_gst_links_money_uniques_and_idempotency_keys.py` | `billing_invoices.shipment_id/original_invoice_id/bill_to_type`, unique GST number, one INVOICE per shipment, one COD_SETTLEMENT/RTO_FREIGHT per shipment, `idempotency_keys` (no backfill) | **untracked** |
-| `7d5ebf60c105` | M-C1 `7d5ebf60c105_add_lifecycle_pickup_statuses.py` | `pickupstatus` + `OUT_FOR_DELIVERY`, `RTO_IN_TRANSIT`, `RTO_DELIVERED`, `LOST` | **untracked** |
-| `9a1b2c3d4e5f` | M-P1 `9a1b2c3d4e5f_service_option_and_carrier_cost.py` | `service_option` (`DELHIVERY_SURFACE`, `DELHIVERY_EXPRESS`, `PRIME_SURFACE`), `carrier_awb`, `carrier_cost` JSONB, `CARRIER` measurement source, `delhivery_price_cache` table | **untracked** |
-| `b5c6d7e8f9a0` | M-P2 `b5c6d7e8f9a0_prime_rate_tables.py` | `prime_zones`, `prime_zone_pincodes`, `prime_lanes` tables | **untracked** |
-| `c6d7e8f9a0b1` | M-P3 `c6d7e8f9a0b1_delhivery_b2b_service_option.py` | `pickups.service_option` CHECK `ck_pickups_service_option_valid` adds `DELHIVERY_B2B_SURFACE` (**head**) | **untracked** |
+| `c4e8f1a2b3d5` | `c4e8f1a2b3d5_add_pickup_request_flow_to_manifests.py` | Pickup Requests for B2C + B2B (`service_flow`, 9-digit PUR number, `NOT_PICKED`) | committed |
+| `d1e2f3a4b5c6` | `d1e2f3a4b5c6_add_delivery_exception_ndr_fields.py` | NDR reasons, attempt count, remark, `charge_amount` | committed |
+| `e2f3a4b5c6d7` | `e2f3a4b5c6d7_add_tenant_settings_history.py` | `tenant_settings_history` | committed |
+| `f3a4b5c6d7e8` | `f3a4b5c6d7e8_delhivery_one_parity_modules.py` | Support tickets, COD remittances, billing invoices, weight disputes, user profile fields | committed |
+| `a8b9c0d1e2f3` | `a8b9c0d1e2f3_unify_user_role_enum.py` | Unified `UserRole` enum, `delhivery_role` dropped | committed |
+| `3f9a1c2b7d01` | M-B1 `3f9a1c2b7d01_add_shipment_charge_adjustments.py` | Append-only `shipment_charge_adjustments` (audit of every price change) | committed |
+| `4a2b8c3d9e02` | M-B2 `4a2b8c3d9e02_add_shipment_measurements.py` | `shipment_measurements` (one active row per shipment = billing basis) | committed |
+| `5b3c9d4eaf03` | M-B3 `5b3c9d4eaf03_add_freight_collectible_and_delivered_box_count.py` | `payment_details.freight_collectible`, `pickups.delivered_box_count` | committed |
+| `6c4dae5fb004` | M-B4 `6c4dae5fb004_gst_links_money_uniques_and_idempotency_keys.py` | `billing_invoices.shipment_id/original_invoice_id/bill_to_type`, unique GST number, one INVOICE per shipment, one COD_SETTLEMENT/RTO_FREIGHT per shipment, `idempotency_keys` (no backfill) | committed |
+| `7d5ebf60c105` | M-C1 `7d5ebf60c105_add_lifecycle_pickup_statuses.py` | `pickupstatus` + `OUT_FOR_DELIVERY`, `RTO_IN_TRANSIT`, `RTO_DELIVERED`, `LOST` | committed |
+| `9a1b2c3d4e5f` | M-P1 `9a1b2c3d4e5f_service_option_and_carrier_cost.py` | `service_option` (`DELHIVERY_SURFACE`, `DELHIVERY_EXPRESS`, `PRIME_SURFACE`), `carrier_awb`, `carrier_cost` JSONB, `CARRIER` measurement source, `delhivery_price_cache` table | committed |
+| `b5c6d7e8f9a0` | M-P2 `b5c6d7e8f9a0_prime_rate_tables.py` | `prime_zones`, `prime_zone_pincodes`, `prime_lanes` tables | committed |
+| `c6d7e8f9a0b1` | M-P3 `c6d7e8f9a0b1_delhivery_b2b_service_option.py` | `pickups.service_option` CHECK `ck_pickups_service_option_valid` adds `DELHIVERY_B2B_SURFACE` (**head**) | committed |
 
 Older revisions down to `2dc7f2258368` are committed or staged.
 
 > [!IMPORTANT]
-> The live database depends on the thirteen untracked files above (`b5c6d7e8f9a0` applied 2026-10-30; `c6d7e8f9a0b1` pending final user approval relay). Until they are committed, a
-> fresh checkout cannot run `alembic current/upgrade` against live, and a deploy from git would ship without them. Committing them is the human's
-> call (agents never commit).
+> All 36 migration revisions (`2dc7f2258368` → `c6d7e8f9a0b1`) are committed in `backend/alembic/versions/` and applied on the live database.
 
 Known drift: `QC_FAILED` and `REJECTED_AT_PICKUP` are added by `944203e6741b`; the old TASKS.md
 reference to a `c0d1e2f3a4b5` migration was wrong (no such file).
@@ -254,7 +249,7 @@ reference to a `c0d1e2f3a4b5` migration was wrong (no such file).
 | Marker | `tenant.settings.environment == "test"`, TEST banner, GST prefix `LTST` (never filed) |
 | Accounts | `owner@`, `admin@`, `operations@`, `support@`, `readonly@`, `customerb2c@`, `customerb2b@`, `b2bonboarding@` `logismart.in` |
 | Fixtures | `backend/scripts/tests/golden_journeys/fixtures/logismart_test_{accounts,settings,addresses}.json` |
-| Protected | `prashantnk2001@gmail.com` (live owner) can never be seeded or get a test token |
+| Protected | the live owner email (`PROTECTED_LIVE_EMAILS` in `scripts/tenant_data_core.py`) can never be seeded or get a test token |
 
 Seed or repair it (idempotent; **dry run by default**):
 
@@ -345,13 +340,13 @@ cd ../frontend && npx tsc --noEmit && npm run test:audit && npx vitest run
 
 > [!NOTE]
 > **Done on 2026-10-28 00:33 UTC** (user go-ahead #2): 253 rows deleted, 7 test users removed,
-> `prashantnk2001@gmail.com` sole Owner (B2C + B2B), next GST serials `LOGI2627I/C/D` = 1. Backup:
+> the live Owner account sole Owner (B2C + B2B), next GST serials `LOGI2627I/C/D` = 1. Backup:
 > `llm_resources/.agents/backups/logismart_20261028T003340Z/`. Today only step 1 (the dry run) is used, as
 > the read-only go-live check that live is still clean. The steps below stay for the record and for an
 > emergency re-run (e.g. a test account was used on live).
 
 Before go-live, all operational rows in live `logismart` were golden-test data from 2026-10-17. The wipe
-removes them, promotes `prashantnk2001@gmail.com` to Owner (before the 7 test users are deleted, so the
+removes them, promotes the live owner account to Owner (before the 7 test users are deleted, so the
 tenant is never ownerless), pins the GST prefix `LOGI`, and restarts GST numbering at `000001`.
 
 1. **Dry run** (writes a CSV backup + `manifest.json` with SHA-256 under
@@ -390,8 +385,8 @@ that keeps users and saved addresses, use `scripts/prepare_logismart_handover.py
 | 8 | Env & Delhivery keys | Render + Vercel settings (§1.1, §1.3) | every key from both `.env.example` files set; `ENVIRONMENT=production`; `DELHIVERY_B2C_TOKEN` + `DELHIVERY_TENANT_ID` set for live `logismart` (`DELHIVERY_B2B_USERNAME`/`PASSWORD` once B2B password is set); no test variables |
 | 9 | Prime zones & lanes | §8 (`golive_db.py verify` or `/settings/prime-lanes`) | 56 zones, 2,123 pincodes, 74 lanes (55 active routes) seeded on live `logismart`; `pricing_policy` present with COD fee off until admin sets it |
 | 10 | Supabase hardening | Supabase Dashboard (§1.4) | `public` removed from **Settings → API → Exposed schemas** (`M-01`); **Custom SMTP** (Resend/SES) enabled in **Authentication → SMTP Settings** (`D-02`); Auth Redirect URLs set (`D-01`) |
-| 11 | Rotate leaked secrets | Supabase dashboard + Vercel/Render env | **`REVALIDATION_SECRET`** rotated (the old value is in git history, commit `0b4344c`, file `frontend/.example_env`), and the **Supabase DB password** rotated (it sat in plaintext debris scripts in the working tree, now deleted). Update `DATABASE_URL` / `ALEMBIC_DATABASE_URL` everywhere after the rotation |
-| 12 | Business settings review | `/logismart/settings` | Replace personal UPI VPA (`prashantnk2001@okaxis`) with Logismart's business current-account VPA, decide whether to enable `strict_finlock`, and set COD fee % + min when ready to enable COD |
+| 11 | Rotate leaked secrets | Supabase dashboard + Vercel/Render env | **`REVALIDATION_SECRET`** rotated, and the **Supabase DB password** rotated. Update `DATABASE_URL` / `ALEMBIC_DATABASE_URL` everywhere after the rotation |
+| 12 | Business settings review | `/logismart/settings` | Replace personal UPI VPA (initial setup VPA) with Logismart's business current-account VPA, decide whether to enable `strict_finlock`, and set COD fee % + min when ready to enable COD |
 | 13 | Smoke test | §2 step 5 | all pass |
 
 ```bash

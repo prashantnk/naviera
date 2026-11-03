@@ -8,6 +8,19 @@ import { saveBlobAsFile } from "./download-blob";
 const TENANT_CONFIG_TIMEOUT_MS = 10000;
 
 /**
+ * Valid tenant slugs consist strictly of ASCII letters, digits, and internal hyphens
+ * (e.g. `logismart`, `logismart-test`, `naviera`). Any top-level path segment containing
+ * punctuation, dots, or URL-encoded characters (`$`, `%24`, `favicon.ico`, `favicon.png`)
+ * is rejected immediately on the server without querying the backend API.
+ */
+const VALID_TENANT_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+
+export function isValidTenantSlug(slug: string): boolean {
+  const normalized = slug.trim();
+  return Boolean(normalized) && normalized.length <= 64 && VALID_TENANT_SLUG_REGEX.test(normalized);
+}
+
+/**
  * Thrown when the tenant config cannot be loaded because the backend is slow
  * or unreachable (cold start, deploy, network). The error boundary shows a
  * neutral "try again" page; we NEVER render another tenant's site instead (F-12).
@@ -37,14 +50,19 @@ function _isBackendUnreachable(error: unknown): boolean {
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
+  if (!isValidTenantSlug(slug)) {
+    return null;
+  }
+  const normalizedSlug = slug.trim().toLowerCase();
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TENANT_CONFIG_TIMEOUT_MS);
 
     const res = await fetch(
-      `${getBackendUrl()}/api/v1/tenants/${slug}/public`,
+      `${getBackendUrl()}/api/v1/tenants/${encodeURIComponent(normalizedSlug)}/public`,
       {
-        next: { revalidate: 3600, tags: [`tenant-${slug}`] },
+        next: { revalidate: 3600, tags: [`tenant-${normalizedSlug}`] },
         signal: controller.signal,
       }
     );

@@ -31,7 +31,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db import get_session
 from app.core.money import to_money
 from app.core.permissions import is_tenant_admin, is_tenant_staff
-from app.models.prime import DEFAULT_PRIME_MARKUP_PERCENT, PrimeDeliveryType, PrimeLane, PrimeLaneMode
+from app.models.prime import (
+    DEFAULT_PRIME_MARKUP_PERCENT,
+    PrimeDeliveryType,
+    PrimeLane,
+    PrimeLaneMode,
+)
 from app.models.tenants import User
 from app.repositories.prime_rates import LaneWithZones, PrimeRatesRepository
 from app.schemas.v1.prime import (

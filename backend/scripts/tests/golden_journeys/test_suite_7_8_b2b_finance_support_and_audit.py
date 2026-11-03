@@ -29,7 +29,11 @@ from httpx import ASGITransport
 from sqlmodel import select
 
 from app.main import app
-from app.models.delhivery_modules import BillingInvoice, InvoiceNoteType, RemittanceState
+from app.models.delhivery_modules import (
+    BillingInvoice,
+    InvoiceNoteType,
+    RemittanceState,
+)
 from app.models.manifests import ManifestStatus
 from app.models.pickups import PickupStatus
 from app.models.wallet import (
@@ -42,7 +46,6 @@ from app.models.wallet import (
 )
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
     CUSTOMER_B2C_EMAIL,
@@ -51,6 +54,7 @@ from .golden_env import (
     OWNER_EMAIL,
     READONLY_EMAIL,
     SUPPORT_EMAIL,
+    GoldenSessionLocal,
     allow_to_pay_bookings,
     document_prefix,
     find_seeded_address_id,

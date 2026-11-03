@@ -13,10 +13,16 @@ from sqlmodel import func, select
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.main import app
-from app.models.tenants import ServiceScope, Tenant, TenantSettingsHistory, User, UserRole
+from app.models.tenants import (
+    ServiceScope,
+    Tenant,
+    TenantSettingsHistory,
+    User,
+    UserRole,
+)
 from app.services.tenants import SETTINGS_HISTORY_LIMIT
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 TENANTS_URL = f"{settings.API_V1_STR}/tenants"
 SETTINGS_URL = f"{TENANTS_URL}/settings"
 HISTORY_URL = f"{SETTINGS_URL}/history"
@@ -176,12 +182,24 @@ async def test_legacy_unknown_keys_preserved_and_show_logo_default(db_session, a
     cached = await _tenant()
     persisted = await db_session.get(Tenant, cached.id)
     before_settings = dict(persisted.settings or {})
-    existing_keys = set(before_settings.keys())
+    persisted.settings = {
+        **before_settings,
+        "legacy_widget": {"enabled": True, "nested": {"x": 1}},
+    }
+    db_session.add(persisted)
+    await db_session.flush()
+    existing_keys = set(persisted.settings.keys())
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Unknown root keys in a PATCH payload are rejected with 422.
+        await _patch(
+            client,
+            {"legacy_widget": {"enabled": False}},
+            expected=422,
+        )
+        # Pre-existing unknown root keys in DB and unknown nested section keys are preserved.
         saved = await _patch(
             client,
             {
-                "legacy_widget": {"enabled": True, "nested": {"x": 1}},
                 "brand": {"primary_color": "#112233", "legacy_brand_flag": "keep-me"},
             },
         )
@@ -221,30 +239,39 @@ async def test_customer_forbidden_on_settings_and_tenant_listing(db_session, as_
 async def test_owner_protection_rules(db_session, as_tenant_admin):
     tenant = await _tenant()
     tag = uuid.uuid4().hex[:8]
-    acting_admin, owner = (
+    acting_admin, owner, other_customer = (
         User(
-            supabase_user_id=f"{role.value}-test-{tag}",
-            email=f"{role.value}-{tag}@example.com",
+            supabase_user_id=f"{role.value}-test-{tag}-{idx}",
+            email=f"{role.value}-{tag}-{idx}@example.com",
             role=role,
             service_scope=ServiceScope.BOTH,
             tenant_id=tenant.id,
         )
-        for role in (UserRole.admin, UserRole.owner)
+        for idx, role in enumerate((UserRole.admin, UserRole.owner, UserRole.customer))
     )
-    db_session.add_all([acting_admin, owner])
+    db_session.add_all([acting_admin, owner, other_customer])
     await db_session.flush()
     _as_user(acting_admin)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # An admin can't promote themselves to owner.
+        # An admin can't change their own role (self-role-change guard -> 400).
         res = await client.patch(
             f"{USERS_URL}/{acting_admin.id}", json={"role": "owner"}, headers=HEADERS
+        )
+        assert res.status_code == 400, res.text
+        # An admin can't promote another user to owner (owner-only guard -> 403).
+        res = await client.patch(
+            f"{USERS_URL}/{other_customer.id}", json={"role": "owner"}, headers=HEADERS
         )
         assert res.status_code == 403, res.text
         # An admin can't deactivate or demote the owner.
         res = await client.patch(f"{USERS_URL}/{owner.id}", json={"is_active": False}, headers=HEADERS)
         assert res.status_code == 400, res.text
         res = await client.patch(f"{USERS_URL}/{owner.id}", json={"role": "admin"}, headers=HEADERS)
+        assert res.status_code == 403, res.text
+        res = await client.patch(
+            f"{USERS_URL}/{owner.id}", json={"role": "operations_user"}, headers=HEADERS
+        )
         assert res.status_code == 400, res.text
 
         # The owner can transfer ownership; they become an admin.

@@ -8,19 +8,23 @@ sys.dont_write_bytecode = True
 os.environ["LOGFIRE_TOKEN"] = ""
 
 import pytest  # noqa: E402
+from golden_journeys.golden_env import test_engine  # noqa: E402
+from idempotency_default import IdempotencyKeyDefaultMiddleware  # noqa: E402
+from response_audit import ResponseAuditMiddleware  # noqa: E402
 from sqlmodel import select, text  # noqa: E402
 from sqlmodel.ext.asyncio.session import AsyncSession  # noqa: E402
-from app.main import app  # noqa: E402
+
 from app.core import db as app_db_module  # noqa: E402
 from app.core.db import AsyncSessionLocal, async_engine, get_session  # noqa: E402
-from app.core.dependencies import get_current_active_user, get_tenant_from_header  # noqa: E402
+from app.core.dependencies import (  # noqa: E402
+    get_current_active_user,
+    get_tenant_from_header,
+)
+from app.main import app  # noqa: E402
 from app.models.prime import PrimeLane  # noqa: E402
 from app.models.tenants import Tenant, User, UserRole  # noqa: E402
 from app.repositories.prime_rates import PrimeRatesRepository  # noqa: E402
 from app.repositories.wallet import WalletRepository  # noqa: E402
-from golden_journeys.golden_env import test_engine  # noqa: E402
-from idempotency_default import IdempotencyKeyDefaultMiddleware  # noqa: E402
-from response_audit import ResponseAuditMiddleware  # noqa: E402
 from scripts.seed_prime_zones import apply_test_fixture  # noqa: E402
 from scripts.tenant_data_core import ALLOWED_TEST_SLUGS  # noqa: E402
 
