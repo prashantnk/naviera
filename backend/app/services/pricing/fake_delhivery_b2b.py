@@ -11,7 +11,8 @@ TAT = 4 days. The answer shape matches what `delhivery_b2b.estimate_amounts` rea
 
 Test knobs (module attributes, read at call time so tests can monkeypatch them):
 `FAKE_B2B_DOWN`, `FAKE_B2B_PRE_TAX_OVERRIDE`, `FAKE_B2B_UNSERVICEABLE_PINS`.
-The fake refuses any tenant outside `FAKE_PROVIDER_TENANT_SLUGS`.
+Bound only via `DELHIVERY_FAKE_TENANT_SLUGS` (test harness); the fake itself still refuses any
+tenant outside `FAKE_PROVIDER_TENANT_SLUGS`.
 """
 
 from decimal import Decimal

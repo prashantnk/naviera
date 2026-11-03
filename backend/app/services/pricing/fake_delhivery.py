@@ -14,7 +14,9 @@ Test knobs (module attributes, read at call time so tests can monkeypatch them):
 `FAKE_DELHIVERY_DOWN`, `FAKE_GROSS_OVERRIDE`, `FAKE_UNSERVICEABLE_PINS`,
 `FAKE_EMBARGO_PINS`, `FAKE_ODA_PINS`, plus the optional overrides fixture
 `fixtures/fake_delhivery_rates.json` keyed "o_pin-d_pin-md-ss-slab_grams" → gross.
-The fake refuses any tenant outside `FAKE_PROVIDER_TENANT_SLUGS`.
+Binding is env-driven: only tenants in `DELHIVERY_FAKE_TENANT_SLUGS` (set by the test harness,
+never on a deployment) get the fake. As a second guard the fake itself refuses any tenant outside
+`FAKE_PROVIDER_TENANT_SLUGS`, so a misconfigured env can never price a live tenant on it.
 """
 
 import json
@@ -31,7 +33,8 @@ from app.services.pricing.delhivery_client import (
 )
 
 FAKE_PROVIDER_TENANT_SLUGS: FrozenSet[str] = frozenset({"logismart-test"})
-"""Mirror of `scripts/tenant_data_core.ALLOWED_TEST_SLUGS`: the only tenants the fake serves."""
+"""Mirror of `scripts/tenant_data_core.ALLOWED_TEST_SLUGS`: the only tenants the fake may ever serve
+(a safety allow-list; which tenants actually use it is `DELHIVERY_FAKE_TENANT_SLUGS`)."""
 
 FAKE_DELHIVERY_DOWN = False
 """True → every call raises DelhiveryUnavailableError (timeout/throttle simulation)."""

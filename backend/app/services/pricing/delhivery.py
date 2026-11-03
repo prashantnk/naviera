@@ -36,12 +36,10 @@ from app.services.pricing.delhivery_client import (
     DelhiveryUnavailableError,
     flag,
     is_embargoed,
+    is_fake_tenant,
     live_api_if_configured,
 )
-from app.services.pricing.fake_delhivery import (
-    FAKE_PROVIDER_TENANT_SLUGS,
-    FakeDelhiveryApi,
-)
+from app.services.pricing.fake_delhivery import FakeDelhiveryApi
 from app.services.pricing.types import (
     CarrierLeg,
     CarrierLegKind,
@@ -66,6 +64,8 @@ SLAB_GRAMS = 500
 GRAMS_PER_KG = Decimal("1000")
 FRESH_MAX_AGE = timedelta(minutes=30)
 FALLBACK_MAX_AGE = timedelta(hours=24)
+LIVE_CACHE_NAMESPACE = "LIVE|"
+"""Prefix of live answers' cache keys (see `tenant_cache_key`)."""
 NOT_CONNECTED_REASON = "Delhivery prices are not connected yet. Please try again later or contact Logismart."
 UNAVAILABLE_REASON = "Delhivery's price is unavailable right now. Please try again in a few minutes."
 NO_BOXES_REASON = "Add at least one box with its size and weight to get a Delhivery price."
@@ -101,12 +101,22 @@ class _Fetched:
 
 def delhivery_api_for(tenant: Tenant) -> Optional[DelhiveryApi]:
     """
-    The Delhivery client for a tenant: the fake for the golden test tenant, the live
-    client for the tenant bound to the token, otherwise None ("not connected").
+    The Delhivery client for a tenant, from env: the fake for `DELHIVERY_FAKE_TENANT_SLUGS`
+    (test harness only), the live client for `DELHIVERY_LIVE_TENANT_SLUGS` / `DELHIVERY_TENANT_ID`,
+    otherwise None ("not connected").
     """
-    if tenant.slug in FAKE_PROVIDER_TENANT_SLUGS:
+    if is_fake_tenant(tenant.slug):
         return FakeDelhiveryApi(tenant.slug)
-    return live_api_if_configured(str(tenant.id))
+    return live_api_if_configured(str(tenant.id), tenant.slug)
+
+
+def tenant_cache_key(tenant: Tenant, key: str) -> str:
+    """
+    The stored-price key of a request for this tenant's client. Local golden runs (fake) and the
+    deployed app (live) share one database and the `logismart-test` rows, so live answers are
+    stored under `LIVE|`: a fake answer is never served as a live price, nor a live one to the tests.
+    """
+    return key if is_fake_tenant(tenant.slug) else f"{LIVE_CACHE_NAMESPACE}{key}"
 
 
 def slab_grams(grams: int) -> int:
@@ -334,7 +344,7 @@ class DelhiveryProvider:
         return await fetch_with_cache(
             self.cache,
             self.tenant.id,
-            cache_key(params),
+            tenant_cache_key(self.tenant, cache_key(params)),
             params,
             freshness,
             lambda: self.api.invoice_charges(params),  # type: ignore[union-attr]
@@ -346,7 +356,7 @@ class DelhiveryProvider:
         call) minus the forward leg; None when Delhivery can't answer.
         """
         params = price_params(option, spec, SS_RTO)
-        cached = await self.cache.get(self.tenant.id, cache_key(params))
+        cached = await self.cache.get(self.tenant.id, tenant_cache_key(self.tenant, cache_key(params)))
         if cached is not None and _utc_now_naive() - cached.fetched_at <= FALLBACK_MAX_AGE:
             stored = _Fetched(dict(cached.response), cached.fetched_at, PriceSource.CACHED)
             return return_only_leg(leg_from_response(CarrierLegKind.RTO, stored, None), forward)

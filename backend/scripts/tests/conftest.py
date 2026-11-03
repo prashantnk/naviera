@@ -2,10 +2,14 @@ import inspect
 import os
 import sys
 
-# Both side effects must run before `app` is imported: no .pyc files next to the test
-# sources, and Logfire stays silent in tests. Hence the E402 waivers below.
+# These side effects must run before `app` is imported: no .pyc files next to the test
+# sources, Logfire stays silent in tests, and Delhivery is the deterministic fake for the test
+# tenant with no slug bound live (even when `backend/.env` binds `logismart-test` live), so no
+# suite spends the live token or its rate limit. Hence the E402 waivers below.
 sys.dont_write_bytecode = True
 os.environ["LOGFIRE_TOKEN"] = ""
+os.environ["DELHIVERY_FAKE_TENANT_SLUGS"] = "logismart-test"
+os.environ["DELHIVERY_LIVE_TENANT_SLUGS"] = ""
 
 import pytest  # noqa: E402
 from golden_journeys.golden_env import test_engine  # noqa: E402

@@ -52,17 +52,26 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import settings
-from app.models.pickups import PaymentDetails, PickupRequest
-from app.models.tenants import Tenant, User
-from app.models.wallet import UserWallet, WalletTransaction
-from app.services import mvp_scope
-from app.services.delhivery_modules import (
+# Delhivery binding for every golden suite, set before `app.core.config` builds `settings`
+# (hence the E402 waivers below): the test tenant prices on the deterministic fake and no slug
+# is bound live, even when `backend/.env` binds `logismart-test` live.
+os.environ["DELHIVERY_FAKE_TENANT_SLUGS"] = "logismart-test"
+os.environ["DELHIVERY_LIVE_TENANT_SLUGS"] = ""
+
+from app.core.config import settings  # noqa: E402
+from app.models.pickups import PaymentDetails, PickupRequest  # noqa: E402
+from app.models.tenants import Tenant, User  # noqa: E402
+from app.models.wallet import UserWallet, WalletTransaction  # noqa: E402
+from app.services import mvp_scope  # noqa: E402
+from app.services.delhivery_modules import (  # noqa: E402
     document_number_prefix,
     format_document_number,
     indian_financial_year_label,
 )
-from scripts.tenant_data_core import ALLOWED_TEST_SLUGS, PROTECTED_LIVE_EMAILS
+from scripts.tenant_data_core import (  # noqa: E402
+    ALLOWED_TEST_SLUGS,
+    PROTECTED_LIVE_EMAILS,
+)
 
 # --- Constants -------------------------------------------------------------
 

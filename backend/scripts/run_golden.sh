@@ -39,6 +39,11 @@ esac
 cd "$(dirname "$0")/.."
 export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.Keyring}"
 export GOLDEN_TENANT_SLUG="${GOLDEN_TENANT_SLUG:-logismart-test}"
+# Every in-process suite prices Delhivery on the deterministic fake for the test tenant and binds
+# no slug live, overriding backend/.env (env vars beat .env in pydantic Settings). The UI phase
+# talks to the running :8000 server, which follows its own backend/.env.
+export DELHIVERY_FAKE_TENANT_SLUGS="logismart-test"
+export DELHIVERY_LIVE_TENANT_SLUGS=""
 LIVE_SLUG="${GOLDEN_LIVE_SLUG:-logismart}"
 POETRY="${POETRY:-$(command -v poetry || echo "$HOME/.local/bin/poetry")}"
 FRONTEND_DIR="../frontend"
@@ -75,6 +80,7 @@ PURE_UNIT_SUITES=(  # no app, no DB connection (conftest skips the DB for pure m
   scripts/tests/test_idempotency_default.py
   scripts/tests/test_pricing_engine.py
   scripts/tests/test_pricing_quotes_unit.py
+  scripts/tests/test_delhivery_binding_unit.py
   scripts/tests/test_prime_pricing_unit.py
   scripts/tests/test_booking_pricing_unit.py
   scripts/tests/test_label_generator.py

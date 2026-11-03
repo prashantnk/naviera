@@ -81,15 +81,30 @@ If you forked this repository and created a brand-new, empty Supabase project:
 
 ### 1.3 Delhivery API token (B2C) and B2B Cargo credentials
 
-Live Delhivery prices are fetched server-side for **one** tenant, the one in `DELHIVERY_TENANT_ID` (live
-`logismart`). Every other tenant gets "price unavailable" for Delhivery options; the golden test tenant
-`logismart-test` always uses the built-in fake provider (`services/pricing/fake_delhivery.py`).
+Live Delhivery prices are fetched server-side for the tenant in `DELHIVERY_TENANT_ID` (live `logismart`)
+and for every slug in `DELHIVERY_LIVE_TENANT_SLUGS`. Slugs in `DELHIVERY_FAKE_TENANT_SLUGS` use the
+deterministic fake (`services/pricing/fake_delhivery.py`) instead; the fake wins over the live list, and the
+fake itself refuses any tenant except `logismart-test`. Every other tenant gets "Delhivery prices are not
+connected yet" for Delhivery options. **Live vs fake is chosen per environment by these env keys only:**
+
+| Environment | `DELHIVERY_LIVE_TENANT_SLUGS` | `DELHIVERY_FAKE_TENANT_SLUGS` | `logismart-test` prices on |
+|---|---|---|---|
+| Render (API + worker) | `logismart,logismart-test` | unset | **live** Delhivery (same token, limiter, B2B fallback as `logismart`) |
+| Cloudtop `backend/.env` (shared `:8000`) | `logismart` | `logismart-test` | the fake (the UI golden phase drives `:8000` and must stay deterministic; see BACKLOG) |
+| Golden / unit tests (in-process) | forced empty | forced `logismart-test` by `run_golden.sh`, `scripts/tests/conftest.py`, `golden_env.py` | the fake (never spends the live token or its 45 / 5 min limit) |
+
+All live tenants share one process-wide price limiter (45 / 5 min, below Delhivery's 50 / 5 min per IP), the
+B2B JWT and estimate limiter, and the 24 h pincode / TAT caches. Stored prices (`delhivery_price_cache`) stay
+per tenant; live answers are keyed under `LIVE|`, so fake rows written by local golden runs are never served as
+live prices (one database serves every environment).
 
 | Key (`backend/.env`, Render env, Codespaces secret) | What | Where it comes from |
 |---|---|---|
 | `DELHIVERY_B2C_TOKEN` | Delhivery B2C (Surface / Express) API token, sent as `Authorization: Token …` | one.delhivery.com → pick the **Domestic** account in the header switcher → Settings → **API Setup**. Copy the existing live token; do **not** click "Rotate" unless you mean to (it breaks the old token immediately) |
 | `DELHIVERY_B2C_BASE_URL` | `https://track.delhivery.com` (production; staging prices are ₹0) | default |
 | `DELHIVERY_TENANT_ID` | UUID of the tenant the keys belong to | `select id from tenant where slug = 'logismart'` |
+| `DELHIVERY_LIVE_TENANT_SLUGS` | More tenants on the same live accounts, comma list | Render: `logismart,logismart-test`; local: `logismart` |
+| `DELHIVERY_FAKE_TENANT_SLUGS` | Slugs priced by the fake (wins over live) | test harness + Cloudtop `backend/.env`: `logismart-test`; **unset on Render** |
 | `DELHIVERY_B2B_USERNAME` | Delhivery B2B Cargo (LTL) API user, e.g. `LOGISMARTB2BC` | B2B Surface account (header switcher → "B2B Surface") |
 | `DELHIVERY_B2B_PASSWORD` | LTL API password (`POST /ums/login` → 24 h JWT) | **not shown in the panel**, see below |
 | `DELHIVERY_B2B_BASE_URL` | `https://ltl-clients-api.delhivery.com` (staging has no pricing file) | default |
@@ -108,7 +123,7 @@ offers Surface + Express at a higher rate. Bookings on one.delhivery.com must us
    (a wrong password locks the user for 10 minutes). "Pricing File Not exist" = ask Delhivery to load the rate card.
 4. Delhivery expires LTL passwords every 180 days: put a calendar reminder to rotate it.
 
-When `DELHIVERY_B2B_PASSWORD` is empty, **Delhivery B2B Cargo** prices live via the B2C-token fallback (`B2CFallbackDelhiveryB2BApi` using `DELHIVERY_B2C_TOKEN`, divisor `4500`, `20 kg` minimum) alongside **Logismart Prime**; setting `DELHIVERY_B2B_PASSWORD` switches to the native LTL `/ums/login` + `/freight/estimate` endpoint.
+When `DELHIVERY_B2B_PASSWORD` is empty, **Delhivery B2B Cargo** prices live via the B2C-token fallback (`B2CFallbackDelhiveryB2BApi` using `DELHIVERY_B2C_TOKEN`): the B2C **Surface** rate card (`md=S`), B2C volumetric divisor `5000`, `500 g` slabs, **no** `20 kg` minimum, plus ROV at carrier's risk and 18 % GST, alongside **Logismart Prime**. Setting `DELHIVERY_B2B_PASSWORD` switches to the native LTL `/ums/login` + `/freight/estimate` endpoint, where Delhivery's LTL rules (divisor `4500`, `20 kg` minimum) apply.
 
 **Apply / rotate a key:** update the value in Render (API **and** worker) and in your local `backend/.env`, then
 restart the API. Keys are read once at startup (pydantic `Settings`); nothing is stored in the database.
@@ -117,7 +132,7 @@ restart the API. Keys are read once at startup (pydantic `Settings`); nothing is
 
 | Symptom on the quote / booking screen | Meaning |
 |---|---|
-| "Delhivery prices are not connected yet…" | `DELHIVERY_B2C_TOKEN` or `DELHIVERY_TENANT_ID` empty, or this tenant is not `DELHIVERY_TENANT_ID` |
+| "Delhivery prices are not connected yet…" | `DELHIVERY_B2C_TOKEN` empty, or this tenant is neither `DELHIVERY_TENANT_ID` nor in `DELHIVERY_LIVE_TENANT_SLUGS` |
 | Amber note "Last known price (N min old); final price is checked when you book." (`priced_from_cache: true`) | Delhivery did not answer (timeout, 401/403 = bad or rotated token, 429, 5xx); a stored price ≤ 24 h old was used |
 | "Delhivery's price is unavailable right now…" | Same failure and no stored price for that route; an invalid token looks exactly like "Delhivery down" |
 | Express shows "price unavailable" but Surface works | The Domestic account has no Express rate card (Delhivery returns ₹0) |
