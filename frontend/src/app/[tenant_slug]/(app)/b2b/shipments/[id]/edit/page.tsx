@@ -13,7 +13,7 @@ import {
   DimensionUnit,
   WeightUnit,
 } from "@/api_client";
-import { getSupabaseClient } from "@/lib/supabase";
+import { uploadTenantDocument } from "@/lib/document-storage";
 import { B2BForwardFormStep } from "../../new/forward/_components/b2b-forward-form-step";
 import { B2BReverseFormStep } from "../../new/reverse/_components/b2b-reverse-form-step";
 import { Button } from "@/components/ui/button";
@@ -374,18 +374,11 @@ export default function B2BForwardEditPage() {
 
     setIsUploading(true);
     try {
-      const supabase = getSupabaseClient(tenantSlug);
-      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const fileName = `${Date.now()}_${cleanFileName}`;
-      const filePath = `${tenantSlug}/${fileName}`;
-
-      const { error } = await supabase.storage.from("documents").upload(filePath, file, { upsert: true });
-
-      if (error) throw error;
+      const objectKey = await uploadTenantDocument(tenantSlug, file, "doc");
 
       appendDoc({
         document_type: docType,
-        file_url: filePath,
+        file_url: objectKey,
         file_name: file.name,
       });
       toast.success("Document uploaded to preview stack");

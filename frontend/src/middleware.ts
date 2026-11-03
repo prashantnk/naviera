@@ -9,19 +9,56 @@ export const config = {
   ],
 };
 
+/**
+ * Parses `CUSTOM_DOMAIN_TENANTS` (e.g. `"logismart.in:logismart,www.logismart.in:logismart"`)
+ * into a lowercase `host -> tenant_slug` lookup map.
+ */
+export function parseCustomDomainTenants(
+  raw: string | undefined = process.env.CUSTOM_DOMAIN_TENANTS,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!raw) return map;
+
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const colonIndex = trimmed.indexOf(":");
+    if (colonIndex <= 0) continue;
+    const host = trimmed.slice(0, colonIndex).trim().toLowerCase();
+    const slug = trimmed.slice(colonIndex + 1).trim().toLowerCase();
+    if (host && slug && !slug.includes(":")) {
+      map.set(host, slug);
+    }
+  }
+  return map;
+}
+
+/**
+ * Normalizes a `Host` header value by stripping any `:port` suffix and lowercasing.
+ */
+export function normalizeHostname(hostHeader: string | null | undefined): string {
+  return (hostHeader || "").trim().toLowerCase().replace(/:\d+$/, "");
+}
+
 export default function middleware(req: NextRequest) {
   const url = req.nextUrl;
-  let hostname = req.headers.get("host") || "";
-  hostname = hostname.replace(":.+", "");
+  const hostname = normalizeHostname(req.headers.get("host"));
 
   const isLocal = hostname.includes(APP_CONFIG.DOMAINS.LOCALHOST);
   const isCodespace = hostname.includes(APP_CONFIG.DOMAINS.CODESPACE_SUFFIX);
   const isProduction = hostname.includes(APP_CONFIG.DOMAINS.PRODUCTION);
 
+  const customDomainTenants = parseCustomDomainTenants(
+    process.env.CUSTOM_DOMAIN_TENANTS,
+  );
+  const customTenantSlug = customDomainTenants.get(hostname);
+
   let subdomain = "";
   const parts = hostname.split(".");
 
-  if (isLocal && parts.length > 1) {
+  if (customTenantSlug) {
+    subdomain = customTenantSlug;
+  } else if (isLocal && parts.length > 1) {
     subdomain = parts[0];
   } else if (isProduction && parts.length > 2) {
     subdomain = parts[0];

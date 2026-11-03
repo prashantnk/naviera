@@ -9,11 +9,15 @@ Consolidated unit and edge-case test suite for the Temporal Hooks Worker
 """
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from httpx import ASGITransport
 from sqlalchemy import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -21,6 +25,8 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel, select
 
+from app.api.v1.endpoints import internal as internal_endpoint
+from app.core.config import settings
 from app.models.manifests import Manifest
 from app.models.pickups import (
     ActivityType,
@@ -37,6 +43,7 @@ from app.models.pickups import (
     ShipmentType,
 )
 from app.models.tenants import Tenant, User
+from scripts import temporal_hooks_worker
 from scripts.temporal_hooks_worker import check_appointments, check_eway_bills
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -401,3 +408,103 @@ async def test_batch_pagination_stress_1000_appointments(
     count = await check_appointments(sqlite_session)
     await sqlite_session.commit()
     assert count == 1000
+
+
+def _build_internal_test_app() -> FastAPI:
+    """Minimal FastAPI app mounting `/api/v1/internal` for cron auth tests."""
+    test_app = FastAPI()
+    test_app.include_router(internal_endpoint.router, prefix="/api/v1/internal")
+    return test_app
+
+
+@pytest.mark.asyncio
+async def test_temporal_hooks_cron_endpoint_auth_and_idempotency(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    sqlite_session: AsyncSession,
+) -> None:
+    """
+    Verifies `POST /api/v1/internal/temporal-hooks/run`:
+    - returns 403 when `CRON_SECRET` is unset (endpoint disabled);
+    - returns 403 when `X-Cron-Secret` is missing or wrong;
+    - returns 200 with the right secret, logs a single searchable INFO line, and executes
+      `run_temporal_hooks_iteration()` idempotently.
+    """
+    now_utc = datetime.now(timezone.utc)
+    tenant_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    address = await _seed_test_address(sqlite_session, tenant_id)
+    overdue_req = PickupRequest(
+        tenant_id=tenant_id,
+        created_by_user_id=user_id,
+        status=PickupStatus.IN_TRANSIT,
+        appointment_end=now_utc - timedelta(hours=2),
+        product_category=ProductCategory.ELECTRONICS,
+        requested_pickup_date=now_utc.date(),
+        pickup_address_id=address.id,
+        delivery_address_id=address.id,
+        shipment_type=ShipmentType.FORWARD,
+        service_type=ServiceType.SURFACE_ROAD,
+    )
+    sqlite_session.add(overdue_req)
+    await sqlite_session.commit()
+
+    @asynccontextmanager
+    async def _fake_session_local():
+        yield sqlite_session
+
+    monkeypatch.setattr(temporal_hooks_worker, "AsyncSessionLocal", _fake_session_local)
+
+    test_app = _build_internal_test_app()
+    transport = ASGITransport(app=test_app)
+    url = "/api/v1/internal/temporal-hooks/run"
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Endpoint disabled when CRON_SECRET is unset
+        monkeypatch.setattr(settings, "CRON_SECRET", "")
+        resp_unset = await client.post(url, headers={"X-Cron-Secret": "any-secret"})
+        assert resp_unset.status_code == 403
+
+        # 2. Missing or wrong X-Cron-Secret rejected with 403
+        monkeypatch.setattr(settings, "CRON_SECRET", "super-secret-cron-token")
+        resp_missing = await client.post(url)
+        assert resp_missing.status_code == 403
+
+        resp_wrong = await client.post(url, headers={"X-Cron-Secret": "wrong-token"})
+        assert resp_wrong.status_code == 403
+
+        # 3. Valid X-Cron-Secret runs one iteration (holds 1 overdue appointment)
+        with caplog.at_level("INFO", logger="app.api.v1.endpoints.internal"):
+            resp_ok_1 = await client.post(
+                url, headers={"X-Cron-Secret": "super-secret-cron-token"}
+            )
+        assert resp_ok_1.status_code == 200
+        assert resp_ok_1.json() == {
+            "status": "ok",
+            "appointments_held": 1,
+            "eway_bills_held": 0,
+        }
+        assert any(
+            "temporal_hooks_run expired_appointments=1 stale_eway_holds=0 duration_ms="
+            in rec.getMessage()
+            for rec in caplog.records
+        )
+
+        # 4. Second run is idempotent (holds 0 rows because already in EXCEPTION)
+        caplog.clear()
+        with caplog.at_level("INFO", logger="app.api.v1.endpoints.internal"):
+            resp_ok_2 = await client.post(
+                url, headers={"X-Cron-Secret": "super-secret-cron-token"}
+            )
+        assert resp_ok_2.status_code == 200
+        assert resp_ok_2.json() == {
+            "status": "ok",
+            "appointments_held": 0,
+            "eway_bills_held": 0,
+        }
+        assert any(
+            "temporal_hooks_run expired_appointments=0 stale_eway_holds=0 duration_ms="
+            in rec.getMessage()
+            for rec in caplog.records
+        )
+

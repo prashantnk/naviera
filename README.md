@@ -63,9 +63,15 @@ bash backend/scripts/run_golden.sh
 
 ---
 
-## 5. Production Deployment Targets
+## 5. Production Deployment Targets & Key Environment Variables
 
 - **Branch Flow:** Feature work on `dev` $\rightarrow$ Pull Request $\rightarrow$ Squash-Merge to `master` (then reset/sync `dev` to `origin/master`).
-- **Frontend (Vercel):** Deployed automatically from `master` to `https://naviera.com` and `https://logismart.naviera.com`.
-- **Backend API & Worker (Render):** Deployed automatically from `master` to `https://naviera-api.onrender.com` (`uvicorn app.main:app`) + Render Background Worker (`python -m scripts.temporal_hooks_worker`).
+- **Frontend (Vercel):** Deployed automatically from `master` to `https://naviera.com`, `https://logismart.naviera.com`, and custom domains configured in `CUSTOM_DOMAIN_TENANTS` (`logismart.in:logismart,www.logismart.in:logismart`).
+- **Backend API & Scheduled Temporal Hooks (Render + GitHub Actions):** Deployed automatically from `master` to `https://naviera-backend.onrender.com` (`naviera-backend`, `uvicorn app.main:app`). Scheduled job [`.github/workflows/temporal-hooks.yml`](.github/workflows/temporal-hooks.yml) runs every 14 minutes (`*/14 * * * *`) against `POST /api/v1/internal/temporal-hooks/run` (authenticated via `X-Cron-Secret: $CRON_SECRET`) to execute `run_temporal_hooks_iteration()` and keep the Free Render service warm.
 - **Database & Auth (Supabase):** Managed PostgreSQL (via PgBouncer transaction pooler `:6543`) and Supabase Auth.
+
+| Target | Key Environment Variables / Secrets |
+| :--- | :--- |
+| **Backend (`backend/.env` / Render `naviera-backend`)** | `ENVIRONMENT`, `DATABASE_URL` (`:6543`), `ALEMBIC_DATABASE_URL` (`:5432`), `SUPABASE_URL`, `SECRET_KEY`, `SUPABASE_SERVICE_KEY`, `BACKEND_CORS_ORIGINS`, `FRONTEND_APP_URL`, `REVALIDATION_SECRET`, `CRON_SECRET`, `DELHIVERY_B2C_TOKEN`, `DELHIVERY_TENANT_ID`, `DELHIVERY_LIVE_TENANT_SLUGS` |
+| **Frontend (`frontend/.env.local` / Vercel)** | `BACKEND_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `CUSTOM_DOMAIN_TENANTS`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REVALIDATION_SECRET` |
+| **GitHub Actions (`.github/workflows/temporal-hooks.yml`)** | `CRON_SECRET` (matches Render `CRON_SECRET`), `NAVIERA_API_URL` (`https://naviera-backend.onrender.com`) |

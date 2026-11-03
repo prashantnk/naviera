@@ -50,7 +50,7 @@ import { Input } from "@/components/ui/input";
 import { IconSelect } from "@/components/ui/icon-select";
 import { PICKUP_TIME_SLOT_OPTIONS, toOptions, DOCUMENT_TYPE_OPTIONS } from "@/lib/form-options";
 import { downloadShippingLabel } from "@/lib/api";
-import { getSupabaseClient } from "@/lib/supabase";
+import { documentReferenceUrl, openDocument, uploadTenantDocument } from "@/lib/document-storage";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import { format, parseISO } from "date-fns";
@@ -182,45 +182,16 @@ export default function B2BShipmentDetailsPage() {
     }
   };
 
-  // Safe Document Download Helper (D-18: supports both stored bucket paths and full URLs)
-  const handleSecureDownload = async (filePath: string, _fileName: string) => {
-    const trimmed = (filePath || "").trim();
-    if (!trimmed) {
+  // Safe Document Download Helper (D-18: stored bucket keys and URLs both open via a signed URL)
+  const handleSecureDownload = async (filePath: string) => {
+    if (!(filePath || "").trim()) {
       toast.error("Document link is missing.");
       return;
     }
     try {
-      const supabase = getSupabaseClient(tenantSlug);
-      const isHttpUrl = /^https?:\/\//i.test(trimmed);
-      const storageMatch = trimmed.match(/\/storage\/v1\/object\/(?:public|sign)\/documents\/(.+?)(?:\?|$)/i);
-      const objectKey = storageMatch
-        ? decodeURIComponent(storageMatch[1])
-        : !isHttpUrl
-        ? trimmed.replace(/^\/+/, "").replace(/^documents\//, "")
-        : null;
-
-      if (objectKey) {
-        const { data, error } = await supabase.storage
-          .from("documents")
-          .createSignedUrl(objectKey, 60);
-        if (!error && data?.signedUrl) {
-          window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-          return;
-        }
-        const publicUrl = supabase.storage
-          .from("documents")
-          .getPublicUrl(objectKey).data?.publicUrl;
-        if (publicUrl) {
-          window.open(publicUrl, "_blank", "noopener,noreferrer");
-          return;
-        }
+      if (!(await openDocument(tenantSlug, filePath))) {
+        toast.error("You do not have permission to view this document.");
       }
-
-      if (isHttpUrl) {
-        window.open(trimmed, "_blank", "noopener,noreferrer");
-        return;
-      }
-      toast.error("You do not have permission to view this document.");
     } catch (err) {
       console.error(err);
       toast.error("Failed to fetch document download link.");
@@ -239,46 +210,15 @@ export default function B2BShipmentDetailsPage() {
 
     setUploading(true);
     try {
-      const supabase = getSupabaseClient(tenantSlug);
-      // Clean filename to prevent weird character bugs
-      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const fileName = `${Date.now()}_${cleanFileName}`;
-      const filePath = `${tenantSlug}/${fileName}`;
+      const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
 
-      // 1. Upload to Supabase bucket
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // 2. Map existing documents to conform to PickupDocumentUpdate schema
-      const mappedDocs = (shipment.documents || []).map((d) => ({
-        id: d.id,
-        document_type: d.document_type,
-        file_url: d.file_url,
-        file_name: d.file_name,
-      }));
-
-      // 3. Append the newly uploaded document
-      const updatedDocs = [
-        ...mappedDocs,
-        {
-          document_type: uploadDocumentType,
-          file_url: filePath,
-          file_name: file.name,
-        },
-      ];
-
-      // 4. Resolve NDR exception via merchant-accessible ExceptionsService (store path, sign on read: D-18)
-      void updatedDocs;
-
+      // Resolve the NDR via the merchant-accessible ExceptionsService (reference URL, signed on read: D-18)
       await ExceptionsService.applyExceptionAction(
         shipmentId,
         {
           action: NdrAction.UPLOAD_DOCUMENT,
           document_type: uploadDocumentType,
-          document_url: filePath,
+          document_url: documentReferenceUrl(objectKey),
           notes: `NDR Exception Resolved: Compliance document '${file.name}' uploaded.`,
         },
         tenantSlug,
@@ -994,7 +934,7 @@ export default function B2BShipmentDetailsPage() {
                       variant="outline"
                       size="sm"
                       className="shrink-0 bg-white shadow-sm font-bold text-xs h-8 px-2.5 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-                      onClick={() => handleSecureDownload(doc.file_url, doc.file_name)}
+                      onClick={() => handleSecureDownload(doc.file_url)}
                     >
                       <Download className="w-3.5 h-3.5 mr-1" /> View
                     </Button>

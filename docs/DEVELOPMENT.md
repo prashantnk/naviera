@@ -59,6 +59,7 @@ A lean devcontainer (`.devcontainer/devcontainer.json` + `.devcontainer/post-cre
 | `SUPABASE_SERVICE_KEY` | Service-role key for server-side auth operations | Required |
 | `FRONTEND_APP_URL` | Canonical frontend origin for links | `http://localhost:3000` |
 | `REVALIDATION_SECRET` | Shared secret for Next.js ISR cache invalidation | Match `frontend/.env.local` |
+| `CRON_SECRET` | Shared secret for `POST /api/v1/internal/temporal-hooks/run` (`X-Cron-Secret` header) | Optional locally (endpoint returns `403` when unset); set on Render + GitHub Actions secret `CRON_SECRET` |
 | `DELHIVERY_API_TOKEN` | Delhivery One B2C API token (`env` = `fake` \| `staging` \| `production`) | Optional (`DELHIVERY_ENV=fake` uses deterministic offline rates) |
 | `DELHIVERY_B2B_ENV` | Delhivery B2B Cargo mode (`fake` \| `staging` \| `production`) | `fake` locally; `production` uses `B2CFallbackDelhiveryB2BApi` when `DELHIVERY_B2B_PASSWORD` is empty |
 
@@ -70,6 +71,7 @@ A lean devcontainer (`.devcontainer/devcontainer.json` + `.devcontainer/post-cre
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_API_URL` | FastAPI base URL | `http://localhost:8000` |
 | `NEXT_PUBLIC_ROOT_DOMAIN` | Root domain for subdomain resolution | `localhost:3000` |
+| `CUSTOM_DOMAIN_TENANTS` | Comma-separated `<host>:<tenant_slug>` custom-domain rewrites in `middleware.ts` | Optional locally; `logismart.in:logismart,www.logismart.in:logismart` on Vercel |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Match `SUPABASE_URL` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key for client auth | Required |
 | `REVALIDATION_SECRET` | Shared secret for `/api/revalidate` | Match `backend/.env` |
@@ -139,7 +141,7 @@ flowchart LR
 
 1. **Develop on `dev`:** All daily engineering happens on `dev` (or a feature branch merged into `dev`).
 2. **Pre-Merge Verification:** Run `bash backend/scripts/run_golden.sh` (full mode) before merging into `master`.
-3. **Squash-Merge into `master`:** Merging to `master` triggers automatic production deployments on **Render** (`naviera-api` + background worker) and **Vercel** (`naviera` frontend).
+3. **Squash-Merge into `master`:** Merging to `master` triggers automatic production deployments on **Render** (`naviera-backend` at `https://naviera-backend.onrender.com`) and **Vercel** (`naviera` frontend); [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) runs `POST /api/v1/internal/temporal-hooks/run` every 14 minutes.
 4. **Realign `dev` After Every Squash-Merge:**
    ```bash
    git fetch origin

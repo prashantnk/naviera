@@ -25,13 +25,6 @@ from app.services.gst_documents import (
 )
 
 
-class RemittanceShipmentItem(SQLModel):
-    shipment_id: Optional[str] = None
-    tracking_id: str
-    order_reference_id: Optional[str] = None
-    amount_collected: float = 0.0
-
-
 class CodRemittanceRead(SQLModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
@@ -90,17 +83,6 @@ class CodRemittancePreview(SQLModel):
     lines: List[CodRemittancePreviewLine]
     selected_count: int = 0
     total: float = Field(description="Payout total of the ticked AWBs (all AWBs when none sent).")
-
-
-class BillingInvoiceLineItem(SQLModel):
-    tracking_id: Optional[str] = None
-    description: Optional[str] = None
-    service_type: Optional[str] = None
-    freight_amount: float = 0.0
-    cgst_amount: float = 0.0
-    sgst_amount: float = 0.0
-    igst_amount: float = 0.0
-    total_amount: float = 0.0
 
 
 class GstTaxRowRead(SQLModel):

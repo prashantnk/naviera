@@ -11,8 +11,8 @@
 #   preflight  servers up, live `logismart` counts BEFORE
 #   api        golden journeys, ONE pytest session in a fixed order (the session fixture resets
 #              logismart-test once; later suites read state written by earlier ones)
-#   ui         Playwright click-through (frontend :3000, API :8000) in the shared Chrome on CDP
-#              :9224, or a self-launched headless Chrome when :9224 is down / UI_HEADLESS=1
+#   ui         Playwright click-through (frontend :3000, dedicated fake-env API :8100) in the shared
+#              Chrome on CDP :9224, or a self-launched headless Chrome when :9224 is down / UI_HEADLESS=1
 #   unit       money / property / tenant-filter / lifecycle / seed-core suites (pure only in
 #              --quick and --smoke)
 #   integrity  B11/C6 integrity audit of logismart-test (read-only)
@@ -41,9 +41,21 @@ export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.K
 export GOLDEN_TENANT_SLUG="${GOLDEN_TENANT_SLUG:-logismart-test}"
 # Every in-process suite prices Delhivery on the deterministic fake for the test tenant and binds
 # no slug live, overriding backend/.env (env vars beat .env in pydantic Settings). The UI phase
-# talks to the running :8000 server, which follows its own backend/.env.
+# starts its own dedicated uvicorn on UI_API_PORT (default 8100) with these same env vars, so
+# the shared :8000 server can keep logismart-test live.
 export DELHIVERY_FAKE_TENANT_SLUGS="logismart-test"
 export DELHIVERY_LIVE_TENANT_SLUGS=""
+UI_API_PORT="${UI_API_PORT:-8100}"
+UI_UVICORN_PID=""
+
+stop_ui_uvicorn() {
+  if [ -n "$UI_UVICORN_PID" ] && kill -0 "$UI_UVICORN_PID" 2> /dev/null; then
+    kill "$UI_UVICORN_PID" 2> /dev/null || true
+    wait "$UI_UVICORN_PID" 2> /dev/null || true
+  fi
+  UI_UVICORN_PID=""
+}
+trap stop_ui_uvicorn EXIT INT TERM
 LIVE_SLUG="${GOLDEN_LIVE_SLUG:-logismart}"
 POETRY="${POETRY:-$(command -v poetry || echo "$HOME/.local/bin/poetry")}"
 FRONTEND_DIR="../frontend"
@@ -111,6 +123,7 @@ PURE_UNIT_SUITES=(  # no app, no DB connection (conftest skips the DB for pure m
   scripts/tests/test_team_admin_edits_unit.py
   scripts/tests/test_wp10_batch3_unit.py
   scripts/tests/test_temporal_hooks_worker.py  # in-memory SQLite, not the shared database
+  scripts/tests/test_supabase_lockdown_migrations.py
 )
 FULL_UNIT_SUITES=(  # every pure suite plus the DB-backed ones (savepoint session on logismart-test)
   "${PURE_UNIT_SUITES[@]}"
@@ -202,10 +215,37 @@ run_pytest() {  # run_pytest <junit name> <paths...>
   "$POETRY" run pytest "${PYTEST_FLAGS[@]}" --junitxml="$junit" "$@"
 }
 
-run_ui() {  # UI journeys must run AND none may skip (a skip means the screen was never exercised)
-  run_pytest ui "${UI_SUITES[@]}" -m ui &&
+run_ui() {  # UI journeys must run against a dedicated fake-env uvicorn AND none may skip
+  local ui_api_url="http://127.0.0.1:$UI_API_PORT"
+  local ui_log="$ARTIFACTS/ui_uvicorn.log"
+  echo "  starting UI fake-env uvicorn on $ui_api_url (log: $ui_log)"
+  DELHIVERY_FAKE_TENANT_SLUGS="logismart-test" DELHIVERY_LIVE_TENANT_SLUGS="" \
+    "$POETRY" run uvicorn app.main:app --host 127.0.0.1 --port "$UI_API_PORT" --no-access-log \
+    > "$ui_log" 2>&1 &
+  UI_UVICORN_PID=$!
+
+  local ready=0
+  for _ in $(seq 1 60); do
+    if ! kill -0 "$UI_UVICORN_PID" 2> /dev/null; then
+      echo "  UI uvicorn exited early (log: $ui_log)"; tail -20 "$ui_log"; stop_ui_uvicorn; return 1
+    fi
+    if curl -s -o /dev/null --max-time 2 "$ui_api_url/docs"; then
+      ready=1; break
+    fi
+    sleep 0.5
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "  UI uvicorn did not become ready on $ui_api_url (log: $ui_log)"; tail -20 "$ui_log"
+    stop_ui_uvicorn; return 1
+  fi
+  echo "  UI fake-env API up ($ui_api_url)"
+
+  local rc=0
+  UI_API_URL="$ui_api_url" run_pytest ui "${UI_SUITES[@]}" -m ui &&
     "$POETRY" run python -m scripts.golden_checks junit-summary --fail-on-skip "$ARTIFACTS/ui.xml" > /dev/null ||
-    { "$POETRY" run python -m scripts.golden_checks junit-summary --fail-on-skip "$ARTIFACTS/ui.xml"; return 1; }
+    { "$POETRY" run python -m scripts.golden_checks junit-summary --fail-on-skip "$ARTIFACTS/ui.xml"; rc=1; }
+  stop_ui_uvicorn
+  return $rc
 }
 
 live_after() {

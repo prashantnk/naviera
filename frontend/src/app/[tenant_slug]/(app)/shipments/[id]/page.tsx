@@ -56,7 +56,7 @@ import {
   ShipmentPodBanner,
 } from "@/components/wallet/shipment-pod-controls";
 import { downloadShippingLabel } from "@/lib/api";
-import { getSupabaseClient } from "@/lib/supabase";
+import { openDocument } from "@/lib/document-storage";
 import { cn, extractApiErrorMessage, formatTimeSlot, safeFormatDate } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import {
@@ -400,41 +400,13 @@ export default function ShipmentDetailsPage() {
   };
 
   const handleSecureDownload = async (filePath: string) => {
-    const trimmed = (filePath || "").trim();
-    if (!trimmed) {
+    if (!(filePath || "").trim()) {
       toast.error("Document link is missing.");
       return;
     }
-    const supabase = getSupabaseClient(tenantSlug);
-    const isHttpUrl = /^https?:\/\//i.test(trimmed);
-    const storageMatch = trimmed.match(/\/storage\/v1\/object\/(?:public|sign)\/documents\/(.+?)(?:\?|$)/i);
-    const objectKey = storageMatch
-      ? decodeURIComponent(storageMatch[1])
-      : !isHttpUrl
-      ? trimmed.replace(/^\/+/, "").replace(/^documents\//, "")
-      : null;
-
-    if (objectKey) {
-      const { data, error } = await supabase.storage
-        .from("documents")
-        .createSignedUrl(objectKey, 60);
-      if (!error && data?.signedUrl) {
-        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
-      const publicUrl = supabase.storage
-        .from("documents")
-        .getPublicUrl(objectKey).data?.publicUrl;
-      if (publicUrl) {
-        window.open(publicUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
+    if (!(await openDocument(tenantSlug, filePath))) {
+      toast.error("You do not have permission to view this document.");
     }
-    if (isHttpUrl) {
-      window.open(trimmed, "_blank", "noopener,noreferrer");
-      return;
-    }
-    toast.error("You do not have permission to view this document.");
   };
 
   const trackingStages = useMemo(

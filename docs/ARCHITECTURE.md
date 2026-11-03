@@ -16,16 +16,18 @@ flowchart TD
     Services --> Repos["Repositories: app/repositories/\nStrict tenant_id Isolation + selectinload"]
     Repos -->|PgBouncer :6543 NullPool| DB[("Supabase PostgreSQL\nSingle Shared Database")]
     Services -->|Live / Cached Quotes| Delhivery["Delhivery One APIs\nB2C kinko/v1/invoice/charges\n+ B2B Fallback / LTL API"]
-    Worker["Temporal Hooks Worker\nbackend/scripts/temporal_hooks_worker.py"] -->|NDR Escalation & Purges| DB
+    GHCron["GitHub Actions Cron (*/14 * * * *)\n.github/workflows/temporal-hooks.yml"] -->|POST /api/v1/internal/temporal-hooks/run\n+ X-Cron-Secret (also keeps Render warm)| API
+    API -->|run_temporal_hooks_iteration()| Worker["Temporal Hooks Engine\nbackend/scripts/temporal_hooks_worker.py"]
+    Worker -->|Appointment Expiry & Stale E-Way Bill Holds| DB
 ```
 
 ---
 
 ## 2. Frontend Architecture: Three Zones & Runtime Theming
 
-### 2.1 Edge Subdomain Routing (`frontend/src/middleware.ts`)
+### 2.1 Edge Subdomain & Custom-Domain Routing (`frontend/src/middleware.ts`)
 - Every incoming HTTP request is intercepted at the edge by `middleware.ts`.
-- In production, the subdomain (e.g., `logismart` from `logismart.naviera.com`) or custom domain (`CUSTOM_DOMAINS` in `frontend/src/lib/config.ts`) is extracted and rewritten internally to `/[tenant_slug]/...` without changing the browser URL.
+- In production (`NEXT_PUBLIC_ROOT_DOMAIN=naviera.com`), the tenant slug is extracted from either a mapped custom domain in `CUSTOM_DOMAIN_TENANTS` (e.g., `logismart.in:logismart,www.logismart.in:logismart`) or a `<slug>.naviera.com` subdomain (e.g., `logismart.naviera.com`) and rewritten internally to `/[tenant_slug]/...` without changing the browser URL.
 - In local development (`localhost:3000`), path-based routing (`/logismart-test/...`, `/logismart/...`) resolves directly to `[tenant_slug]`.
 
 ### 2.2 The Three Zones (`frontend/src/app/[tenant_slug]/`)
@@ -65,6 +67,18 @@ backend/app/
   Represents a single **Shipment / Order / AWB / Lorry Receipt (LR)** (`service_flow` = `B2C` or `B2B`, `shipment_type` = `FORWARD` or `REVERSE`, `service_option` = `SURFACE` | `EXPRESS` | `DELHIVERY_B2B` | `PRIME`). Linked 1:1 to `PaymentDetails`, 1:N to `Package` boxes, 1:N to `PickupDocument` compliance rows, and 1:N to `ShipmentActivity` timeline events.
 - **`Manifest` (`manifests` table in `backend/app/models/manifests.py`):**
   Represents a warehouse **Pickup Request (PUR) / Fleet Run-Sheet** (`manifest_code`, `pickup_address_id`, `scheduled_date`, `time_slot`). Groups `OPEN` shipments together (transitioning them to `ASSIGNED`) or records a **Blind Pickup** (`is_blind_pickup = True`, `total_boxes = N`) before individual LRs are created.
+
+### 3.2 Scheduled Jobs: Temporal Hooks & Free Render Keep-Warm
+- **What runs (`run_temporal_hooks_iteration` in `backend/scripts/temporal_hooks_worker.py`):**
+  1. **Overdue Delivery Appointments:** Finds `SCHEDULED` appointments whose date + slot-end time (in IST) has passed, marks the appointment `EXPIRED`, transitions active `IN_TRANSIT` / `OUT_FOR_DELIVERY` shipments to `EXCEPTION` (`ON_HOLD`), and logs a `SHIPMENT_ON_HOLD` activity row.
+  2. **Stale E-Way Bills:** Finds `IN_TRANSIT` shipments older than 72 hours with declared value $\ge$ ₹50,000 and an `EWAY_BILL` compliance document, transitions them to `EXCEPTION` (`ON_HOLD`), and logs a `SHIPMENT_ON_HOLD` activity row (`EWAY_BILL_EXPIRED`).
+- **Idempotency:** Both queries filter strictly on pre-hold statuses (`SCHEDULED` appointments and `IN_TRANSIT` shipments without an active `EWAY_BILL_EXPIRED` hold), so repeating an iteration within the same minute is a no-op (`{"appointments_held": 0, "eway_bills_held": 0}`).
+- **Protected Cron Endpoint (`POST /api/v1/internal/temporal-hooks/run` in `backend/app/api/v1/endpoints/internal.py`):**
+  - Mounted outside the public OpenAPI schema (`include_in_schema=False`).
+  - Requires header `X-Cron-Secret` to match `settings.CRON_SECRET` via constant-time `secrets.compare_digest`. When `CRON_SECRET` is empty/unset or the header is missing/wrong, the endpoint returns `403 Forbidden`.
+- **Every-14-Minute Scheduler & Render Keep-Warm ([`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml)):**
+  - Scheduled via GitHub Actions `cron: "*/14 * * * *"` (plus manual `workflow_dispatch`), calling `$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` (`https://naviera-backend.onrender.com`) using `curl --retry 3`.
+  - **Keep-Warm Side Effect:** Render Free web services sleep after 15 minutes of inactivity and give 750 free instance-hours/month (enough for one 24/7 service). Firing every 14 minutes both executes the temporal hooks without a paid Render Cron job and keeps `naviera-backend` warm.
 
 ---
 

@@ -79,6 +79,10 @@ All backend code must strictly respect the 3-tier boundary:
   - **Mandatory Async Eager Loading:** Always use `selectinload(...)` for child relationships to prevent SQLAlchemy async `MissingGreenlet` serialization errors.
   - **Address Snapshotting:** Editing a shipment's address creates a new snapshot `Address` row rather than mutating a saved address book row in place; deleting from the address book uses soft-delete (`is_saved = False`).
 
+### 3.4 Scheduled Jobs (`temporal-hooks.yml` $\rightarrow$ `POST /api/v1/internal/temporal-hooks/run`)
+- **What runs:** `run_temporal_hooks_iteration()` (`backend/scripts/temporal_hooks_worker.py`) runs across all tenants to expire overdue delivery appointments and place parcels with stale (> 72h in-transit, value $\ge$ ₹50,000) e-way bills into `EXCEPTION` (`ON_HOLD`). Every pass is idempotent.
+- **How it is triggered in production (Free Render plan):** GitHub Actions workflow [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) runs every 14 minutes (`*/14 * * * *`, plus manual `workflow_dispatch`) and sends `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) to `$NAVIERA_API_URL` (`https://naviera-backend.onrender.com`) with header `X-Cron-Secret: $CRON_SECRET` (verified via `secrets.compare_digest` against `settings.CRON_SECRET`; returns `403` when unset). Calling the API every 14 minutes also keeps the Free Render `naviera-backend` web service warm inside its 15-minute idle sleep window (750 free hours/month covers one 24/7 web service).
+
 ---
 
 ## 4. Financial, Pricing & Lifecycle Invariants (Non-Negotiable)

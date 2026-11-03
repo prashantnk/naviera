@@ -614,7 +614,7 @@ async def test_j13_admin_shipment_edit_weight_increase_wallet_reconcile_and_addr
     increases package weight from `0.5 kg` to `2.0 kg` and updates delivery `address_line1`.
     Verifies:
     - A new `Address` snapshot row is created (`new_delivery_address_id != old_delivery_address_id`)
-    - `WalletService.reconcile_shipment_edit` debits the exact freight delta `new_cost - old_cost`
+    - `RepricingService` debits the exact freight delta `new_cost - old_cost`
       from `customerb2c`'s wallet
     - `ShipmentActivity` logs the diff (`packages`, `delivery_address`, `payment_details`).
     """

@@ -402,19 +402,6 @@ class DelhiveryModulesRepository:
         await self.lock_document_series(tenant_id, financial_year, note_type)
         return await self.next_document_serial(tenant_id, number_prefix)
 
-    async def has_wallet_refund_with_remark(
-        self, tenant_id: uuid.UUID, shipment_id: uuid.UUID, remark_prefix: str
-    ) -> bool:
-        """True if a REFUND wallet txn for the shipment already carries the remark prefix."""
-        stmt = select(func.count(col(WalletTransaction.id))).where(
-            WalletTransaction.tenant_id == tenant_id,
-            WalletTransaction.shipment_id == shipment_id,
-            WalletTransaction.txn_type == WalletTxnType.REFUND.value,
-            col(WalletTransaction.remarks).startswith(remark_prefix),
-        )
-        count = (await self.session.exec(stmt)).one()
-        return int(count or 0) > 0
-
     async def get_open_tickets_by_tracking_id(
         self,
         tenant_id: uuid.UUID,

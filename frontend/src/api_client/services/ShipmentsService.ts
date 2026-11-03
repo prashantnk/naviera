@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { AdminShipmentChargeCreate } from '../models/AdminShipmentChargeCreate';
 import type { AppointmentUpdate } from '../models/AppointmentUpdate';
 import type { CarrierBillingRead } from '../models/CarrierBillingRead';
 import type { CarrierBillingUpdate } from '../models/CarrierBillingUpdate';
@@ -635,15 +636,15 @@ export class ShipmentsService {
      * Applies a direct Owner/Admin price adjustment to a shipment (#558 3c):
      * debits the customer's wallet, updates `total_logistics_cost`, issues a GST Debit Note,
      * and returns the updated `CarrierBillingRead` view.
+     * @param shipmentId
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns CarrierBillingRead Successful Response
+     * @throws ApiError
      */
     public static createAdminShipmentCharge(
         shipmentId: string,
-        requestBody: {
-            override_total_price?: number | null;
-            amount?: number | null;
-            includes_gst?: boolean;
-            label?: string;
-        },
+        requestBody: AdminShipmentChargeCreate,
         xTenantSlug?: (string | null),
     ): CancelablePromise<CarrierBillingRead> {
         return __request(OpenAPI, {

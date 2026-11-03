@@ -78,12 +78,11 @@ GOLDEN_TEST_PASSWORD=... bash scripts/run_golden.sh  # full golden run on logism
 `poetry run pytest scripts/tests` also runs DB-backed suites. They are guarded to the `logismart-test` tenant,
 need the API on `:8000`, and must not run concurrently with another DB-touching session.
 
-## Production quick reference (Render)
+## Production quick reference (Render `naviera-backend` + GitHub Actions cron)
 
-- **Web service:** build `pip install poetry && poetry install --only main`; start
+- **Web service (`naviera-backend`, `https://naviera-backend.onrender.com`):** build `pip install poetry && poetry install --only main`; start
   `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log`.
-- **Background worker:** same repo and **same commit** as the web service; start
-  `poetry run python -m scripts.temporal_hooks_worker`.
+- **Scheduled temporal hooks (`.github/workflows/temporal-hooks.yml`):** runs every 14 minutes (`*/14 * * * *`, plus `workflow_dispatch`) and calls `POST $NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` with header `X-Cron-Secret: $CRON_SECRET` (`settings.CRON_SECRET`), running one idempotent iteration of `run_temporal_hooks_iteration()` and keeping the Free Render service warm (or run `poetry run python -m scripts.temporal_hooks_worker` if using a dedicated worker).
 - **Database:** `DATABASE_URL` and `ALEMBIC_DATABASE_URL` use the Supabase pooler (port `6543`) with the password
   URL-encoded (`$` → `%24`). `DB_ECHO_LOG=False`.
 - **Telemetry (Logfire):** auto-tracing limited to `app.api`, `app.services`, `app.repositories`; `/health` is

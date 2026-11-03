@@ -46,10 +46,14 @@ from .browser_session import (
 )
 from .db_oracle import DbOracle
 from .hud import StepBanner
-from .ui_config import DESKTOP, UiSettings, load_ui_settings
+from .ui_config import (
+    API_URL_ENV_VAR,
+    DEFAULT_API_URL,
+    DESKTOP,
+    UiSettings,
+    load_ui_settings,
+)
 
-API_URL_ENV_VAR = "UI_API_URL"
-DEFAULT_API_URL = "http://localhost:8000"
 HEADLESS_ENV_VAR = "UI_HEADLESS"
 
 

@@ -29,11 +29,13 @@ from playwright.async_api import (
 
 from .network_guard import NetworkGuard
 from .ui_config import (
+    BACKEND_PROXY_ROUTE_RE,
     DEFAULT_TIMEOUT_MS,
     NAVIGATION_TIMEOUT_MS,
     PHONE,
     VIEWPORTS,
     UiSettings,
+    rewrite_api_url,
 )
 
 PHONE_DEVICE_SCALE_FACTOR = 3
@@ -116,6 +118,12 @@ class CdpSession:
         )
         context.set_default_timeout(DEFAULT_TIMEOUT_MS)
         context.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
+        await context.route(
+            BACKEND_PROXY_ROUTE_RE,
+            lambda route: route.continue_(
+                url=rewrite_api_url(route.request.url, self.settings.api_url)
+            ),
+        )
         self._owned.append(context)
         page = await context.new_page()
         guard = NetworkGuard(app_origins=self.app_origins).attach(page)

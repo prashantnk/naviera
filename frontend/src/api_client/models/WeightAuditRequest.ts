@@ -7,5 +7,9 @@ export type WeightAuditRequest = {
      * Audited chargeable weight in KG
      */
     audited_weight_kg: number;
+    /**
+     * Optional Admin final price override in INR (incl. GST; #568)
+     */
+    override_total_price?: (number | null);
 };
 

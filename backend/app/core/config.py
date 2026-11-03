@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # --- Logging ---
     LOGFIRE_TOKEN: str = ""
 
+    # --- Internal Cron / Temporal Hooks ---
+    CRON_SECRET: str = ""
+    """Shared secret for `POST /api/v1/internal/temporal-hooks/run` (header `X-Cron-Secret`);
+    empty disables the endpoint (returns 403)."""
+
     # --- Delhivery B2C (Express) API: live prices for the tenants bound to the token ---
     # Token from one.delhivery.com → Settings → API Setup (prod; staging prices are ₹0).
     # Empty = Delhivery options show "price unavailable". See docs/RUNBOOK.md "Delhivery API token".

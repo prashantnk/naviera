@@ -209,7 +209,7 @@ async def _run_check(session, name: str, check) -> Optional[int]:
         return None
 
 
-async def run_temporal_hooks_iteration() -> None:
+async def run_temporal_hooks_iteration() -> Dict[str, Optional[int]]:
     """One pass over both checks, followed by a heartbeat log line."""
     async with AsyncSessionLocal() as session:
         appointments = await _run_check(session, "check_appointments", check_appointments)
@@ -219,6 +219,10 @@ async def run_temporal_hooks_iteration() -> None:
         appointments,
         eway_bills,
     )
+    return {
+        "appointments_held": appointments,
+        "eway_bills_held": eway_bills,
+    }
 
 
 async def main() -> None:

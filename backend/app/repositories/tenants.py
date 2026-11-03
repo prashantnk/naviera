@@ -86,15 +86,6 @@ class TenantRepository:
         await self.session.refresh(user)
         return user
 
-    async def update_tenant(self, tenant: Tenant) -> Tenant:
-        """
-        Saves changes to an existing tenant record.
-        """
-        self.session.add(tenant)
-        await self.session.commit()
-        await self.session.refresh(tenant)
-        return tenant
-
     async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
         """Retrieves a single user by ID."""
         return await self.session.get(User, user_id)
