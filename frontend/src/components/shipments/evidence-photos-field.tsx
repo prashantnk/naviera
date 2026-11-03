@@ -3,23 +3,23 @@
 
 /**
  * Optional photo evidence for a measurement (scale / tape photos), uploaded to the
- * tenant's Supabase `documents` bucket the same way shipment documents are uploaded.
- * The field stores the public URLs that the measurements API keeps as evidence.
+ * tenant's folder in the private Supabase `documents` bucket. The field stores the
+ * reference URLs that the measurements API keeps as evidence; viewing a photo opens a
+ * short-lived signed URL.
  */
 import { Camera, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { getSupabaseClient } from "@/lib/supabase";
+import { documentReferenceUrl, openDocument, uploadTenantDocument } from "@/lib/document-storage";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 /** Backend limit on evidence URLs per measurement. */
 export const MAX_EVIDENCE_PHOTOS = 3;
 /** Same 5 MB cap as the other document uploads. */
 const MAX_PHOTO_BYTES = 5242880;
-const STORAGE_BUCKET = "documents";
-const UNSAFE_FILENAME_CHARS = /[^a-zA-Z0-9.-]/g;
+const PHOTO_KEY_LABEL = "measurement";
 
 /** Props of {@link EvidencePhotosField}. */
 export interface EvidencePhotosFieldProps {
@@ -31,19 +31,14 @@ export interface EvidencePhotosFieldProps {
 }
 
 /**
- * Uploads one photo and returns its public URL.
+ * Uploads one photo and returns its reference URL.
  *
  * @param tenantSlug - Tenant folder in the bucket.
  * @param file - Image chosen by the user.
- * @returns Public URL of the stored object.
+ * @returns Reference URL of the stored (private) object.
  */
 async function _uploadPhoto(tenantSlug: string, file: File): Promise<string> {
-  const supabase = getSupabaseClient(tenantSlug);
-  const safeName = file.name.replace(UNSAFE_FILENAME_CHARS, "_");
-  const storagePath = [tenantSlug, `measurement_${Date.now()}_${safeName}`].join("/");
-  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert: true });
-  if (error) throw error;
-  return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+  return documentReferenceUrl(await uploadTenantDocument(tenantSlug, file, PHOTO_KEY_LABEL));
 }
 
 /** Up to three optional evidence photos with remove buttons. */
@@ -56,6 +51,10 @@ export function EvidencePhotosField({
 }: EvidencePhotosFieldProps) {
   const [uploading, setUploading] = useState(false);
   const isFull = value.length >= MAX_EVIDENCE_PHOTOS;
+
+  const handleView = async (url: string) => {
+    if (!(await openDocument(tenantSlug, url))) toast.error("Could not open this photo.");
+  };
 
   const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -85,9 +84,14 @@ export function EvidencePhotosField({
             data-testid={`${testIdPrefix}.photo-${index}`}
             className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] font-medium"
           >
-            <a href={url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+            <button
+              type="button"
+              data-testid={`${testIdPrefix}.view-${index}`}
+              onClick={() => void handleView(url)}
+              className="text-primary hover:underline"
+            >
               Photo {index + 1}
-            </a>
+            </button>
             <button
               type="button"
               disabled={disabled}

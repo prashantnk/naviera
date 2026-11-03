@@ -14,6 +14,7 @@ API (`api_setup`); every assertion reads the database through the read-only
 
 from decimal import Decimal
 
+import httpx
 import pytest
 
 pytest.importorskip("playwright.async_api")
@@ -23,6 +24,10 @@ from golden_journeys.golden_env import (  # noqa: E402
     CUSTOMER_B2B_EMAIL,
     CUSTOMER_B2C_EMAIL,
     OPERATIONS_EMAIL,
+    get_wallet_balance,
+    headers,
+    load_accounts,
+    make_utr,
 )
 
 from app.models.delhivery_modules import (  # noqa: E402
@@ -32,6 +37,7 @@ from app.models.delhivery_modules import (  # noqa: E402
 from app.models.pickups import PickupStatus, ServiceOption  # noqa: E402
 
 from .api_setup import (  # noqa: E402
+    API_TIMEOUT_S,
     create_b2c_cod_remittance,
     create_b2c_pickup_request,
     delivery_otp,
@@ -49,9 +55,10 @@ from .pages.ops_page import OpsMobilePage  # noqa: E402
 from .pages.shipment_pages import ShipmentDetailPage, ShipmentEditPage  # noqa: E402
 from .pages.weight_mismatch_page import WeightMismatchPage  # noqa: E402
 from .ui_config import DESKTOP, PHONE  # noqa: E402
-from .ui_fixtures import TabFactory, UiSettings  # noqa: E402
+from .ui_fixtures import TabFactory, UiSettings, api_url  # noqa: E402
 
 JOURNEY = "MONEY"
+WALLET_TOPUP_INR = 20_000.0
 B2C_PICKUP_LABEL = "LogiSmart B2C Gurugram Hub Warehouse"
 """Seeded private warehouse of customerb2c (`fixtures/logismart_test_addresses.json`)."""
 B2B_PICKUP_LABEL = "B2B Dock Manager"
@@ -105,6 +112,38 @@ def _b2b_booking() -> BookingInput:
         eway_bill="123456789012",
         carriers_risk=True,
     )
+
+
+async def _ensure_b2c_wallet_funded() -> None:
+    """
+    Tops up `customerb2c` via the UPI recharge + admin approval API when its balance is
+    below `WALLET_TOPUP_INR / 2`, so standalone runs satisfy the positive-wallet COD
+    remittance guard without depending on `test_suite_10_crosscut` running first.
+    """
+    accounts = await load_accounts()
+    if await get_wallet_balance(accounts[CUSTOMER_B2C_EMAIL]["id"]) >= WALLET_TOPUP_INR / 2:
+        return
+    cust_headers = headers(accounts, CUSTOMER_B2C_EMAIL)
+    admin_headers = headers(accounts, ADMIN_EMAIL)
+    async with httpx.AsyncClient(base_url=api_url(), timeout=API_TIMEOUT_S) as client:
+        intent = await client.post(
+            "/api/v1/wallet/recharge/upi-intent",
+            headers=cust_headers,
+            json={"amount": WALLET_TOPUP_INR},
+        )
+        assert intent.status_code == 200, intent.text
+        txn_id = intent.json()["transaction_id"]
+        confirm = await client.post(
+            f"/api/v1/wallet/recharge/{txn_id}/confirm",
+            headers=cust_headers,
+            json={"utr_number": make_utr()},
+        )
+        assert confirm.status_code == 200, confirm.text
+        approve = await client.post(
+            f"/api/v1/wallet/recharge/{txn_id}/approve",
+            headers=admin_headers,
+        )
+        assert approve.status_code == 200, approve.text
 
 
 @pytest.mark.ui
@@ -188,7 +227,8 @@ async def test_ui_money_flows(
     screen_invoice_total = await invoices.row_total(invoice.invoice_number)
     assert screen_invoice_total == invoice.total_amount
 
-    # 9. COD payout (API glue: finance closes the batch), shown on the merchant's screen.
+    # 9. COD payout (API glue: ensure merchant wallet >= 0, then finance closes the batch).
+    await _ensure_b2c_wallet_funded()
     remittance = await create_b2c_cod_remittance(shipment_id)
     stored_remittance = await db_oracle.remittance(remittance["remittance_number"])
     assert to_paisa(stored_remittance.total_remittance) > Decimal("0.00")

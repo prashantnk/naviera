@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { AdminOfflineCreditRequest } from '../models/AdminOfflineCreditRequest';
 import type { CodSettlementResponse } from '../models/CodSettlementResponse';
 import type { PaginatedResponse_WalletTransactionRead_ } from '../models/PaginatedResponse_WalletTransactionRead_';
 import type { RechargeRejectRequest } from '../models/RechargeRejectRequest';
@@ -270,6 +271,33 @@ export class WalletService {
         });
     }
     /**
+     * Record Admin Offline Wallet Credit
+     * Owner/Admin manual wallet credit when a customer pays offline (NEFT / IMPS / RTGS /
+     * direct UPI / cheque / cash; #558 3b). Immediately creates a COMPLETED RECHARGE
+     * ledger entry and an official Wallet Advance Receipt Voucher (`REC-...`).
+     * @param requestBody
+     * @param xTenantSlug
+     * @returns VerifyUtrResponse Successful Response
+     * @throws ApiError
+     */
+    public static recordAdminOfflineWalletCredit(
+        requestBody: AdminOfflineCreditRequest,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<VerifyUtrResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/wallet/admin/credit',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Verify Upi Utr Recharge
      * Admin "approve with UTR": verifies a 12-digit UPI UTR (with duplicate replay
      * protection) against a MERCHANT's pending recharge request and credits that
@@ -288,36 +316,6 @@ export class WalletService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/v1/wallet/recharge/verify-utr',
-            headers: {
-                'x-tenant-slug': xTenantSlug,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Record Admin Offline Wallet Credit
-     * Owner/Admin manual wallet credit when a customer pays offline (NEFT / IMPS / RTGS /
-     * direct UPI / cheque / cash; #558 3b). Immediately creates a COMPLETED RECHARGE
-     * ledger entry and an official Wallet Advance Receipt Voucher (`REC-...`).
-     */
-    public static recordAdminOfflineWalletCredit(
-        requestBody: {
-            user_id?: string | null;
-            user_email?: string | null;
-            amount: number;
-            utr_number: string;
-            payment_method?: string;
-            notes?: string | null;
-        },
-        xTenantSlug?: (string | null),
-    ): CancelablePromise<VerifyUtrResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/v1/wallet/admin/credit',
             headers: {
                 'x-tenant-slug': xTenantSlug,
             },

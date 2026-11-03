@@ -49,7 +49,7 @@ import {
   toOptions,
   type SelectOption,
 } from "@/lib/form-options";
-import { getSupabaseClient } from "@/lib/supabase";
+import { documentReferenceUrl, uploadTenantDocument } from "@/lib/document-storage";
 import { useUser } from "@/components/auth/auth-guard";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { RepricePreviewPanel } from "@/components/shipments/reprice-preview-panel";
@@ -274,22 +274,8 @@ export function ExceptionActionDialog({
     }
     setUploadingFile(true);
     try {
-      const supabase = getSupabaseClient(tenantSlug);
-      const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const storagePath = [
-        tenantSlug,
-        `ndr_${Date.now()}_${safeFileName}`,
-      ].join("/");
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(storagePath, file, { upsert: true });
-      if (uploadError) throw uploadError;
-
-      const publicData = supabase.storage
-        .from("documents")
-        .getPublicUrl(storagePath).data;
-      const resolvedUrl = publicData?.publicUrl || "";
-      setDocumentUrl(resolvedUrl);
+      const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
+      setDocumentUrl(documentReferenceUrl(objectKey));
       setDocumentName(file.name);
       toast.success(`Uploaded ${file.name}`);
     } catch (err: unknown) {

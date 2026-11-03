@@ -20,11 +20,3 @@ class TenantNotFoundException(NavieraException):
     """
 
     pass
-
-
-class UserNotFoundException(NavieraException):
-    """
-    Raised when a specific user cannot be found in the database.
-    """
-
-    pass

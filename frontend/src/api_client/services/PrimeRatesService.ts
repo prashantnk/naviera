@@ -79,6 +79,27 @@ export class PrimeRatesService {
         });
     }
     /**
+     * Download Prime Lanes Template
+     * Sample CSV template with headers and 2 example rows for `POST /prime-lanes/import` (staff only).
+     * @param xTenantSlug
+     * @returns any Sample Prime lanes CSV template
+     * @throws ApiError
+     */
+    public static downloadPrimeLanesTemplate(
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/pricing/prime-lanes/template.csv',
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Update Prime Lane
      * Edits a lane's numbers and/or active flag (owner/admin).
      * @param laneId

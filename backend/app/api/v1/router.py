@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     dashboard,
     delhivery_modules,
     exceptions,
+    internal,
     manifests,
     pricing,
     pricing_prime,
@@ -47,3 +48,9 @@ api_router.include_router(
     delhivery_modules.disputes_router, prefix="/disputes", tags=["Disputes"]
 )
 api_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
+api_router.include_router(
+    internal.router,
+    prefix="/internal",
+    tags=["Internal"],
+    include_in_schema=False,
+)

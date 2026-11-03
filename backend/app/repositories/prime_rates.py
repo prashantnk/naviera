@@ -260,16 +260,6 @@ class PrimeRatesRepository:
         )
         return {row.pincode: row for row in (await self.session.exec(stmt)).all()}
 
-    async def list_lane_rows(self, tenant_id: uuid.UUID) -> List[PrimeLane]:
-        """
-        Every lane row of the tenant (import matching).
-
-        Args:
-            tenant_id: Tenant scope.
-        """
-        stmt = select(PrimeLane).where(PrimeLane.tenant_id == tenant_id)
-        return list((await self.session.exec(stmt)).all())
-
     def add(self, entity: object) -> None:
         """Stages a new or changed entity whose `tenant_id` the caller already set."""
         self.session.add(entity)

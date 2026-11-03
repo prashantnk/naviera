@@ -10,8 +10,8 @@ Use this skill when preparing a release from `dev` to `master`, checking Render 
 ## 1. Release Pipeline Overview (`dev` $\rightarrow$ PR $\rightarrow$ `master`)
 
 Naviera deploys automatically from `master`:
-- **Backend API & Temporal Worker (Render):** Pushing to `master` builds and deploys the FastAPI service (`https://naviera-api.onrender.com`) and the background worker (`poetry run python -m scripts.temporal_hooks_worker`).
-- **Frontend Web App (Vercel):** Pushing to `master` builds and deploys the Next.js 16 edge-dynamic monolith (`https://naviera.com`, `https://logismart.naviera.com`).
+- **Backend API & Scheduled Temporal Hooks (Render + GitHub Actions):** Pushing to `master` builds and deploys the FastAPI service (`naviera-backend`, `https://naviera-backend.onrender.com`). Every 14 minutes (`*/14 * * * *`), [`.github/workflows/temporal-hooks.yml`](../../../.github/workflows/temporal-hooks.yml) calls `POST /api/v1/internal/temporal-hooks/run` with `X-Cron-Secret: $CRON_SECRET` to run `run_temporal_hooks_iteration()` and keep the Free Render service warm.
+- **Frontend Web App (Vercel):** Pushing to `master` builds and deploys the Next.js 16 edge-dynamic monolith (`https://naviera.com`, `https://logismart.naviera.com`, `https://logismart.in`).
 
 ---
 
@@ -30,10 +30,11 @@ Naviera deploys automatically from `master`:
    git diff origin/master..dev -- backend/alembic/versions/
    ```
    If new migrations exist, obtain explicit user approval and apply one revision at a time (`poetry run alembic upgrade <revision>`) before promoting code that depends on the new schema (see [`docs/RUNBOOK.md`](../../../docs/RUNBOOK.md#3-migrations)).
-3. **Verify Production Environment Variables (Render & Vercel):**
+3. **Verify Production Environment Variables (Render, Vercel & GitHub Actions):**
    Cross-check against [`docs/RUNBOOK.md`](../../../docs/RUNBOOK.md#1-environment--fresh-fork-bootstrap):
-   - **Render (Backend):** `ENVIRONMENT=production`, `DATABASE_URL` (PgBouncer `:6543`), `ALEMBIC_DATABASE_URL` (`:5432`), `SUPABASE_URL`, `SECRET_KEY`, `SUPABASE_SERVICE_KEY`, `BACKEND_CORS_ORIGINS`, `FRONTEND_APP_URL`, `REVALIDATION_SECRET`, `DELHIVERY_B2C_TOKEN`, `DELHIVERY_B2C_BASE_URL=https://track.delhivery.com`, `DELHIVERY_TENANT_ID`, `DELHIVERY_LIVE_TENANT_SLUGS=logismart,logismart-test` (the test tenant prices on live Delhivery in the deployed env), `DELHIVERY_B2B_USERNAME`, `DELHIVERY_B2B_BASE_URL=https://ltl-clients-api.delhivery.com`. `DELHIVERY_FAKE_TENANT_SLUGS` must be **unset** on Render (test harness only; live vs fake is chosen per environment by these two keys, see RUNBOOK §1.3).
-   - **Vercel (Frontend):** `BACKEND_API_URL=https://naviera-api.onrender.com`, `NEXT_PUBLIC_ROOT_DOMAIN=naviera.com`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REVALIDATION_SECRET`.
+   - **Render (`naviera-backend`):** `ENVIRONMENT=production`, `DATABASE_URL` (PgBouncer `:6543`), `ALEMBIC_DATABASE_URL` (`:5432`), `SUPABASE_URL`, `SECRET_KEY`, `SUPABASE_SERVICE_KEY`, `BACKEND_CORS_ORIGINS`, `FRONTEND_APP_URL`, `REVALIDATION_SECRET`, `CRON_SECRET` (shared secret for `POST /api/v1/internal/temporal-hooks/run`), `DELHIVERY_B2C_TOKEN`, `DELHIVERY_B2C_BASE_URL=https://track.delhivery.com`, `DELHIVERY_TENANT_ID`, `DELHIVERY_LIVE_TENANT_SLUGS=logismart,logismart-test` (the test tenant prices on live Delhivery in the deployed env), `DELHIVERY_B2B_USERNAME`, `DELHIVERY_B2B_BASE_URL=https://ltl-clients-api.delhivery.com`. `DELHIVERY_FAKE_TENANT_SLUGS` must be **unset** on Render (test harness only; live vs fake is chosen per environment by these two keys, see RUNBOOK §1.3).
+   - **Vercel (Frontend):** `BACKEND_API_URL=https://naviera-backend.onrender.com`, `NEXT_PUBLIC_ROOT_DOMAIN=naviera.com`, `CUSTOM_DOMAIN_TENANTS=logismart.in:logismart,www.logismart.in:logismart`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `REVALIDATION_SECRET`.
+   - **GitHub Actions Repository Secrets (`.github/workflows/temporal-hooks.yml`):** `CRON_SECRET` (matching Render's `CRON_SECRET`) and `NAVIERA_API_URL=https://naviera-backend.onrender.com`.
 
 ---
 
@@ -65,11 +66,11 @@ Once Render and Vercel finish deploying `master`, verify live health, security h
 
 ```bash
 # 1. Liveness & DB readiness on Render:
-curl -sS https://naviera-api.onrender.com/health
-curl -sS https://naviera-api.onrender.com/health/ready
+curl -sS https://naviera-backend.onrender.com/health
+curl -sS https://naviera-backend.onrender.com/health/ready
 
 # 2. Public tenant config & frontend proxy on Vercel:
-curl -sS https://naviera-api.onrender.com/api/v1/tenants/logismart/public | head -c 300
+curl -sS https://naviera-backend.onrender.com/api/v1/tenants/logismart/public | head -c 300
 curl -sSI https://naviera.vercel.app/logismart | head -n 10
 ```
 
@@ -80,13 +81,27 @@ After running the post-deploy HTTP checks, inspect the 4 production telemetry st
 3. **Vercel Runtime Logs:** Check the **Logs** tab (Hobby plan retains the last `1h` of runtime logs) for `5xx`, timeouts, or edge/SSR exceptions.
 4. **Supabase Postgres Logs:** Check **Logs ▸ Postgres** for unexpected database errors. *(Expected benign noise: `pg_pgrst_no_exposed_schemas` appears periodically because the PostgREST Data API exposed schemas are intentionally disabled for security.)*
 
+### 4.2 Where to See Scheduler Runs (`temporal-hooks`)
+Verify that the 14-minute scheduled job (`POST /api/v1/internal/temporal-hooks/run`) is visible across all 3 places:
+1. **GitHub Actions (`prashantnk/naviera`):** [`https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml`](https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml) — shows the run list (`schedule` every 14 min + `workflow_dispatch`) and each run's step log with `{"status":"ok","appointments_held":N,"eway_bills_held":M}` and `HTTP 200`.
+2. **Render (`naviera-backend` $\rightarrow$ Logs):** Filter by `temporal_hooks_run` or `/internal/temporal-hooks/run` to see the per-run `INFO` log line (`temporal_hooks_run expired_appointments=N stale_eway_holds=M duration_ms=...`).
+3. **Logfire EU (`prashantnk/naviera`, `logfire-eu.pydantic.dev`):** Filter Live view by `http_target LIKE '%/api/v1/internal/temporal-hooks/run%'` or query `records` in SQL Workbench:
+   ```sql
+   SELECT start_timestamp, span_name, http_response_status_code, duration, message
+   FROM records
+   WHERE http_target LIKE '%/api/v1/internal/temporal-hooks/run%'
+      OR message LIKE 'temporal_hooks_run%'
+   ORDER BY start_timestamp DESC
+   LIMIT 50;
+   ```
+
 ---
 
 ## 5. Rollback Procedure
 
 1. **Application Rollback (No Schema Change):**
    - **Vercel:** Open Vercel Dashboard $\rightarrow$ Deployments $\rightarrow$ select the previous green production deployment $\rightarrow$ **Promote to Production** (instant edge rollback).
-   - **Render:** Open Render Dashboard $\rightarrow$ `naviera-api` (and worker) $\rightarrow$ Events / Deploys $\rightarrow$ **Rollback to this deploy** on the previous commit, or revert the merge commit on `master`.
+   - **Render:** Open Render Dashboard $\rightarrow$ `naviera-backend` $\rightarrow$ Events / Deploys $\rightarrow$ **Rollback to this deploy** on the previous commit, or revert the merge commit on `master`.
 2. **Database Migration Rollback (If a DDL Change Must Be Reverted):**
    - Obtain explicit human approval first.
    - Roll back the application code on Render/Vercel **before** running `poetry run alembic downgrade <previous-revision>` so the live API never queries dropped columns (see [`docs/RUNBOOK.md`](../../../docs/RUNBOOK.md#33-rollback-notes)).

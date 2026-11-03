@@ -13,6 +13,8 @@ export type { AddressCreate } from './models/AddressCreate';
 export type { AddressRead } from './models/AddressRead';
 export { AddressScope } from './models/AddressScope';
 export type { AddressUpdate } from './models/AddressUpdate';
+export type { AdminOfflineCreditRequest } from './models/AdminOfflineCreditRequest';
+export type { AdminShipmentChargeCreate } from './models/AdminShipmentChargeCreate';
 export type { AppointmentListResponse } from './models/AppointmentListResponse';
 export type { AppointmentRow } from './models/AppointmentRow';
 export { AppointmentTab } from './models/AppointmentTab';

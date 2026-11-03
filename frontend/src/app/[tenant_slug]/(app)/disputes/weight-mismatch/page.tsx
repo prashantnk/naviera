@@ -43,6 +43,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useSignedDocumentUrl } from "@/lib/document-storage";
 import {
   cn,
   extractApiErrorMessage,
@@ -240,6 +241,7 @@ export default function WeightMismatchDisputesPage() {
 
   const [sorterPreviewRow, setSorterPreviewRow] =
     useState<WeightDisputeRead | null>(null);
+  const sorterImageSrc = useSignedDocumentUrl(tenantSlug, sorterPreviewRow?.sorter_image_url);
 
   const [selectedAwbs, setSelectedAwbs] = useState<string[]>([]);
   const [awbInputText, setAwbInputText] = useState<string>("");
@@ -1309,7 +1311,7 @@ export default function WeightMismatchDisputesPage() {
                 {sorterPreviewRow.sorter_image_url ? (
                   <div className="flex flex-col items-center justify-center rounded-lg border border-slate-700 bg-slate-800 p-3 text-center space-y-2">
                     <img
-                      src={sorterPreviewRow.sorter_image_url}
+                      src={sorterImageSrc ?? undefined}
                       alt={`Measurement evidence for AWB ${sorterPreviewRow.tracking_id}`}
                       className="max-h-56 w-auto rounded object-contain"
                     />

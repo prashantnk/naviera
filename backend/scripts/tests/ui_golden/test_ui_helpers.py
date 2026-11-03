@@ -11,6 +11,13 @@ import pytest
 from .hud import format_step_label
 from .money import parse_rupees, to_paisa
 from .testids import BookingIds, PickupDispatchIds, testid
+from .ui_config import (
+    API_URL_ENV_VAR,
+    BACKEND_PROXY_ROUTE_RE,
+    DEFAULT_API_URL,
+    load_ui_settings,
+    rewrite_api_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -89,3 +96,24 @@ def test_resolve_chrome_path_order(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(browser_session.shutil, "which", lambda name: None)
     assert browser_session.resolve_chrome_path() == browser_session.DEFAULT_CHROME_PATH
+
+
+def test_rewrite_api_url_and_proxy_route_matching(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Browser `/api/v1/*` and `/health` URLs rewrite to `UI_API_URL`; `/api/revalidate` does not."""
+    assert (
+        rewrite_api_url("http://localhost:3000/api/v1/quotes?flow=B2C", "http://127.0.0.1:8100")
+        == "http://127.0.0.1:8100/api/v1/quotes?flow=B2C"
+    )
+    assert (
+        rewrite_api_url("http://localhost:3000/health", "http://127.0.0.1:8100/")
+        == "http://127.0.0.1:8100/health"
+    )
+    assert BACKEND_PROXY_ROUTE_RE.search("http://localhost:3000/api/v1/shipments")
+    assert BACKEND_PROXY_ROUTE_RE.search("http://localhost:3000/health")
+    assert not BACKEND_PROXY_ROUTE_RE.search("http://localhost:3000/api/revalidate")
+
+    monkeypatch.delenv(API_URL_ENV_VAR, raising=False)
+    assert load_ui_settings("logismart-test").api_url == DEFAULT_API_URL
+    monkeypatch.setenv(API_URL_ENV_VAR, "http://127.0.0.1:8100")
+    assert load_ui_settings("logismart-test").api_url == "http://127.0.0.1:8100"
+

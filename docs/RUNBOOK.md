@@ -26,9 +26,9 @@ export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring   # poetry without a
 
 | File | Template | Notes |
 |---|---|---|
-| `backend/.env` | [`backend/.env.example`](../backend/.env.example) | Every `Settings` field in `app/core/config.py`. **Unknown keys break startup** (pydantic-settings `extra_forbidden`), so do not add test variables here |
-| `frontend/.env.local` (Vercel: project env) | [`frontend/.env.example`](../frontend/.env.example) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `BACKEND_API_URL`, `REVALIDATION_SECRET` |
-| Shell / CI only | commented block at the bottom of `backend/.env.example` | `GOLDEN_TENANT_SLUG` (default `logismart-test`), `GOLDEN_TEST_PASSWORD`, `UI_CDP_URL`, `UI_FRONTEND_URL`, `UI_API_URL`, `UI_SLOW_MO_MS`, `UI_HIGHLIGHT_MS`, `PROPERTY_MAX_EXAMPLES` |
+| `backend/.env` | [`backend/.env.example`](../backend/.env.example) | Every `Settings` field in `app/core/config.py` (including `CRON_SECRET` for `POST /api/v1/internal/temporal-hooks/run`). **Unknown keys break startup** (pydantic-settings `extra_forbidden`), so do not add test variables here |
+| `frontend/.env.local` (Vercel: project env) | [`frontend/.env.example`](../frontend/.env.example) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `BACKEND_API_URL`, `REVALIDATION_SECRET`, `CUSTOM_DOMAIN_TENANTS` (e.g. `logismart.in:logismart,www.logismart.in:logismart`) |
+| Shell / CI only | commented block at the bottom of `backend/.env.example` | `GOLDEN_TENANT_SLUG` (default `logismart-test`), `GOLDEN_TEST_PASSWORD`, `UI_CDP_URL`, `UI_FRONTEND_URL`, `UI_API_URL`, `UI_API_PORT` (default `8100`), `UI_SLOW_MO_MS`, `UI_HIGHLIGHT_MS`, `PROPERTY_MAX_EXAMPLES` |
 
 `GOLDEN_TEST_PASSWORD` is the shared password of the seeded `@logismart.in` test accounts. Keep it in a
 password manager and `export` it per shell. Never write it into a tracked file or `backend/.env`.
@@ -90,8 +90,8 @@ connected yet" for Delhivery options. **Live vs fake is chosen per environment b
 | Environment | `DELHIVERY_LIVE_TENANT_SLUGS` | `DELHIVERY_FAKE_TENANT_SLUGS` | `logismart-test` prices on |
 |---|---|---|---|
 | Render (API + worker) | `logismart,logismart-test` | unset | **live** Delhivery (same token, limiter, B2B fallback as `logismart`) |
-| Cloudtop `backend/.env` (shared `:8000`) | `logismart` | `logismart-test` | the fake (the UI golden phase drives `:8000` and must stay deterministic; see BACKLOG) |
-| Golden / unit tests (in-process) | forced empty | forced `logismart-test` by `run_golden.sh`, `scripts/tests/conftest.py`, `golden_env.py` | the fake (never spends the live token or its 45 / 5 min limit) |
+| Cloudtop `backend/.env` (shared `:8000`) | `logismart` (or `logismart,logismart-test`) | `logismart-test` (or unset if testing live locally) | fake when `DELHIVERY_FAKE_TENANT_SLUGS=logismart-test`, or live when omitted (`run_golden.sh` UI phase now spawns its own dedicated fake-env uvicorn on `:8100` via `UI_API_PORT`) |
+| Golden / unit / UI tests (`run_golden.sh`) | forced empty | forced `logismart-test` by `run_golden.sh` (including the dedicated `:8100` UI uvicorn), `scripts/tests/conftest.py`, `golden_env.py` | the fake (never spends the live token or its 45 / 5 min limit) |
 
 All live tenants share one process-wide price limiter (45 / 5 min, below Delhivery's 50 / 5 min per IP), the
 B2B JWT and estimate limiter, and the 24 h pincode / TAT caches. Stored prices (`delhivery_price_cache`) stay
@@ -153,13 +153,47 @@ for this tenant; it does not prove the key is valid) and `delhivery_b2b_configur
 Before opening live traffic on Supabase (`<project-ref>.supabase.co`), verify these three dashboard settings:
 
 1. **Disable PostgREST on `public` schema (`M-01`):**
-   - All 24 application tables in `public` have Row-Level Security (RLS) enabled with a deny-all policy for direct PostgREST callers (because all data access goes through FastAPI using the `postgres` DB role).
+   - Migration `d7e8f9a0b1c2` enables Row-Level Security (no policies, so deny-all) on every `public` table and revokes all `anon` / `authenticated` grants plus the `postgres` default privileges, so the Data API roles cannot read tables even if `public` is exposed. FastAPI is unaffected: it connects as `postgres` (table owner, `BYPASSRLS`).
+   - Migration `e8f9a0b1c2d3` scopes the private `documents` Storage bucket to the caller's tenant: objects live under `<tenant_slug>/...`, and the `documents_tenant_member_select` / `_insert` policies on `storage.objects` require the caller (`auth.uid()` from the session JWT) to be an active `public."user"` of that tenant (helper `naviera_private.is_active_tenant_member`). The browser reads objects only through 60 s signed URLs (`frontend/src/lib/document-storage.ts`); never `getPublicUrl`.
+   - Post-upgrade catalog check: `select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity` → `0`, and `select count(*) from information_schema.role_table_grants where table_schema = 'public' and grantee in ('anon', 'authenticated')` → `0`.
    - As defense-in-depth, open **Supabase Dashboard → Project Settings → API → Exposed schemas** and remove `public` (leave only `graphql_public` or empty) so `SUPABASE_ANON_KEY` cannot query tables via `/rest/v1/*`.
 2. **Configure Custom SMTP (`D-02`):**
    - Supabase's built-in mail server is rate-limited to ~3–4 emails/hour, which blocks customer OTP logins and password resets in production.
    - Open **Supabase Dashboard → Authentication → SMTP Settings**, enable **Custom SMTP**, and configure Resend (`smtp.resend.com`, port `465` SSL) or AWS SES with a verified sender domain (e.g. `no-reply@logismart.in`).
 3. **Allowed Auth Redirect URLs (`D-01`):**
    - Open **Supabase Dashboard → Authentication → URL Configuration** and ensure `Site URL` is set to the production domain (`https://logismart.in` or `https://logismart.naviera.com`) and `Redirect URLs` includes `https://**/<slug>/callback` (e.g. `https://*.naviera.com/callback`, rewritten by `middleware.ts` to `frontend/src/app/[tenant_slug]/callback/page.tsx`) and `http://localhost:3000/**` for local development.
+
+### 1.5 Custom domain (`logismart.in`) on Vercel & scheduled temporal hooks (free GitHub Actions cron)
+
+1. **Custom domain (`logismart.in` → `logismart` tenant):**
+   - `frontend/src/middleware.ts` reads `CUSTOM_DOMAIN_TENANTS` (comma-separated `<host>:<tenant_slug>` pairs, e.g. `CUSTOM_DOMAIN_TENANTS="logismart.in:logismart,www.logismart.in:logismart"`). When `NEXT_PUBLIC_ROOT_DOMAIN` is set (subdomain mode), requests for any mapped host are rewritten to `/<tenant_slug>/...` identically to `<tenant_slug>.naviera.com`.
+   - **Vercel Project Settings → Environment Variables:** set `CUSTOM_DOMAIN_TENANTS=logismart.in:logismart,www.logismart.in:logismart`.
+   - **Vercel Project Settings → Domains:** add `logismart.in` and `www.logismart.in`.
+   - **DNS registrar for `logismart.in`:**
+     - Add an `A` record for `@` (apex) pointing to `76.76.21.21`.
+     - Add a `CNAME` record for `www` pointing to `cname.vercel-dns.com`.
+   - **Render & Supabase allowlists:** include `https://logismart.in` and `https://www.logismart.in` in `BACKEND_CORS_ORIGINS` on Render and `https://logismart.in/**` in Supabase Auth Redirect URLs (§1.4).
+2. **Scheduled temporal hooks via GitHub Actions (free replacement for paid Render cron):**
+   - `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) runs one idempotent iteration of `run_temporal_hooks_iteration()` (`appointments_held`, `eway_bills_held`). It requires header `X-Cron-Secret` matching `settings.CRON_SECRET` (`403` when `CRON_SECRET` is unset or mismatched).
+   - [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) runs on `*/14 * * * *` (plus manual `workflow_dispatch`), calling `$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` with `curl --retry 3`. Running every 14 minutes also keeps the Free Render `naviera-backend` web instance warm inside its 15-minute idle sleep window (Render's 750 free hours/month covers one 24/7 web service).
+   - **Required secrets:**
+     - **Render (`naviera-backend` environment):** `CRON_SECRET=<32-byte-hex-secret>`
+     - **GitHub Actions repository secrets:** `CRON_SECRET` (same value as Render) and `NAVIERA_API_URL` (`https://naviera-backend.onrender.com`).
+   - **Run manually:** open **GitHub → Actions → temporal-hooks → Run workflow** (on branch `master`) or run `curl -sS -X POST -H "X-Cron-Secret: $CRON_SECRET" "$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run"`.
+   - **Rotate `CRON_SECRET`:** generate a fresh secret (`openssl rand -hex 32`), update `CRON_SECRET` in **Render Dashboard → `naviera-backend` → Environment** (which restarts the API), then update the `CRON_SECRET` repository secret in **GitHub → Settings → Secrets and variables → Actions** and click **Actions → temporal-hooks → Run workflow** to verify HTTP `200`.
+   - **Disable the scheduled job:** either clear/remove `CRON_SECRET` on Render (`naviera-backend` immediately rejects calls to `/api/v1/internal/temporal-hooks/run` with `403`) or disable the workflow in **GitHub → Actions → temporal-hooks → ⋯ → Disable workflow**.
+   - **Where to see scheduler runs (3 places):**
+     1. **GitHub Actions (`prashantnk/naviera`):** open [`https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml`](https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml) (or **GitHub → `prashantnk/naviera` → Actions → temporal-hooks**). Click any run → `run-temporal-hooks` → **Trigger temporal hooks iteration** to see the JSON response (`{"status":"ok","appointments_held":N,"eway_bills_held":M}`) and `HTTP 200`.
+     2. **Render (`naviera-backend` → Logs):** filter by `temporal_hooks_run` or `/internal/temporal-hooks/run`. Every run logs one structured `INFO` line: `temporal_hooks_run expired_appointments=N stale_eway_holds=M duration_ms=...`.
+     3. **Logfire EU (`prashantnk/naviera` at `https://logfire-eu.pydantic.dev/prashantnk/naviera`):** inspect the FastAPI trace span for `POST /api/v1/internal/temporal-hooks/run`, or run this SQL Workbench query:
+        ```sql
+        SELECT start_timestamp, span_name, http_response_status_code, duration, message
+        FROM records
+        WHERE http_target LIKE '%/api/v1/internal/temporal-hooks/run%'
+           OR message LIKE 'temporal_hooks_run%'
+        ORDER BY start_timestamp DESC
+        LIMIT 50;
+        ```
 
 ---
 
@@ -215,7 +249,7 @@ poetry run alembic upgrade <revision>
 poetry run alembic current    # must print the revision just applied
 ```
 
-### 3.2 Current chain (live `alembic current` = `c6d7e8f9a0b1`, head)
+### 3.2 Current chain (live `alembic current` = `e8f9a0b1c2d3`, head)
 
 | Revision | File (`backend/alembic/versions/`) | What | Git state |
 |---|---|---|---|
@@ -231,12 +265,14 @@ poetry run alembic current    # must print the revision just applied
 | `7d5ebf60c105` | M-C1 `7d5ebf60c105_add_lifecycle_pickup_statuses.py` | `pickupstatus` + `OUT_FOR_DELIVERY`, `RTO_IN_TRANSIT`, `RTO_DELIVERED`, `LOST` | committed |
 | `9a1b2c3d4e5f` | M-P1 `9a1b2c3d4e5f_service_option_and_carrier_cost.py` | `service_option` (`DELHIVERY_SURFACE`, `DELHIVERY_EXPRESS`, `PRIME_SURFACE`), `carrier_awb`, `carrier_cost` JSONB, `CARRIER` measurement source, `delhivery_price_cache` table | committed |
 | `b5c6d7e8f9a0` | M-P2 `b5c6d7e8f9a0_prime_rate_tables.py` | `prime_zones`, `prime_zone_pincodes`, `prime_lanes` tables | committed |
-| `c6d7e8f9a0b1` | M-P3 `c6d7e8f9a0b1_delhivery_b2b_service_option.py` | `pickups.service_option` CHECK `ck_pickups_service_option_valid` adds `DELHIVERY_B2B_SURFACE` (**head**) | committed |
+| `c6d7e8f9a0b1` | M-P3 `c6d7e8f9a0b1_delhivery_b2b_service_option.py` | `pickups.service_option` CHECK `ck_pickups_service_option_valid` adds `DELHIVERY_B2B_SURFACE` | committed |
+| `d7e8f9a0b1c2` | S-1 `d7e8f9a0b1c2_public_rls_and_revoke_api_roles.py` | RLS on (no FORCE) for every `public` table; `REVOKE ALL` tables/sequences/functions + `postgres` default privileges from `anon`, `authenticated` (§1.4) | committed |
+| `e8f9a0b1c2d3` | S-2 `e8f9a0b1c2d3_storage_documents_tenant_policies.py` | `documents` bucket: tenant-folder SELECT/INSERT policies on `storage.objects` replace the bucket-wide dashboard policies; helper schema `naviera_private` (**head**) | committed |
 
 Older revisions down to `2dc7f2258368` are committed or staged.
 
 > [!IMPORTANT]
-> All 36 migration revisions (`2dc7f2258368` → `c6d7e8f9a0b1`) are committed in `backend/alembic/versions/` and applied on the live database.
+> All 38 migration revisions (`2dc7f2258368` → `e8f9a0b1c2d3`) are committed in `backend/alembic/versions/` and applied on the live database.
 
 Known drift: `QC_FAILED` and `REJECTED_AT_PICKUP` are added by `944203e6741b`; the old TASKS.md
 reference to a `c0d1e2f3a4b5` migration was wrong (no such file).
@@ -252,6 +288,8 @@ reference to a `c0d1e2f3a4b5` migration was wrong (no such file).
   to the closest old one, then rebuilds `pickupstatus` from the 10 original values and converts
   `pickups.status`. This is lossy (e.g. an `RTO_DELIVERED` row becomes an old status) and takes a
   lock on `pickups`. Prefer a forward fix.
+- S-1 / S-2 downgrades restore the exact previous grants, default privileges, RLS flags (RLS goes back off on
+  the 21 tables that had it off) and the two original bucket-wide `documents` policies. No data is touched.
 - Downgrade one revision at a time (`alembic downgrade <previous-revision>`), each with approval.
 
 ---

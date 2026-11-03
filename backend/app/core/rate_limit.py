@@ -76,11 +76,6 @@ class SlidingWindowLimiter:
                 self._prune(now, rule.window_seconds)
             return None
 
-    def reset(self) -> None:
-        """Forgets every key (tests)."""
-        with self._lock:
-            self._hits.clear()
-
     @staticmethod
     def _evict(window: Deque[float], now: float, window_seconds: int) -> None:
         """Drops hits older than the window."""

@@ -16,6 +16,10 @@ export type MeasurementCreate = {
     source?: MeasurementSource;
     packages?: (Array<PackageCreate> | null);
     weight_kg?: (number | null);
+    /**
+     * Optional Admin final price override (₹ incl. GST; #568).
+     */
+    override_total_price?: (number | null);
     evidence_urls?: Array<string>;
     remark?: (string | null);
 };

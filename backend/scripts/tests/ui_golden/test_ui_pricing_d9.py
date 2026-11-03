@@ -43,8 +43,13 @@ from .testids import (  # noqa: E402
     PrimeLanesIds,
     ShipmentDetailIds,
 )
-from .ui_config import DESKTOP, ELEMENT_TIMEOUT_MS, MONEY_WRITE_TIMEOUT_MS  # noqa: E402
-from .ui_fixtures import TabFactory, UiSettings  # noqa: E402
+from .ui_config import (  # noqa: E402
+    DESKTOP,
+    ELEMENT_TIMEOUT_MS,
+    MONEY_WRITE_TIMEOUT_MS,
+    rewrite_api_url,
+)
+from .ui_fixtures import TabFactory, UiSettings, api_url  # noqa: E402
 
 JOURNEY = "PRICING-D9"
 B2C_PICKUP_LABEL = "LogiSmart B2C Gurugram Hub Warehouse"
@@ -112,7 +117,7 @@ async def _intercept_quote_with_stale_total(
     recorded: Dict[str, Decimal] = {}
 
     async def _handler(route: Route) -> None:
-        resp = await route.fetch()
+        resp = await route.fetch(url=rewrite_api_url(route.request.url, api_url()))
         body = await resp.json()
         for option in body.get("options", []):
             if option.get("service_option") == ServiceOption.DELHIVERY_SURFACE.value:

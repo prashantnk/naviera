@@ -170,16 +170,6 @@ def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def generate_tracking_id(prefix: str = "NAV") -> str:
-    """
-    Generates a unique tracking ID like 'NAV-A1B2C3D4'.
-    Collision probability is extremely low for this MVP.
-    """
-    chars = string.ascii_uppercase + string.digits
-    unique_str = "".join(random.choices(chars, k=8))
-    return f"{prefix}-{unique_str}"
-
-
 class ShipmentService:
     """
     Handles business logic for Shipments.

@@ -66,7 +66,6 @@ PICKED_SHIPMENT_STATUSES = (
 )
 
 # --- Address matching ---
-PHONE_SIGNIFICANT_DIGITS = 10
 GRAMS_PER_KG = 1000.0
 MAX_REFS_IN_ERROR = 5
 UNKNOWN_LOCATION_NAME = "Unknown"
@@ -119,12 +118,6 @@ class ManifestService:
     def _normalize_text(value: Optional[str]) -> str:
         """Lower-cases and strips everything except letters/digits for tolerant comparisons."""
         return re.sub(r"[^a-z0-9]", "", (value or "").lower())
-
-    @staticmethod
-    def _normalize_phone(value: Optional[str]) -> str:
-        """Keeps the last 10 digits so '+91 98765 43210' equals '9876543210'."""
-        digits = re.sub(r"\D", "", value or "")
-        return digits[-PHONE_SIGNIFICANT_DIGITS:]
 
     @classmethod
     def _is_same_pickup_location(
