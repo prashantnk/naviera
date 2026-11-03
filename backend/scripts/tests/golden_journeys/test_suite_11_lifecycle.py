@@ -1,49 +1,58 @@
 
+import uuid
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+import httpx
+from httpx import ASGITransport
+from sqlmodel import col, select
+
+from app.core.money import to_money as M
+from app.main import app
+from app.models.delhivery_modules import BillingInvoice, InvoiceNoteType
+from app.models.pickups import (
+    CodRemittanceStatus,
+    FreightPaymentMode,
+    NdrAction,
+    NdrExceptionReason,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
+    ServiceType,
+)
+from app.models.repricing import (
+    BillingChannel,
+    ChargeAdjustmentReason,
+    ShipmentChargeAdjustment,
+    ShipmentMeasurement,
+)
+from app.models.tenants import Tenant
+from app.models.wallet import (
+    UserWallet,
+    WalletTransaction,
+    WalletTxnStatus,
+    WalletTxnType,
+)
+from app.services.delhivery_modules import format_document_number
+
 from .golden_env import (
-    GoldenSessionLocal,
-    allow_to_pay_bookings,
-    document_prefix,
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
     CUSTOMER_B2C_EMAIL,
     OPERATIONS_EMAIL,
+    GoldenSessionLocal,
+    allow_to_pay_bookings,
+    document_prefix,
+    find_seeded_address_id,
+    get_wallet_balance,
     headers,
     load_accounts,
     order_ref,
-    find_seeded_address_id,
-    resolve_golden_slug,
-    get_wallet_balance,
     read_otp_as_merchant,
+    resolve_golden_slug,
 )
-from dataclasses import dataclass
-import httpx
-from datetime import date
-from typing import Any, Dict, List, Mapping, Tuple, Sequence, Optional, Iterable
-from decimal import Decimal
-from app.core.money import to_money as M
-from sqlmodel import col, select
-from httpx import ASGITransport
-from app.main import app
-from app.models.repricing import (
-    ShipmentChargeAdjustment,
-    ShipmentMeasurement,
-    ChargeAdjustmentReason,
-)
-from app.models.pickups import (
-    CodRemittanceStatus,
-    PickupRequest,
-    PaymentDetails,
-    PickupStatus,
-    NdrAction,
-    NdrExceptionReason,
-    ServiceType,
-    FreightPaymentMode,
-)
-from app.models.delhivery_modules import InvoiceNoteType, BillingInvoice
-import uuid
-from app.models.wallet import WalletTxnStatus, UserWallet, WalletTransaction, WalletTxnType
-from app.services.delhivery_modules import format_document_number
-from app.models.repricing import BillingChannel
 
 """
 Golden Test Suite 11 (J56-J63): Lifecycle, NDR and RTO rules.
@@ -92,7 +101,6 @@ def expected_taxable(total: Decimal) -> Decimal:
     return M(total / Decimal("1.18"))
 
 async def get_tenant_id():
-    from app.models.tenants import Tenant
     slug = resolve_golden_slug()
     async with GoldenSessionLocal() as session:
         t = await session.exec(select(Tenant).where(Tenant.slug == slug))
@@ -503,10 +511,6 @@ def _note_belongs_to(note: BillingInvoice, sid: str) -> bool:
 
 async def snapshot(sid: str) -> MoneySnapshot:
     tenant_id = await get_tenant_id()
-    import uuid
-
-
-
     shipment_uuid = uuid.UUID(sid)
 
     async with GoldenSessionLocal() as session:

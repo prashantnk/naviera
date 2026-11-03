@@ -18,8 +18,6 @@ import pytest
 
 pytest.importorskip("playwright.async_api")
 
-from app.models.delhivery_modules import InvoiceNoteType, WeightDisputeClaimStatus  # noqa: E402
-from app.models.pickups import PickupStatus, ServiceOption  # noqa: E402
 from golden_journeys.golden_env import (  # noqa: E402
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
@@ -27,7 +25,17 @@ from golden_journeys.golden_env import (  # noqa: E402
     OPERATIONS_EMAIL,
 )
 
-from .api_setup import create_b2c_cod_remittance, create_b2c_pickup_request, delivery_otp  # noqa: E402
+from app.models.delhivery_modules import (  # noqa: E402
+    InvoiceNoteType,
+    WeightDisputeClaimStatus,
+)
+from app.models.pickups import PickupStatus, ServiceOption  # noqa: E402
+
+from .api_setup import (  # noqa: E402
+    create_b2c_cod_remittance,
+    create_b2c_pickup_request,
+    delivery_otp,
+)
 from .db_oracle import DbOracle  # noqa: E402
 from .money import to_paisa  # noqa: E402
 from .pages.booking_page import (  # noqa: E402

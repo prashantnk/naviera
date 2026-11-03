@@ -21,10 +21,12 @@ Spring analogy: a JUnit 5 extension that owns one shared WebDriver, plus
 per-test `@BeforeEach` page setup and an `@AfterEach` "no errors" assertion.
 """
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import AsyncIterator, List, Optional
+
+import pytest
 
 # `golden_env` refuses a non-test slug at import time (before any browser opens).
 from golden_journeys.golden_env import (
@@ -33,7 +35,6 @@ from golden_journeys.golden_env import (
     load_test_tenant,
     release_run_lock,
 )
-import pytest
 
 from .auth import ensure_storage_state
 from .browser_session import (

@@ -5,10 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle,
   CalendarCheck,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -35,7 +33,6 @@ import {
 import type {
   ExceptionCategoryCount,
   ExceptionListResponse,
-  ExceptionRow,
   ExceptionSummaryResponse,
 } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
@@ -57,7 +54,6 @@ import {
 } from "@/components/ui/popover";
 import {
   NDR_REASON_OPTIONS,
-  OPTION_TONE_CLASSES,
   getOptionMeta,
 } from "@/lib/form-options";
 import { cn, extractApiErrorMessage, safeFormatDate } from "@/lib/utils";

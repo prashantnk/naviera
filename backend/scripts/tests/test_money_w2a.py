@@ -19,13 +19,14 @@ from datetime import date
 
 import pytest
 from fastapi import HTTPException
+from golden_journeys.golden_env import allow_to_pay_bookings
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
-from app.core.money import to_money
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
+from app.core.money import to_money
 from app.main import app
 from app.models.delhivery_modules import (
     BillingInvoice,
@@ -50,7 +51,6 @@ from app.models.wallet import (
 from app.repositories.delhivery_modules import DelhiveryModulesRepository
 from app.repositories.wallet import WalletRepository
 from app.services.cod_payout import cod_payout_amount, door_collectible
-from golden_journeys.golden_env import allow_to_pay_bookings
 from app.services.delhivery_modules import (
     WEIGHT_DISPUTE_REFUND_REMARK,
     DelhiveryModulesService,

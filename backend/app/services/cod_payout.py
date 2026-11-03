@@ -25,7 +25,12 @@ from decimal import Decimal
 from typing import Optional, Tuple
 
 from app.core.money import ZERO_MONEY, money_to_float, to_money
-from app.models.pickups import FreightPaymentMode, PaymentDetails, PickupRequest, PickupStatus
+from app.models.pickups import (
+    FreightPaymentMode,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
+)
 
 BILLING_CHANNEL_BREAKDOWN_KEY = "billing_channel"
 """Booking-time marker in `pricing_breakdown` (same key as `services.repricing.BILLING_CHANNEL_KEY`).

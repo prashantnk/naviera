@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 /** `/users/me` status meaning the stored token is invalid or expired. */
@@ -31,7 +31,6 @@ export function Header() {
   const announcement = tenant?.settings?.announcement_bar; // 🔥 Extract from DB
 
   const params = useParams();
-  const router = useRouter();
   const tenantSlug = (params?.tenant_slug as string) || "naviera";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

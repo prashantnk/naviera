@@ -22,17 +22,22 @@ Spring analogy: a JUnit 5 `BeforeAllCallback` extension combined with an
 
 from typing import AsyncIterator, Dict, Iterator
 
+import pytest
+from sqlalchemy import delete
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from app.core import db as app_db_module
 from app.core.db import get_session
 from app.main import app
 from app.models.pricing import DelhiveryPriceCache
 from app.models.prime import PrimeLane
 from app.repositories.prime_rates import PrimeRatesRepository
-import pytest
 from scripts.seed_prime_zones import apply_test_fixture
-from scripts.tenant_data_core import assert_test_tenant_slug, require_tenant, reset_test_tenant
-from sqlalchemy import delete
-from sqlmodel.ext.asyncio.session import AsyncSession
+from scripts.tenant_data_core import (
+    assert_test_tenant_slug,
+    require_tenant,
+    reset_test_tenant,
+)
 
 from .golden_env import (
     GOLDEN_TENANT_SLUG,

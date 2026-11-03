@@ -31,7 +31,7 @@ from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.models.wallet import UserWallet, WalletTransaction, WalletTxnType
 from app.services import ndr_rules
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 SHIPMENTS_URL = f"{settings.API_V1_STR}/shipments"
 EXCEPTIONS_URL = f"{settings.API_V1_STR}/exceptions"
 B2C_DELIVERY_PINCODE = "400001"
@@ -57,9 +57,9 @@ def _shipment_payload(
             "name": f"NDR Origin {tag}",
             "phone": "9000000003",
             "address_line1": f"Origin Road {tag}",
-            "city": "Pune",
-            "state": "MH",
-            "pincode": "411001",
+            "city": "Gurugram",
+            "state": "HR",
+            "pincode": "122001",
         },
         "new_delivery_address": {
             "name": "NDR Consignee",
@@ -438,12 +438,12 @@ async def test_weight_accept_and_dispute(db_session):
 
         await _raise(client, accepted["id"], NdrExceptionReason.WEIGHT_DISCREPANCY, expected=400)
         await _raise(
-            client, accepted["id"], NdrExceptionReason.WEIGHT_DISCREPANCY, measured_weight_kg=25.0
+            client, accepted["id"], NdrExceptionReason.WEIGHT_DISCREPANCY, measured_weight_kg=80.0
         )
         done = await _act(client, accepted["id"], NdrAction.ACCEPT_WEIGHT)
         assert done["status"] == "IN_TRANSIT"
         res = await client.get(f"{SHIPMENTS_URL}/{accepted['id']}", headers=HEADERS)
-        assert res.json()["payment_details"]["chargeable_weight"] == 25.0
+        assert res.json()["payment_details"]["chargeable_weight"] == 80.0
         txn = (
             await db_session.exec(
                 select(WalletTransaction).where(
@@ -509,20 +509,21 @@ async def test_customer_scoping_cannot_raise_and_finlock(db_session):
 
             await _act(client, theirs["id"], NdrAction.REATTEMPT, expected=404)
 
-            # Finlock: the customer's wallet can't cover the charge.
+            # D18 + D55: Post-booking exception charges are never blocked by Finlock
+            # (may take the wallet negative) and ADDITIONAL_CHARGES adds 18% GST (250 * 1.18 = 295).
             _with_tenant(strict_tenant)
-            blocked = await _act(client, mine["id"], NdrAction.ACKNOWLEDGE_CHARGES, expected=400)
-            assert "Finlock" in blocked["detail"]
-            row = await _find_row(client, "B2C", mine["tracking_id"])
-            assert row["status"] == "EXCEPTION"
-
-            # Without Finlock the debit goes through (balance may go negative).
-            _with_tenant(tenant)
             before = await _wallet_balance(db_session, customer.id, tenant.id)
             cleared = await _act(client, mine["id"], NdrAction.ACKNOWLEDGE_CHARGES)
             assert cleared["status"] == "IN_TRANSIT"
             after = await _wallet_balance(db_session, customer.id, tenant.id)
-            assert round(before - after, 2) == 250.0
+            assert round(before - after, 2) == 295.0
+
+            # With strict Finlock enabled and negative balance, new bookings are blocked (400).
+            blocked_book = await client.post(
+                SHIPMENTS_URL, json=_shipment_payload(), headers=HEADERS
+            )
+            assert blocked_book.status_code == 400, blocked_book.text
+            assert "Finlock" in blocked_book.json()["detail"]
         finally:
             _as_user(admin)
             _with_tenant(tenant)

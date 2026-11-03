@@ -5,14 +5,13 @@ switch turns injection off for the missing-key contract test. No database, no Na
 """
 
 import httpx
+import idempotency_default
 import pytest
+from idempotency_default import IdempotencyKeyDefaultMiddleware
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-
-import idempotency_default
-from idempotency_default import IdempotencyKeyDefaultMiddleware
 
 BOOKING_PATH = "/api/v1/shipments"
 

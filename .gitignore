@@ -1,43 +1,49 @@
-# Node / Frontend
+# Dependencies / build output
 node_modules/
 .next/
 dist/
+*.tsbuildinfo
 
 # Python / Backend
 __pycache__/
 *.py[cod]
 .venv/
-.env
 *.egg-info/
 __pypackages__/
+*.db
+*.sqlite3
 
-# IDE / Editor
-# .vscode/
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+coverage/
+
+# Env files (only the committed *.example templates are tracked)
+.env
+.env.*
+!.env.example
+
+# IDE / Editor / OS (.vscode/ is shared on purpose)
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
 
-# LLM Resource documents
+# Agent and test scratch: temporary scripts, logs, patches and screenshots go ONLY under
+# llm_resources/.agents/ (see AGENTS.md). Stray files elsewhere stay visible in `git status`.
 llm_resources/
-
-# Agent Scratch, Local Context & Non-Generic Skills
-.agents/*
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/verify-frontend-compliance/
-
-# Stray agent/test debris (scratch scripts & logs belong in llm_resources/.agents/)
-/*.py
-/*.sh
-/*.patch
 *.log
 *.orig
 *.rej
-backend/*_log.txt
 
-# Local Testing Logs & Next.js 16 Auto-Generated Agent Files
-frontend/logs/
+# Next.js 16 auto-generated agent pointer files
 frontend/AGENTS.md
 frontend/CLAUDE.md
+
+# Agent Directives, Knowledge & Repo-Scoped Skills (personal rules, TASKS.md, and local reports stay ignored)
+.agents/*
+!.agents/AGENTS.md
+!.agents/knowledge/
+!.agents/knowledge/**
+!.agents/skills/
+!.agents/skills/**

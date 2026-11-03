@@ -14,10 +14,9 @@ from app.models.manifests import ServiceFlow
 from app.models.pickups import Address, AddressCategory, AddressScope, PickupTimeSlot
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.schemas.v1.manifests import ManifestCreate
-from app.schemas.v1.pickups import AddressUpdate, AppointmentUpdate, IST_TIMEZONE
+from app.schemas.v1.pickups import IST_TIMEZONE, AddressUpdate, AppointmentUpdate
 from app.services.addresses import AddressService
 from app.services.manifests import DEFAULT_CUTOFF, PICKUP_TIMEZONE, ManifestService
-
 
 # =============================================================================
 # D-09 & D-17: AppointmentUpdate validation

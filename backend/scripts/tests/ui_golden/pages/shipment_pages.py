@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
-from ..testids import MeasurementIds, ShipmentDetailIds, ShipmentEditIds, UpdateStatusIds
+from ..testids import (
+    MeasurementIds,
+    ShipmentDetailIds,
+    ShipmentEditIds,
+    UpdateStatusIds,
+)
 from ..ui_config import MONEY_WRITE_TIMEOUT_MS
 from .base_page import BasePage
 

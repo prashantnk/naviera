@@ -72,12 +72,12 @@ from app.schemas.v1.repricing import RejectionRule, SettlementAction
 from app.services.delhivery_modules import format_document_number
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
     CUSTOMER_B2C_EMAIL,
     OPERATIONS_EMAIL,
     OWNER_EMAIL,
+    GoldenSessionLocal,
     allow_to_pay_bookings,
     document_prefix,
     find_seeded_address_id,

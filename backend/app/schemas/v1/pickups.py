@@ -4,40 +4,42 @@ from typing import List, Optional
 from uuid import UUID
 
 from pydantic import (
-    EmailStr,
-    model_validator, field_validator,
-    constr,
-    conlist,
-    computed_field,
     BaseModel,
     ConfigDict,
+    EmailStr,
+    computed_field,
+    conlist,
+    constr,
+    field_validator,
+    model_validator,
+)
+from pydantic import (
     Field as PydanticField,
 )
 from sqlmodel import Field, SQLModel  # Using SQLModel for consistency
 
-from app.core.money import to_money
+from app.core.money import money_to_float, to_money
 from app.models.manifests import ServiceFlow
 
 # Import Enums
 from app.models.pickups import (
-    ServiceOption,
-    PickupStrategy,
     ActivityType,
     AddressCategory,
     AddressScope,
+    CodRemittanceStatus,
+    DimensionUnit,
     DocumentType,
     FreightPaymentMode,
-    CodRemittanceStatus,
+    NdrExceptionReason,
     PickupStatus,
+    PickupStrategy,
     PickupTimeSlot,
     ProductCategory,
+    ServiceOption,
     ServiceType,
     ShipmentType,
-    DimensionUnit,
     WeightUnit,
-    NdrExceptionReason,
 )
-from app.core.money import money_to_float
 from app.services.cod_payout import door_collectible as _door_collectible
 from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 

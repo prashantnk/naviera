@@ -1,3 +1,8 @@
+"""
+End-to-End API & Database Invariant Suite for Wallet Ledger, Finlock, UPI Maker-Checker,
+and 6-Digit OTP Proof of Delivery (POD) on `logismart-test` (rolled back via savepoint).
+"""
+
 import uuid
 from datetime import date
 
@@ -8,8 +13,6 @@ from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.main import app
 from app.models.tenants import Tenant, User, UserRole
-from app.services.pricing import delhivery as delhivery_module
-from app.services.pricing import fake_delhivery, policy as policy_module
 from app.services.wallet import indian_financial_year_label, today_ist
 
 TEST_MERCHANT_VPA = "wallet-e2e@okaxis"
@@ -19,7 +22,7 @@ FY = indian_financial_year_label(today_ist())
 
 
 @pytest.mark.asyncio
-async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
+async def test_wallet_and_otp_e2e_suite(db_session):
     """
     Comprehensive End-to-End API & Database Invariant Suite (T-01 through T-09)
     verifying:
@@ -33,13 +36,11 @@ async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
     - T-08: Printable PDF Receipt, GST Freight Invoice, Manifest Run-Sheet & CSV Exports
     - T-09: 6-Digit OTP Proof of Delivery (POD) Verification & Manifest Dispatch
     """
-    # Setup isolated test tenant and two users (User A = Admin/Shipper, User B = Customer B)
-    test_tenant = Tenant(
-        id=uuid.uuid4(),
-        slug=f"logismart-{uuid.uuid4().hex[:6]}",
-        name="Logismart Enterprise Logistics",
-        settings={},
-    )
+    # Use the pinned `logismart-test` tenant inside the savepoint session (rolled back after test).
+    cached_tenant = await app.dependency_overrides[get_tenant_from_header]()
+    test_tenant = await db_session.get(Tenant, cached_tenant.id)
+    assert test_tenant is not None and test_tenant.slug == "logismart-test"
+    test_tenant.settings = {}
     db_session.add(test_tenant)
     await db_session.flush()
 
@@ -70,7 +71,7 @@ async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
     db_session.add(user_owner)
     db_session.add(user_a)
     db_session.add(user_b)
-    await db_session.commit()
+    await db_session.flush()
 
     active_user_ref = {"user": user_a}
 
@@ -82,10 +83,6 @@ async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
 
     app.dependency_overrides[get_current_active_user] = override_user
     app.dependency_overrides[get_tenant_from_header] = override_tenant
-    allowed_slugs = frozenset(fake_delhivery.FAKE_PROVIDER_TENANT_SLUGS | {test_tenant.slug})
-    monkeypatch.setattr(fake_delhivery, "FAKE_PROVIDER_TENANT_SLUGS", allowed_slugs)
-    monkeypatch.setattr(delhivery_module, "FAKE_PROVIDER_TENANT_SLUGS", allowed_slugs)
-    monkeypatch.setattr(policy_module, "FAKE_PROVIDER_TENANT_SLUGS", allowed_slugs)
 
     headers = {"X-Tenant-Slug": test_tenant.slug}
 
@@ -486,7 +483,7 @@ async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
         assert res_wallet_after_book.json()["balance"] == expected_balance
 
         res_spends = await client.get(
-            f"{settings.API_V1_STR}/wallet/transactions?tab=spends",
+            f"{settings.API_V1_STR}/wallet/transactions?tab=spends&user_id={user_a.id}",
             headers=headers,
         )
         assert res_spends.status_code == 200
@@ -511,7 +508,7 @@ async def test_wallet_and_otp_e2e_suite(db_session, monkeypatch):
         assert res_wallet_after_cancel.json()["balance"] == 1500.0
 
         res_spends_after = await client.get(
-            f"{settings.API_V1_STR}/wallet/transactions?tab=spends",
+            f"{settings.API_V1_STR}/wallet/transactions?tab=spends&user_id={user_a.id}",
             headers=headers,
         )
         txns_after = res_spends_after.json()["items"]

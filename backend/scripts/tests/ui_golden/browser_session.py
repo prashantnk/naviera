@@ -13,13 +13,19 @@ Two modes:
   only that one.
 """
 
-from dataclasses import dataclass, field
 import os
 import shutil
+from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
 import httpx
-from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    Page,
+    Playwright,
+    async_playwright,
+)
 
 from .network_guard import NetworkGuard
 from .ui_config import (

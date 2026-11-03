@@ -1,7 +1,9 @@
 from typing import Dict, FrozenSet, List, Set
 
 from fastapi import HTTPException, status
+
 from app.models.pickups import PickupStatus
+
 
 class ShipmentLifecycleMachine:
     """

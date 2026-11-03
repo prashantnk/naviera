@@ -21,6 +21,7 @@ from app.core.permissions import (
     is_tenant_staff,
 )
 from app.models.delhivery_modules import InvoiceNoteType, WeightDispute
+from app.models.manifests import ManifestStatus, ServiceFlow
 from app.models.pickups import (
     ActivityType,
     Address,
@@ -38,7 +39,6 @@ from app.models.pickups import (
     ShipmentActivity,
     ShipmentType,
 )
-from app.models.manifests import ManifestStatus, ServiceFlow
 from app.models.repricing import ChargeAdjustmentReason, MeasurementSource
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.repositories.delhivery_modules import DelhiveryModulesRepository
@@ -47,20 +47,23 @@ from app.repositories.shipments import ShipmentRepository
 from app.repositories.wallet import WalletRepository
 from app.schemas.v1.pickups import (
     EWAY_BILL_MANDATORY_THRESHOLD,
+    AppointmentUpdate,
     PickupCreate,
     PickupUpdate,
     PublicActivityRead,
     PublicTrackingRead,
-    carrier_display_name,
     ShipmentActivityRead,
-    AppointmentUpdate,
+    carrier_display_name,
 )
 from app.services import cod_payout, ndr_rules
+from app.services.delhivery_modules import (
+    WEIGHT_DISPUTE_REFUND_REMARK,
+    DelhiveryModulesService,
+)
 from app.services.notifications import notify_ndr_raised, notify_weight_debit
-from app.services.public_tracking import build_public_timeline, mask_person_name
-from app.services.delhivery_modules import WEIGHT_DISPUTE_REFUND_REMARK, DelhiveryModulesService
 from app.services.pricing.booking import BookingPrice, price_booking, service_type_for
 from app.services.pricing.carrier_billing import shipment_transporter_name
+from app.services.public_tracking import build_public_timeline, mask_person_name
 from app.services.repricing import (
     RTO_SURCHARGE_KEY,
     MeasurementInput,
@@ -225,10 +228,8 @@ class ShipmentService:
     @staticmethod
     def _attach_staff_transporter(shipment: PickupRequest, user: Optional[User]) -> None:
         """Attaches the Prime transporter name for tenant staff only (never customers)."""
-        if is_tenant_staff(user):
-            object.__setattr__(
-                shipment, "transporter_name", shipment_transporter_name(shipment)
-            )
+        value = shipment_transporter_name(shipment) if is_tenant_staff(user) else None
+        object.__setattr__(shipment, "transporter_name", value)
 
     async def get_timeline(
         self, shipment_id: uuid.UUID, user: User, tenant_id: uuid.UUID
@@ -358,9 +359,8 @@ class ShipmentService:
             statuses=statuses,
             shipment_type=shipment_type,
         )
-        if is_tenant_staff(user):
-            for item in items:
-                self._attach_staff_transporter(item, user)
+        for item in items:
+            self._attach_staff_transporter(item, user)
         return items, total
 
     @staticmethod
@@ -900,7 +900,6 @@ class ShipmentService:
         payload: PickupUpdate,
         user: User,
         tenant_id: uuid.UUID,
-        is_b2b_tenant: bool = False,
     ) -> PickupRequest:
         # 1. Permission Check (staff edit any shipment; customers only their own, B9)
         assert_can_manage_shipments_or_pickups(user, "modify shipments")
@@ -1688,7 +1687,7 @@ class ShipmentService:
         if not remaining:
             manifest.total_boxes = 0
             if manifest.status == ManifestStatus.SCHEDULED:
-                manifest.status = ManifestStatus.CANCELLED
+                manifest.status = ManifestStatus.CANCELED
         elif not manifest.is_blind_pickup:
             manifest.total_boxes = sum(
                 sum((p.box_count or 1) for p in (s.packages or []))

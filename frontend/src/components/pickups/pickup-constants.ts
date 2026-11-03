@@ -32,7 +32,7 @@ export interface PickupFlowConfig {
 
 /** Same-day pickup cut-off in IST (matches backend `DEFAULT_CUTOFF = "13:00"`, D-10). */
 export const SAME_DAY_CUTOFF_LABEL = "1 PM";
-export const B2B_SAME_DAY_CUTOFF_LABEL = SAME_DAY_CUTOFF_LABEL;
+const B2B_SAME_DAY_CUTOFF_LABEL = SAME_DAY_CUTOFF_LABEL;
 
 export const PICKUP_FLOW_CONFIG: Readonly<Record<ServiceFlow, PickupFlowConfig>> = {
   [ServiceFlow.B2C]: {

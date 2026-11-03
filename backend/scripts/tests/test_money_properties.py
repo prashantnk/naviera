@@ -236,12 +236,16 @@ async def _open_dispute(client: Any, accounts: Mapping[str, Any], awb: str) -> O
         f"/api/v1/disputes/weight-mismatch?search={awb}", headers=headers(accounts, CUSTOMER_B2C_EMAIL)
     )
     assert resp.status_code == 200, resp.text
-    rows = [r for r in resp.json() if r.get("claim_status") == CLAIM_STATUS_NONE]
+    rows = [
+        r
+        for r in resp.json()
+        if r.get("claim_status") == CLAIM_STATUS_NONE and float(r.get("cost_diff_inr") or 0.0) > 0
+    ]
     return rows[0] if rows else None
 
 
 async def step_claim(client: Any, accounts: Mapping[str, Any], sid: str, awb: str, model: LifeModel) -> None:
-    """Merchant claims the declared 2 kg; the admin accepts; the bill returns to 2 kg."""
+    """Merchant claims the declared 2 kg; the admin accepts; the bill returns to the manifested weight (A-07)."""
     if model.claimed:
         return
     dispute = await _open_dispute(client, accounts, awb)
@@ -259,7 +263,8 @@ async def step_claim(client: Any, accounts: Mapping[str, Any], sid: str, awb: st
         json={"claim_status": CLAIM_ACCEPTED, "claim_remarks": "property accept"},
     )
     assert accepted.status_code == 200, accepted.text
-    model.weight_kg = CLAIMED_WEIGHT_G / 1000.0
+    manifested_g = float(dispute.get("manifested_weight_g") or CLAIMED_WEIGHT_G)
+    model.weight_kg = max(CLAIMED_WEIGHT_G, manifested_g) / 1000.0
     model.claimed = True
     model.log.append("claim")
 

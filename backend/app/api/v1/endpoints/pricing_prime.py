@@ -14,7 +14,12 @@ from fastapi import APIRouter, Body, Depends, Query, Response
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
-from app.schemas.v1.prime import PrimeImportReport, PrimeLanePatch, PrimeLaneRead, PrimeZoneRead
+from app.schemas.v1.prime import (
+    PrimeImportReport,
+    PrimeLanePatch,
+    PrimeLaneRead,
+    PrimeZoneRead,
+)
 from app.services.prime_admin import PrimeAdminService, get_prime_admin_service
 
 CSV_MEDIA_TYPE = "text/csv"

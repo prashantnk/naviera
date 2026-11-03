@@ -18,7 +18,10 @@ from decimal import Decimal
 from typing import Any, Dict, FrozenSet, Mapping, Optional
 
 from app.core.money import ZERO_MONEY, money_to_float, to_money
-from app.services.pricing.delhivery_client import DelhiveryRefusedError, DelhiveryUnavailableError
+from app.services.pricing.delhivery_client import (
+    DelhiveryRefusedError,
+    DelhiveryUnavailableError,
+)
 from app.services.pricing.fake_delhivery import FAKE_PROVIDER_TENANT_SLUGS
 
 FAKE_B2B_DOWN = False

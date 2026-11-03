@@ -55,7 +55,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { normalizeServiceIconKey } from "@/lib/icon-registry";
 import { getSupabaseClient } from "@/lib/supabase";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
-import { FeaturesBlockContent, HeroBlockContent } from "@/types/tenant";
+import {
+  EscalationLevel,
+  FeaturesBlockContent,
+  HeroBlockContent,
+  PageBlock,
+  ServiceItem,
+  TenantSettings,
+} from "@/types/tenant";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertTriangle,
@@ -262,10 +269,10 @@ const settingsSchema = z.object({
 type SettingsValues = z.infer<typeof settingsSchema>;
 
 function buildValuesFromSettings(
-  rawSettings: Record<string, any> | undefined,
+  rawSettings: TenantSettings | undefined,
   tenantName: string,
 ): SettingsValues {
-  const blocks: any[] = rawSettings?.landing_page?.blocks || [];
+  const blocks: PageBlock[] = rawSettings?.landing_page?.blocks || [];
   const heroContent = blocks.find((b) => b.type === "HERO")?.content as
     | HeroBlockContent
     | undefined;
@@ -273,7 +280,7 @@ function buildValuesFromSettings(
     | FeaturesBlockContent
     | undefined;
 
-  const rawServices: any[] = rawSettings?.services_page?.services || [];
+  const rawServices: ServiceItem[] = rawSettings?.services_page?.services || [];
 
   return {
     brand: {
@@ -284,7 +291,9 @@ function buildValuesFromSettings(
       is_active: Boolean(rawSettings?.announcement_bar?.is_active),
       text: rawSettings?.announcement_bar?.text || "",
     },
-    company: companyValuesFromSettings(rawSettings),
+    company: companyValuesFromSettings(
+      rawSettings as Record<string, unknown> | undefined,
+    ),
     contact: {
       toll_free: rawSettings?.contact?.toll_free || "",
       whatsapp: rawSettings?.contact?.whatsapp || "",
@@ -342,7 +351,7 @@ function buildValuesFromSettings(
       })),
     },
     escalation_matrix: Array.isArray(rawSettings?.escalation_matrix)
-      ? rawSettings.escalation_matrix.map((row: any) => ({
+      ? rawSettings.escalation_matrix.map((row: EscalationLevel) => ({
           level: row?.level || "",
           email: row?.email || "",
           phone: row?.phone || "",
@@ -381,7 +390,7 @@ export default function SettingsPage() {
   const [settingsHydrateError, setSettingsHydrateError] = useState(false);
 
   const [lastSavedValues, setLastSavedValues] = useState<SettingsValues>(() =>
-    buildValuesFromSettings(tenant?.settings as any, tenant?.name || "Naviera"),
+    buildValuesFromSettings(tenant?.settings, tenant?.name || "Naviera"),
   );
 
   const form = useForm<SettingsValues>({
@@ -413,22 +422,29 @@ export default function SettingsPage() {
       // Full settings come from the admin-only endpoint; the public tenant
       // payload (useTenant / /tenants/config) only carries allow-listed keys.
       const freshTenant = await TenantsService.getCurrentTenantSettings(tenantSlug);
-      const rawWallet = (freshTenant.settings as any)?.wallet_config;
+      const freshSettings = (freshTenant.settings || {}) as TenantSettings;
+      const rawWallet = freshSettings.wallet_config;
       const walletOverview = rawWallet?.merchant_vpa
         ? null
         : await WalletService.getWalletOverview(tenantSlug).catch(() => null);
-      const mergedSettings = Object.assign({}, freshTenant.settings || {}, {
-        wallet_config: Object.assign(
-          {},
-          walletOverview?.wallet_config || {},
-          rawWallet || {},
-        ),
-      });
+      const mergedSettings: TenantSettings = Object.assign(
+        {},
+        freshSettings,
+        {
+          wallet_config: Object.assign(
+            {},
+            walletOverview?.wallet_config || {},
+            rawWallet || {},
+          ),
+        },
+      );
       const hydrated = buildValuesFromSettings(
         mergedSettings,
         freshTenant.name,
       );
-      setInvoicePrefix(storedInvoicePrefix(mergedSettings));
+      setInvoicePrefix(
+        storedInvoicePrefix(mergedSettings as Record<string, unknown>),
+      );
       setLastSavedValues(hydrated);
       form.reset(hydrated);
       setSettingsHydrated(true);
@@ -482,7 +498,7 @@ export default function SettingsPage() {
           ),
         });
       } else {
-        updatedBlocks.push({ type: "HERO", content: data.hero_block as any });
+        updatedBlocks.push({ type: "HERO", content: data.hero_block });
       }
 
       const featIdx = updatedBlocks.findIndex((b) => b.type === "FEATURES");
@@ -497,7 +513,7 @@ export default function SettingsPage() {
       } else {
         updatedBlocks.push({
           type: "FEATURES",
-          content: data.features_block as any,
+          content: data.features_block,
         });
       }
 
@@ -1855,9 +1871,9 @@ export default function SettingsPage() {
                                       </SelectItem>
                                     ))}
                                     {field.value &&
-                                      !ESCALATION_LEVEL_OPTIONS.includes(
-                                        field.value as any,
-                                      ) && (
+                                      !(
+                                        ESCALATION_LEVEL_OPTIONS as readonly string[]
+                                      ).includes(field.value) && (
                                         <SelectItem value={field.value}>
                                           {field.value}
                                         </SelectItem>

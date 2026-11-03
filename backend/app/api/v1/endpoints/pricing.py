@@ -16,8 +16,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db import get_session
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.models.tenants import Tenant, User
-from app.schemas.v1.pricing import PricingPolicy, PricingPolicyRead, QuoteRequest, QuoteResponse
-from app.services.pricing.policy_admin import PricingPolicyService, get_pricing_policy_service
+from app.schemas.v1.pricing import (
+    PricingPolicy,
+    PricingPolicyRead,
+    QuoteRequest,
+    QuoteResponse,
+)
+from app.services.pricing.policy_admin import (
+    PricingPolicyService,
+    get_pricing_policy_service,
+)
 from app.services.pricing.quote_service import QuoteService
 
 logger = logging.getLogger(__name__)

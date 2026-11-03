@@ -7,7 +7,6 @@ import {
   ShipmentsService,
   PickupUpdate,
   PickupRead,
-  PickupDocumentCreate,
   DocumentType,
   ShipmentType,
   FreightPaymentMode,
@@ -23,7 +22,6 @@ import { Input } from "@/components/ui/input";
 import { RequiredMark } from "@/components/ui/form-extras";
 import { DatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTenant } from "@/components/providers/tenant-provider";
 import {
   b2bForwardShipmentSchema,
@@ -360,7 +358,7 @@ export default function B2BForwardEditPage() {
       }
     }
     init();
-  }, [shipmentId, tenantSlug]);
+  }, [shipmentId, tenantSlug, form]);
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -391,7 +389,7 @@ export default function B2BForwardEditPage() {
         file_name: file.name,
       });
       toast.success("Document uploaded to preview stack");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
     } finally {

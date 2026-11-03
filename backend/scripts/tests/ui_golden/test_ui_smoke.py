@@ -16,8 +16,8 @@ pytest.importorskip(
 from .hud import HUD_TEST_ID, read_banner  # noqa: E402
 from .pages.login_page import LoginPage  # noqa: E402
 from .testids import LoginIds  # noqa: E402
-from .ui_fixtures import TabFactory, api_url  # noqa: E402
 from .ui_config import DESKTOP, UiSettings  # noqa: E402
+from .ui_fixtures import TabFactory, api_url  # noqa: E402
 
 JOURNEY = "SMOKE"
 TOTAL_STEPS = 3

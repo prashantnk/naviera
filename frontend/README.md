@@ -1,6 +1,6 @@
 # Naviera Frontend 🚢
 
-This directory contains the Next.js 15 application. It is an **Edge-Dynamic Monolith**, meaning it serves all tenants (Naviera, Logismart, etc.) from a single codebase using Next.js Middleware to rewrite URLs based on subdomains or paths.
+This directory contains the Next.js 16 (App Router) application. It is an **Edge-Dynamic Monolith**, meaning it serves all tenants (Naviera, Logismart, etc.) from a single codebase using Next.js Middleware to rewrite URLs based on subdomains or paths.
 
 ## 💻 Local Setup
 
@@ -64,6 +64,17 @@ A brief overview of the key directories in the `frontend` application.
 
 ```bash
 npx tsc --noEmit          # TypeScript compiler check
-npm run test:audit        # Zero-Frontend-Math, runtime CSS variables, and Client/Server boundary audit
-npx vitest run            # Unit tests (Vitest + Testing Library)
+npm run test:audit        # Zero Frontend Math (scripts/math-check.py) + no hardcoded brand colours (scripts/find-branding-colors.py); exits 1 on any finding
+npx vitest run            # Unit tests (Vitest + Testing Library); `npm run test` for watch mode
+npm run lint              # ESLint (eslint-config-next)
+npm run test:build        # Production build
+npm run test:smoke        # Hermetic route smoke test: dev server on :3002 + mock backend on :3003
 ```
+
+### Writing tests
+
+- Put `*.test.ts(x)` next to the code under test.
+- Import `render` / `screen` from `@/lib/test-utils`, not from `@testing-library/react`: it wraps components in the
+  providers they need (`TenantProvider`, `QueryClientProvider`).
+- Next.js navigation hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`) are mocked globally in
+  `vitest.setup.ts`; the `@/*` alias is configured in `vitest.config.ts`.

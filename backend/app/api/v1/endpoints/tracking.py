@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
+
 from app.core.dependencies import get_tenant_from_header
-from app.services.shipment import get_shipment_service
 from app.models.tenants import Tenant
 from app.schemas.v1.pickups import PublicTrackingRead
-from app.services.shipment import ShipmentService
+from app.services.shipment import ShipmentService, get_shipment_service
 
 router = APIRouter()
 

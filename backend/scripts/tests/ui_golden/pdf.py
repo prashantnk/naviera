@@ -7,13 +7,13 @@ text with `pypdf` so a journey can assert content (GSTINs, SAC 996812, the LR
 number, `1/5` child labels), not just the `%PDF-` header.
 """
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from typing import List, Sequence
 
-from playwright.async_api import Locator, Page
 import pytest
+from playwright.async_api import Locator, Page
 
 from .ui_config import ARTIFACT_DIR
 

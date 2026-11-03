@@ -12,8 +12,8 @@ Spring analogy: a MockMvc `ResultHandler` that asserts "no 4xx/5xx unless the
 test said so", applied to every request automatically.
 """
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import List, Optional, Pattern, Sequence
 
 from playwright.async_api import ConsoleMessage, Page, Response

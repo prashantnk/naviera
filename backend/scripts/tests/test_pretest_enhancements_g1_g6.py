@@ -1,3 +1,11 @@
+"""
+Pre-test enhancements G1–G6 integration suite:
+- G1: Partial pickup manifest dispatch detaches unpicked AWBs back to OPEN.
+- G2: GET /api/v1/shipments forward vs reverse filter.
+- G3: Reverse doorstep QC failed detaches manifest and logs public timeline entry.
+- G6: Wallet and lifecycle integrity audit endpoint detects balance drift.
+"""
+
 import uuid
 from datetime import date
 
@@ -12,9 +20,9 @@ from app.core.dependencies import (
 )
 from app.main import app
 from app.models.wallet import UserWallet, WalletTransaction, WalletTxnStatus
-from app.services.wallet import WalletService
+from app.services.integrity_audit import _signed_txn_amount
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 SHIPMENTS_URL = f"{settings.API_V1_STR}/shipments"
 MANIFESTS_URL = f"{settings.API_V1_STR}/manifests"
 WALLET_AUDIT_URL = f"{settings.API_V1_STR}/wallet/audit-integrity"
@@ -351,7 +359,7 @@ async def test_g6_wallet_and_lifecycle_integrity_audit_endpoint(db_session):
             t for t in txns if t.status == WalletTxnStatus.COMPLETED
         ]
         true_ledger_balance = round(
-            sum(WalletService._signed_txn_amount(t) for t in completed_txns), 2
+            sum(float(_signed_txn_amount(t)) for t in completed_txns), 2
         )
         original_balance = float(wallet.balance)
 

@@ -21,7 +21,6 @@ from app.models.pickups import Address, DimensionUnit, PaymentDetails, ServiceOp
 from app.models.tenants import ServiceScope, User
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     B2B_ONBOARDING_EMAIL,
     CUSTOMER_B2B_EMAIL,
@@ -29,6 +28,7 @@ from .golden_env import (
     GOLDEN_TENANT_SLUG,
     OWNER_EMAIL,
     READONLY_EMAIL,
+    GoldenSessionLocal,
     canonical_emails,
     first_tenant_payment_details,
     load_settings_fixture,

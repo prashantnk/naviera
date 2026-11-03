@@ -18,7 +18,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.manifests import ServiceFlow
 from app.models.pickups import FreightPaymentMode, ServiceOption, ShipmentType
-from app.schemas.v1.pickups import PINCODE_PATTERN, PackageCreate, assert_packages_have_dimensions
+from app.schemas.v1.pickups import (
+    PINCODE_PATTERN,
+    PackageCreate,
+    assert_packages_have_dimensions,
+)
 from app.schemas.v1.tenant_settings import (
     COD_FEE_MIN_MAX,
     COD_FEE_PERCENT_MAX,

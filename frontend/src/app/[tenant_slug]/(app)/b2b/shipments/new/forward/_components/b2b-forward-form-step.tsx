@@ -114,11 +114,6 @@ export function B2BForwardFormStep({
     name: "is_blind_pickup",
   }) as boolean | undefined;
 
-  const isCarriersRisk = useWatch({
-    control,
-    name: "is_carriers_risk",
-  }) as boolean | undefined;
-
   const invoiceNumbers = useWatch({
     control,
     name: "payment_details.invoice_numbers",

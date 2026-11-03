@@ -5,11 +5,30 @@ Pure unit tests (no DB) for the read-only ops fields on `PickupRead` (WP2 / E-06
 - `allowed_next_statuses` must mirror `ShipmentLifecycleMachine` exactly.
 """
 
+import uuid
+from datetime import date, time
+
 import pytest
 from fastapi import HTTPException
 
-from app.models.pickups import PickupStatus
-from app.schemas.v1.pickups import PaymentDetailsRead, PickupRead
+from app.api.v1.endpoints.shipments import _serialize_shipment
+from app.models.manifests import Manifest, ManifestStatus
+from app.models.pickups import (
+    Address,
+    PackageDetails,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
+    ProductCategory,
+    ServiceOption,
+    ServiceType,
+    ShipmentType,
+)
+from app.models.tenants import User, UserRole
+from app.repositories.manifests import ManifestRepository
+from app.repositories.shipments import ShipmentRepository
+from app.schemas.v1.pickups import PaymentDetailsRead, PickupRead, PublicTrackingRead
+from app.services.shipment import ShipmentService
 from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 
 COD_GOODS = 4999.0
@@ -87,3 +106,144 @@ def test_computed_field_is_serialised() -> None:
     assert pickup.allowed_next_statuses == ShipmentLifecycleMachine.allowed_next_statuses(
         PickupStatus.RTO_IN_TRANSIT
     )
+
+
+def _full_prime_shipment(tenant_id: uuid.UUID, creator_id: uuid.UUID) -> PickupRequest:
+    """Builds an in-memory Prime shipment with a transporter snapshot for serializer tests."""
+    addr_id = uuid.uuid4()
+    address = Address(
+        id=addr_id,
+        tenant_id=tenant_id,
+        user_id=creator_id,
+        name="Hub",
+        phone="9876543210",
+        address_line1="Plot 1",
+        city="Delhi",
+        state="DL",
+        pincode="110001",
+    )
+    shipment_id = uuid.uuid4()
+    payment = PaymentDetails(
+        id=uuid.uuid4(),
+        pickup_id=shipment_id,
+        base_freight=100.0,
+        tax_amount=18.0,
+        total_logistics_cost=118.0,
+        chargeable_weight=10.0,
+        carrier_cost={"snapshot": {"transporter_name": "SAMEER TRANSPORT"}},
+    )
+    pkg = PackageDetails(
+        id=uuid.uuid4(),
+        pickup_id=shipment_id,
+        length=20.0,
+        breadth=15.0,
+        height=10.0,
+        weight=10.0,
+        box_count=1,
+    )
+    shipment = PickupRequest(
+        id=shipment_id,
+        tenant_id=tenant_id,
+        created_by_user_id=creator_id,
+        tracking_id="LOGISMART-TEST-PRIME1",
+        status=PickupStatus.OPEN,
+        shipment_type=ShipmentType.FORWARD,
+        service_type=ServiceType.SURFACE_ROAD,
+        service_option=ServiceOption.PRIME_SURFACE,
+        requested_pickup_date=date(2026, 11, 2),
+        product_category=ProductCategory.ELECTRONICS,
+        pickup_address_id=addr_id,
+        delivery_address_id=addr_id,
+    )
+    shipment.pickup_address = address
+    shipment.delivery_address = address
+    shipment.packages = [pkg]
+    shipment.payment_details = payment
+    shipment.documents = []
+    return shipment
+
+
+@pytest.mark.parametrize(
+    "staff_role",
+    [
+        UserRole.owner,
+        UserRole.admin,
+        UserRole.operations_user,
+        UserRole.support_user,
+        UserRole.read_only_user,
+    ],
+)
+def test_serialize_shipment_exposes_transporter_name_to_staff_and_clears_for_customer(
+    staff_role: UserRole,
+) -> None:
+    tenant_id = uuid.uuid4()
+    customer_id = uuid.uuid4()
+    shipment = _full_prime_shipment(tenant_id, customer_id)
+
+    staff_user = User(
+        id=uuid.uuid4(), tenant_id=tenant_id, email="staff@t.in", role=staff_role
+    )
+    staff_read = _serialize_shipment(shipment, staff_user)
+    assert staff_read.transporter_name == "SAMEER TRANSPORT"
+
+    # Even on the same cached PickupRequest object, a subsequent customer read gets None.
+    customer_user = User(
+        id=customer_id, tenant_id=tenant_id, email="cust@t.in", role=UserRole.customer
+    )
+    customer_read = _serialize_shipment(shipment, customer_user)
+    assert customer_read.transporter_name is None
+    assert getattr(shipment, "transporter_name", None) is None
+    assert "transporter_name" not in PublicTrackingRead.model_fields
+
+
+@pytest.mark.asyncio
+async def test_manifest_get_by_id_supports_for_update_and_sync_after_detach() -> None:
+    """Regression test (#699.1): `ManifestRepository.get_manifest_by_id(..., for_update=True)`."""
+    tenant_id = uuid.uuid4()
+    manifest_id = uuid.uuid4()
+    shipment_id = uuid.uuid4()
+
+    manifest = Manifest(
+        id=manifest_id,
+        tenant_id=tenant_id,
+        pickup_request_number="123456789",
+        status=ManifestStatus.SCHEDULED,
+        scheduled_date=date(2026, 11, 2),
+        slot_start_time=time(10, 0),
+        slot_end_time=time(14, 0),
+        total_boxes=2,
+    )
+    manifest.pickups = []
+    executed_queries: list[object] = []
+
+    class _FakeResult:
+        def first(self) -> Manifest:
+            return manifest
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+
+        async def exec(self, query: object) -> _FakeResult:
+            executed_queries.append(query)
+            return _FakeResult()
+
+        def add(self, obj: object) -> None:
+            self.added.append(obj)
+
+    session = _FakeSession()
+    repo = ManifestRepository(session)  # type: ignore[arg-type]
+
+    res_unlocked = await repo.get_manifest_by_id(manifest_id, tenant_id, for_update=False)
+    assert res_unlocked is manifest
+    assert getattr(executed_queries[-1], "_for_update_arg", None) is None
+
+    res_locked = await repo.get_manifest_by_id(manifest_id, tenant_id, for_update=True)
+    assert res_locked is manifest
+    assert getattr(executed_queries[-1], "_for_update_arg", None) is not None
+
+    service = ShipmentService(ShipmentRepository(session))  # type: ignore[arg-type]
+    await service._sync_manifest_after_detach(manifest_id, shipment_id, tenant_id)
+    assert manifest.total_boxes == 0
+    assert manifest.status == ManifestStatus.CANCELED
+    assert manifest in session.added

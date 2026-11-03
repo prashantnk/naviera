@@ -40,7 +40,7 @@ cd "$(dirname "$0")/.."
 export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.Keyring}"
 export GOLDEN_TENANT_SLUG="${GOLDEN_TENANT_SLUG:-logismart-test}"
 LIVE_SLUG="${GOLDEN_LIVE_SLUG:-logismart}"
-POETRY="${POETRY:-$HOME/.local/bin/poetry}"
+POETRY="${POETRY:-$(command -v poetry || echo "$HOME/.local/bin/poetry")}"
 FRONTEND_DIR="../frontend"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ARTIFACTS="${GOLDEN_ARTIFACT_DIR:-../llm_resources/.agents/golden_runs/artifacts/$STAMP}"
@@ -69,7 +69,7 @@ SMOKE_API_SUITES=(  # the money suites: independent of the state files of suites
 )
 FULL_UI_SUITES=(scripts/tests/ui_golden)
 SMOKE_UI_SUITES=(scripts/tests/ui_golden/test_ui_helpers.py scripts/tests/ui_golden/test_ui_money.py)
-PURE_UNIT_SUITES=(  # no app, no DB writes: seconds
+PURE_UNIT_SUITES=(  # no app, no DB connection (conftest skips the DB for pure modules): seconds
   scripts/tests/test_money.py
   scripts/tests/test_response_audit.py
   scripts/tests/test_idempotency_default.py
@@ -82,33 +82,50 @@ PURE_UNIT_SUITES=(  # no app, no DB writes: seconds
   scripts/tests/test_signup_consent.py
   scripts/tests/test_support_and_dashboard_ist.py
   scripts/tests/test_repricing_unit.py
+  scripts/tests/test_repricing_redesign_unit.py
   scripts/tests/test_repricing_api_schemas.py
   scripts/tests/test_repository_tenant_filter.py
   scripts/tests/test_shipment_lifecycle.py
   scripts/tests/test_tenant_data_core.py
+  scripts/tests/test_b2c_money_cod_settle_unit.py
+  scripts/tests/test_b2c_money_support_claims.py
+  scripts/tests/test_wallet_ledger_scope.py
+  scripts/tests/test_wallet_remittance_guards_unit.py
+  scripts/tests/test_weight_disputes_unit.py
+  scripts/tests/test_staff_finance_views_unit.py
+  scripts/tests/test_delhivery_b2b_unit.py
+  scripts/tests/test_delhivery_http_contract_unit.py
+  scripts/tests/test_prime_lanes_api.py
+  scripts/tests/test_public_tracking_unit.py
+  scripts/tests/test_pickup_read_ops_fields.py
+  scripts/tests/test_ndr_stage_rules.py
+  scripts/tests/test_exceptions_consignee_unit.py
+  scripts/tests/test_platform_guards_unit.py
+  scripts/tests/test_settings_history_rules_unit.py
+  scripts/tests/test_team_admin_edits_unit.py
+  scripts/tests/test_wp10_batch3_unit.py
+  scripts/tests/test_temporal_hooks_worker.py  # in-memory SQLite, not the shared database
 )
-FULL_UNIT_SUITES=(
-  scripts/tests/test_money.py
-  scripts/tests/test_response_audit.py
-  scripts/tests/test_idempotency_default.py
-  scripts/tests/test_pricing_engine.py
-  scripts/tests/test_pricing_quotes_unit.py
-  scripts/tests/test_prime_pricing_unit.py
-  scripts/tests/test_booking_pricing_unit.py
-  scripts/tests/test_label_generator.py
-  scripts/tests/test_gst_documents_unit.py
-  scripts/tests/test_signup_consent.py
-  scripts/tests/test_support_and_dashboard_ist.py
+FULL_UNIT_SUITES=(  # every pure suite plus the DB-backed ones (savepoint session on logismart-test)
+  "${PURE_UNIT_SUITES[@]}"
   scripts/tests/test_money_w2a.py
   scripts/tests/test_money_w2b.py
   scripts/tests/test_money_guards.py
   scripts/tests/test_money_properties.py
-  scripts/tests/test_repricing_unit.py
-  scripts/tests/test_repricing_api_schemas.py
-  scripts/tests/test_repository_tenant_filter.py
   scripts/tests/test_exhaustive_api_and_forms_e2e.py
-  scripts/tests/test_shipment_lifecycle.py
-  scripts/tests/test_tenant_data_core.py
+  scripts/tests/test_appointments.py
+  scripts/tests/test_production_readiness_guards.py
+  scripts/tests/test_security_w1.py
+  scripts/tests/test_user_onboarding_self_service.py
+  scripts/tests/test_b2b_onboarding_flow.py
+  scripts/tests/test_dashboard_summary.py
+  scripts/tests/test_exceptions_flow.py
+  scripts/tests/test_manifest_flow.py
+  scripts/tests/test_pretest_enhancements_g1_g6.py
+  scripts/tests/test_reverse_bookings.py
+  scripts/tests/test_settings_history.py
+  scripts/tests/test_shipment_hardening.py
+  scripts/tests/test_wallet_and_otp_e2e.py
 )
 PYTEST_FLAGS=(-p no:cacheprovider -p no:randomly -o console_output_style=classic -rfEs --tb=short)
 
@@ -155,6 +172,7 @@ static_checks() {
   local rc=0
   step ruff "$POETRY" run ruff check . || rc=1
   step tsc bash -c "cd '$FRONTEND_DIR' && npx tsc --noEmit" || rc=1
+  step eslint bash -c "cd '$FRONTEND_DIR' && npx eslint --max-warnings=0 ." || rc=1
   step test_audit bash -c "cd '$FRONTEND_DIR' && npm run test:audit" || rc=1
   step vitest bash -c "cd '$FRONTEND_DIR' && npx vitest run" || rc=1
   return $rc

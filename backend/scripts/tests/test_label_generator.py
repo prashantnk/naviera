@@ -1,6 +1,6 @@
 # backend/scripts/tests/test_label_generator.py
 import io
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List
 
@@ -10,23 +10,23 @@ from reportlab.graphics.barcode import code128
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
-from app.services import label
-from app.services.label import LabelGenerator
 from app.models.pickups import (
-    PickupRequest,
     Address,
-    PaymentDetails,
-    PackageDetails,
-    PickupStatus,
-    ServiceType,
-    ProductCategory,
     DimensionUnit,
-    WeightUnit,
     FreightPaymentMode,
+    PackageDetails,
+    PaymentDetails,
+    PickupRequest,
+    PickupStatus,
     PickupStrategy,
+    ProductCategory,
     ServiceOption,
+    ServiceType,
+    WeightUnit,
 )
 from app.models.tenants import Tenant
+from app.services import label
+from app.services.label import LabelGenerator
 
 
 def get_base_mock_shipment() -> PickupRequest:

@@ -30,11 +30,28 @@ every `/{id}` route); J55 is a `CompletableFuture.allOf(first, second)` race tes
 """
 
 import asyncio
+import uuid
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
-from typing import Any, Awaitable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
-import uuid
+from typing import (
+    Any,
+    Awaitable,
+    Dict,
+    FrozenSet,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
+
+import httpx
+import pytest
+from fastapi.routing import APIRoute
+from httpx import ASGITransport
+from sqlalchemy import text
+from sqlmodel import col, select
 
 from app.core.dependencies import get_current_active_user
 from app.main import app
@@ -59,22 +76,16 @@ from app.models.pickups import (
 )
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.models.wallet import WalletTransaction, WalletTxnStatus, WalletTxnType
-from fastapi.routing import APIRoute
-import httpx
-from httpx import ASGITransport
-import pytest
-from sqlalchemy import text
-from sqlmodel import col, select
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     CUSTOMER_B2B_EMAIL,
     CUSTOMER_B2C_EMAIL,
     GOLDEN_TENANT_SLUG,
-    GoldenEnvError,
     OPERATIONS_EMAIL,
     OWNER_EMAIL,
+    GoldenEnvError,
+    GoldenSessionLocal,
     find_seeded_address_id,
     get_tenant_id,
     get_wallet_balance,

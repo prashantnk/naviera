@@ -216,6 +216,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         // Using window.location.href forces the browser to destroy the Javascript
         // context, permanently killing Supabase's rogue background refresh timers!
         const currentPath = window.location.pathname + window.location.search;
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = `${routeTo("/login")}?next=${encodeURIComponent(
           currentPath
         )}`;

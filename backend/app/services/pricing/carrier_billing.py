@@ -11,9 +11,9 @@ billing gap (`has_gap`, `gap_amount`, `gap_message`) is flagged only on under-re
 Spring analogy: a `@Service` with `@Transactional` entry points for ops carrier reconciliation.
 """
 
+import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import HTTPException, status
@@ -21,7 +21,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.money import is_billable_delta, money_to_float, to_money, to_weight
 from app.core.permissions import assert_can_manage_shipments_or_pickups, is_tenant_staff
-from app.models.pickups import ActivityType, PickupRequest, ServiceOption, ShipmentActivity
+from app.models.pickups import (
+    ActivityType,
+    PickupRequest,
+    ServiceOption,
+    ShipmentActivity,
+)
 from app.models.repricing import ChargeAdjustmentReason, MeasurementSource
 from app.models.tenants import Tenant, User, UserRole
 from app.models.wallet import WalletTxnType

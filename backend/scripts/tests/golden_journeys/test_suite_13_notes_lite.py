@@ -39,15 +39,23 @@ Spring analogy: a `@SpringBootTest` + `MockMvc` class per release note, plus a f
 JUnit tests of a `@Service` helper with a fixed `Clock` bean.
 """
 
-from datetime import date, datetime, timedelta, timezone
 import io
-from pathlib import Path
 import re
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Tuple
 
+import httpx
+from httpx import ASGITransport
+
 from app.main import app
-from app.models.pickups import FreightPaymentMode, PickupTimeSlot, ServiceOption, ServiceType
+from app.models.pickups import (
+    FreightPaymentMode,
+    PickupTimeSlot,
+    ServiceOption,
+    ServiceType,
+)
 from app.models.tenants import ServiceScope
 from app.schemas.v1.pickups import PackageCreate
 from app.services.label import LabelGenerator
@@ -57,8 +65,6 @@ from app.services.manifests import (
     SLOT_ADJUSTED_NOTICE,
     ManifestService,
 )
-import httpx
-from httpx import ASGITransport
 
 from .golden_env import (
     B2B_ONBOARDING_EMAIL,

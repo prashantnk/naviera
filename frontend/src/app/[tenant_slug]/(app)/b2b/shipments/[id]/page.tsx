@@ -58,7 +58,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Calendar,
-  CheckCircle,
   Clock,
   Copy,
   Download,
@@ -69,7 +68,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 /** Appointment windows reuse the pickup slot metadata (same API values). */
@@ -133,7 +132,7 @@ export default function B2BShipmentDetailsPage() {
     }
   };
 
-  const fetchDetails = async () => {
+  const fetchDetails = useCallback(async () => {
     if (!shipmentId) return;
     try {
       const [shipmentData, timelineData] = await Promise.all([
@@ -149,11 +148,11 @@ export default function B2BShipmentDetailsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [shipmentId]);
 
   useEffect(() => {
     fetchDetails();
-  }, [shipmentId]);
+  }, [fetchDetails]);
 
   const handleCopyTrackingId = () => {
     if (!shipment?.tracking_id) return;
@@ -287,9 +286,9 @@ export default function B2BShipmentDetailsPage() {
 
       toast.success("Compliance document successfully uploaded! Shipment status reset to In-Transit.");
       fetchDetails();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error("Failed to upload document: " + (err.message || err));
+      toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }
@@ -325,9 +324,9 @@ export default function B2BShipmentDetailsPage() {
 
       toast.success("Delivery appointment scheduled! Shipment status reset to In-Transit.");
       fetchDetails();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error("Failed to schedule appointment: " + (err.message || err));
+      toast.error("Failed to schedule appointment: " + extractApiErrorMessage(err, "Scheduling failed"));
     } finally {
       setScheduling(false);
     }
@@ -345,7 +344,12 @@ export default function B2BShipmentDetailsPage() {
         childAwb: `${shipment.tracking_id}-B${idx + 1}`,
       }));
     } else {
-      const list: any[] = [];
+      const list: {
+        boxIndex: number;
+        dimensions: string;
+        weight: string;
+        childAwb: string;
+      }[] = [];
       let boxCounter = 0;
       shipment.packages.forEach((pkg) => {
         for (let b = 0; b < (pkg.box_count || 0); b++) {

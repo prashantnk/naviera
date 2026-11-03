@@ -7,8 +7,8 @@ rounded half-up to the paisa on both sides. No tolerance: plan §2.0 says money
 invariants compare rounded values exactly.
 """
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 import re
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:  # Playwright is only needed when a page is actually read.

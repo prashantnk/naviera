@@ -24,7 +24,13 @@ from app.core.dependencies import get_current_active_user, get_tenant_from_heade
 from app.main import app
 from app.models.manifests import Manifest
 from app.models.pickups import PickupRequest
-from app.models.tenants import ServiceScope, Tenant, TenantSettingsHistory, User, UserRole
+from app.models.tenants import (
+    ServiceScope,
+    Tenant,
+    TenantSettingsHistory,
+    User,
+    UserRole,
+)
 from app.repositories.tenants import TenantRepository
 from app.services.manifests import ERR_MIXED_CUSTOMERS
 from app.services.tenants import PUBLIC_WALLET_CONFIG_KEYS, SIGNUP_EMAIL_EXISTS_DETAIL

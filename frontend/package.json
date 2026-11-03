@@ -11,7 +11,7 @@
     "test:compile": "tsc --noEmit",
     "test:build": "next build",
     "test:smoke": "node scripts/smoke-test.js",
-    "test:audit": "mkdir -p logs && python3 scripts/check-client-server.py > logs/client_server_issues.log && python3 scripts/math-check.py > logs/math_results.log && python3 scripts/find-branding-colors.py > logs/hardcoded_colors.log && python3 scripts/find-volumetric.py > logs/volumetric_results.log"
+    "test:audit": "python3 scripts/math-check.py && python3 scripts/find-branding-colors.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

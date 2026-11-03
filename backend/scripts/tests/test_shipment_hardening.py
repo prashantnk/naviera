@@ -23,7 +23,7 @@ from app.models.pickups import NdrExceptionReason, PickupRequest, PickupStatus
 from app.models.wallet import WalletTransaction, WalletTxnType
 from app.repositories.wallet import WalletRepository
 
-HEADERS = {"X-Tenant-Slug": "naviera"}
+HEADERS = {"X-Tenant-Slug": "logismart-test"}
 SHIPMENTS_URL = f"{settings.API_V1_STR}/shipments"
 MANIFESTS_URL = f"{settings.API_V1_STR}/manifests"
 GOODS_VALUE = 1000.0
@@ -43,9 +43,9 @@ def _payload(*, b2b: bool = False, cod: bool = False) -> dict:
             "name": f"Hardening WH {tag}",
             "phone": "9000000004",
             "address_line1": f"Plot {tag}",
-            "city": "Bengaluru",
-            "state": "KA",
-            "pincode": "560034",
+            "city": "Gurugram",
+            "state": "HR",
+            "pincode": "122001",
         },
         "new_delivery_address": {
             "name": "Hardening Consignee",
@@ -124,28 +124,30 @@ async def test_status_only_updates_do_not_reprice_or_touch_wallet(db_session):
 async def test_cod_with_shipping_allows_status_and_pod_updates(db_session):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         ship = await _create(client, cod=True)
-        payment = ship["payment_details"]
-        assert payment["cod_amount"] > GOODS_VALUE  # goods + freight
+        assert ship["door_collectible"] > GOODS_VALUE  # goods + freight
         await _patch(client, ship["id"], {"status": "ASSIGNED", "comment": "PUR"})
-        await _set_status(db_session, ship["id"], PickupStatus.IN_TRANSIT)
+        in_transit = await _patch(client, ship["id"], {"status": "IN_TRANSIT", "comment": "Picked"})
         delivered = await _patch(
             client,
             ship["id"],
-            {"status": "COMPLETED", "comment": "Delivered", "pod_received_by": "Front desk"},
+            {
+                "status": "COMPLETED",
+                "comment": "Delivered",
+                "pod_received_by": "Front desk",
+                "delivery_otp": in_transit["delivery_otp"],
+            },
         )
         assert delivered["status"] == "COMPLETED"
 
-        # Editing COD itself is still validated (cap = goods + freight).
-        other = await _create(client, cod=True)
-        too_much = other["payment_details"]["cod_amount"] + 500.0
+        # Editing COD after delivery is frozen and rejected with 400 (H-9).
         await _patch(
             client,
-            other["id"],
+            ship["id"],
             {
                 "payment_details": {
                     "freight_payment_mode": "PREPAID",
                     "is_cod": True,
-                    "cod_amount": too_much,
+                    "cod_amount": GOODS_VALUE + 500.0,
                     "add_shipping_to_cod": False,
                     "shipment_total_value": GOODS_VALUE,
                 }
@@ -227,11 +229,33 @@ async def test_cod_settlement_skips_returned_parcels(db_session):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         delivered = await _create(client, cod=True)
         returned = await _create(client, cod=True)
+        in_transit_map = {}
         for ship in (delivered, returned):
-            await _set_status(db_session, ship["id"], PickupStatus.IN_TRANSIT)
+            await _patch(client, ship["id"], {"status": "ASSIGNED", "comment": "PUR"})
+            in_transit_map[ship["id"]] = await _patch(
+                client, ship["id"], {"status": "IN_TRANSIT", "comment": "Picked"}
+            )
         await _patch(client, returned["id"], {"status": "RTO_INITIATED", "comment": "Refused"})
-        for ship in (delivered, returned):
-            await _patch(client, ship["id"], {"status": "COMPLETED", "pod_received_by": "Receiver"})
+        # RTO parcels cannot transition to COMPLETED (400) and are excluded from COD settlement.
+        await _patch(
+            client,
+            returned["id"],
+            {
+                "status": "COMPLETED",
+                "pod_received_by": "Receiver",
+                "delivery_otp": in_transit_map[returned["id"]]["delivery_otp"],
+            },
+            expected=400,
+        )
+        await _patch(
+            client,
+            delivered["id"],
+            {
+                "status": "COMPLETED",
+                "pod_received_by": "Receiver",
+                "delivery_otp": in_transit_map[delivered["id"]]["delivery_otp"],
+            },
+        )
 
     unsettled = await WalletRepository(db_session).get_unsettled_completed_cod_shipments(
         admin.id, tenant.id

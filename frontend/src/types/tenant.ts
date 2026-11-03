@@ -67,6 +67,7 @@ export interface ServicesPageConfig {
 export interface EscalationLevel {
   level: string;
   email: string;
+  phone?: string;
 }
 
 /** Grievance Officer contact, stored under `settings.contact` (public allow-list). */

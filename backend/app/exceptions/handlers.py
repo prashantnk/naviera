@@ -1,8 +1,9 @@
 import logging
 
-from app.exceptions.definitions import TenantNotFoundException
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+from app.exceptions.definitions import TenantNotFoundException
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)

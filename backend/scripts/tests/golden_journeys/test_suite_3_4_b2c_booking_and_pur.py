@@ -30,15 +30,19 @@ from app.models.pickups import (
     ServiceType,
 )
 from app.models.wallet import WalletTransaction, WalletTxnStatus, WalletTxnType
-from app.services.cod_payout import carrier_freight_collected, cod_payout_amount, door_collectible
+from app.services.cod_payout import (
+    carrier_freight_collected,
+    cod_payout_amount,
+    door_collectible,
+)
 
 from .golden_env import (
-    GoldenSessionLocal,
     ADMIN_EMAIL,
     CUSTOMER_B2C_EMAIL,
     GOLDEN_TENANT_SLUG,
     OPERATIONS_EMAIL,
     OWNER_EMAIL,
+    GoldenSessionLocal,
     allow_to_pay_bookings,
     document_prefix,
     find_seeded_address_id,

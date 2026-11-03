@@ -18,7 +18,11 @@ from app.models.pickups import (
     ShipmentActivity,
     ShipmentType,
 )
-from app.repositories.shipments import b2b_shipment_clause, held_from_clause, parse_held_from
+from app.repositories.shipments import (
+    b2b_shipment_clause,
+    held_from_clause,
+    parse_held_from,
+)
 from app.services.ndr_rules import AWAITING_OPS_ACTIONS
 
 MAX_EXCEPTION_SCAN = 2000

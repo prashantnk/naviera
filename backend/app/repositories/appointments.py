@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, List, NamedTuple, Optional
 
-from sqlalchemy import Date, ColumnElement, and_, cast, desc, nulls_last, or_
+from sqlalchemy import ColumnElement, Date, and_, cast, desc, nulls_last, or_
 from sqlalchemy.orm import joinedload, selectinload
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
