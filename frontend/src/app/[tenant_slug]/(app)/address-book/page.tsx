@@ -131,7 +131,10 @@ export default function AddressBookPage() {
         cell: ({ row }) => {
           const isEditable =
             capabilities.canWrite &&
-            (isAdmin || (row.original.scope === AddressScope.PRIVATE && row.original.user_id === user?.id));
+            (isAdmin ||
+              (row.original.scope === AddressScope.PRIVATE &&
+                Boolean(user?.id) &&
+                row.original.user_id === user?.id));
           if (!isEditable) return null;
 
           return (

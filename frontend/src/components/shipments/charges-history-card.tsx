@@ -120,6 +120,8 @@ export function ChargesHistoryCard({
     void load();
   }, [load, refreshKey]);
 
+  const effectiveTotal = rows.length > 0 ? rows[rows.length - 1].new_total : currentTotal;
+
   return (
     <Card data-testid={prefix} className={cn("@container min-w-0 overflow-hidden gap-3", className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 min-w-0">
@@ -131,7 +133,7 @@ export function ChargesHistoryCard({
           <CardDescription className="text-xs break-words">
             Current charges{" "}
             <span data-testid={`${prefix}.total`} className="font-bold text-foreground">
-              {formatInr(currentTotal)}
+              {formatInr(effectiveTotal)}
             </span>
           </CardDescription>
         </div>

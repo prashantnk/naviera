@@ -38,6 +38,30 @@ export const resetSupabaseClient = (tenantSlug: string) => {
 /** Max time we wait for Supabase's own sign-out call before clearing locally anyway. */
 const SIGN_OUT_NETWORK_TIMEOUT_MS = 1500;
 
+/** Prefix used by `TenantService._mint_supabase_session` for backend-minted password sessions. */
+export const BACKEND_REFRESH_TOKEN_PREFIX = "naviera-rt-";
+
+/**
+ * Returns true when the tenant's stored session was minted by the Naviera
+ * backend (`refresh_token` starts with `naviera-rt-`) rather than by Supabase
+ * GoTrue. Calling GoTrue `/auth/v1/logout` with a backend-minted JWT returns
+ * HTTP 500 because GoTrue has no `auth.sessions` row for it.
+ */
+export function isBackendMintedSession(tenantSlug: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(`sb-${tenantSlug}-auth-token`);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { refresh_token?: unknown };
+    return (
+      typeof parsed?.refresh_token === "string" &&
+      parsed.refresh_token.startsWith(BACKEND_REFRESH_TOKEN_PREFIX)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Storage key supabase-js uses when no custom `storageKey` is set
  * (`sb-<project-ref>-auth-token`), derived from the project URL.
@@ -83,14 +107,16 @@ export async function signOutAndRedirect(
   tenantSlug: string,
   redirectTo: string
 ): Promise<void> {
-  const supabase = getSupabaseClient(tenantSlug);
-  const timeout = new Promise<void>((resolve) =>
-    setTimeout(resolve, SIGN_OUT_NETWORK_TIMEOUT_MS)
-  );
-  await Promise.race([
-    supabase.auth.signOut({ scope: "local" }).catch(() => undefined),
-    timeout,
-  ]);
+  if (!isBackendMintedSession(tenantSlug)) {
+    const supabase = getSupabaseClient(tenantSlug);
+    const timeout = new Promise<void>((resolve) =>
+      setTimeout(resolve, SIGN_OUT_NETWORK_TIMEOUT_MS)
+    );
+    await Promise.race([
+      supabase.auth.signOut({ scope: "local" }).catch(() => undefined),
+      timeout,
+    ]);
+  }
   clearStoredSession(tenantSlug);
   window.location.replace(redirectTo);
 }

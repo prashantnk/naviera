@@ -24,7 +24,7 @@ vi.mock("@/components/providers/tenant-provider", () => ({
 const signInWithOtp = vi.fn();
 const signOut = vi.fn(async () => ({}));
 const routerReplace = vi.fn();
-let storedSession: { access_token: string } | null = null;
+let storedSession: { access_token: string; refresh_token?: string } | null = null;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: routerReplace }),
@@ -229,5 +229,33 @@ describe("LoginForm existing-session check", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 401 });
     render(<LoginForm />);
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it("clears a stale backend-minted password session locally without calling GoTrue /logout (BUG-05)", async () => {
+    storedSession = { access_token: "jwt", refresh_token: "naviera-rt-abc123" };
+    window.localStorage.setItem(
+      "sb-logismart-test-auth-token",
+      JSON.stringify(storedSession)
+    );
+    fetchMock.mockResolvedValue({ ok: false, status: 401 });
+    render(<LoginForm />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(window.localStorage.getItem("sb-logismart-test-auth-token")).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+
+    const actualSupabase = await vi.importActual<typeof import("@/lib/supabase")>(
+      "@/lib/supabase"
+    );
+    window.localStorage.setItem(
+      "sb-logismart-test-auth-token",
+      JSON.stringify({ access_token: "jwt", refresh_token: "naviera-rt-xyz" })
+    );
+    expect(actualSupabase.isBackendMintedSession("logismart-test")).toBe(true);
+    window.localStorage.setItem(
+      "sb-logismart-test-auth-token",
+      JSON.stringify({ access_token: "jwt", refresh_token: "gotrue-rt-xyz" })
+    );
+    expect(actualSupabase.isBackendMintedSession("logismart-test")).toBe(false);
+    window.localStorage.removeItem("sb-logismart-test-auth-token");
   });
 });

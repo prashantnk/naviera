@@ -20,9 +20,10 @@ from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.money import ZERO_MONEY, money_to_float, to_money, to_weight
+from app.core.permissions import assert_service_scope
 from app.models.manifests import ServiceFlow
 from app.models.pickups import FreightPaymentMode, ServiceOption, ShipmentType
-from app.models.tenants import Tenant
+from app.models.tenants import Tenant, User
 from app.schemas.v1.pickups import (
     EWAY_BILL_MANDATORY_THRESHOLD,
     PackageCreate,
@@ -455,14 +456,19 @@ class QuoteService:
             option, spec, freshness=freshness, include_rto=include_rto, is_cod=is_cod
         )
 
-    async def quote_options(self, tenant: Tenant, request: QuoteRequest) -> QuoteResponse:
+    async def quote_options(
+        self, tenant: Tenant, request: QuoteRequest, actor: Optional[User]
+    ) -> QuoteResponse:
         """
         `POST /quotes`: every option of the flow, priced on the exact booking inputs (A-03).
 
         Raises:
+            HTTPException(403): a customer asking for a flow outside their `service_scope`
+                (BUG-02: same rule as booking, so B2B rates never leak to B2C-only accounts).
             HTTPException(400): TO_PAY / B2B reverse (WP0), weight caps (A-26), blind B2C.
         """
         flow = request.service_flow
+        assert_service_scope(actor, flow == ServiceFlow.B2B)
         assert_mvp_scope(request.freight_payment_mode, request.shipment_type, flow)
         if request.is_blind_pickup and flow == ServiceFlow.B2C:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, BLIND_NOT_B2C)

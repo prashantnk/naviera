@@ -54,6 +54,7 @@ from app.schemas.v1.pickups import PackageCreate, PaymentDetailsCreate, PickupUp
 from app.schemas.v1.pricing import AdminShipmentChargeCreate, CarrierBillingUpdate
 from app.schemas.v1.wallet import AdminOfflineCreditRequest
 from app.services import mvp_scope
+from app.services.delhivery_modules import shipment_effective_gst_rate
 from app.services.pricing import fake_delhivery
 from app.services.pricing.carrier_billing import (
     _build_carrier_billing_read,
@@ -587,6 +588,39 @@ def test_carrier_margin_absent_before_charge_is_entered() -> None:
     assert read.carrier_charged_taxable is None
 
 
+def test_carrier_margin_after_override_and_recovery_surcharge_does_not_double_subtract_gst() -> None:
+    """
+    BUG-15: when `ADMIN_PRICE_OVERRIDE` is present in `bill_adjustments`, `RepricingService`
+    already updates `payment.tax_amount` across the entire `total_logistics_cost` (including
+    a subsequent `Recover Difference from Customer` surcharge). `_seller_taxable_amount` must
+    return `seller_billed - tax_amount` directly (`354.00 - 54.00 = 300.00`) instead of
+    subtracting `54.00` from `177.00` and adding `150.00` (`273.00`, false `-27.00` margin).
+    """
+    shipment = _billed_shipment(354.00, 54.00, 354.00)
+    shipment.payment_details.pricing_breakdown = {
+        "bill_adjustments": [
+            {
+                "kind": "ADMIN_PRICE_OVERRIDE",
+                "label": "Admin price override",
+                "amount": 18.70,
+                "txn_type": "SPEND",
+            },
+            {
+                "label": "Carrier bill shortfall recovery",
+                "amount": 177.00,
+                "txn_type": "ADMIN_SURCHARGE",
+            },
+        ]
+    }
+    read = _build_carrier_billing_read(shipment)
+    assert read.has_gap is False
+    assert read.gap_amount == pytest.approx(0.0)
+    assert read.seller_billed_amount == pytest.approx(354.00)
+    assert read.seller_billed_taxable == pytest.approx(300.00)
+    assert read.carrier_charged_taxable == pytest.approx(300.00)
+    assert read.margin_amount == pytest.approx(0.0)
+
+
 def test_transporter_name_visible_to_staff_only() -> None:
     """#540 (3): Prime `transporter_name` is returned to staff and hidden from customers."""
     shipment_staff = _billed_shipment(141.60, 21.60, 118.00)
@@ -641,14 +675,10 @@ async def test_post_pickup_cancel_rto_blocked_for_operations_user() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_bidirectional_admin_price_override_plan_and_proportional_gst_split() -> None:
-    """
-    #568 (1-3): `override_total_price` on `RepriceChange` supports both:
-    - Overpriced (`override_total_price < old_total`): credits wallet (`REFUND`) + `CREDIT_NOTE`.
-    - Underpriced (`override_total_price > old_total`): debits wallet (`SPEND`) + `DEBIT_NOTE`.
-    - Updates `base_freight`, `tax_amount`, and `total_logistics_cost` with proportional 18% GST.
-    """
+def _override_world(
+    base_freight: float, tax_amount: float, total: float, breakdown: dict
+) -> tuple[Tenant, PickupRequest, RepricingService]:
+    """An IN_TRANSIT wallet-billed B2C parcel, fully paid, ready for an admin price override."""
     tenant = _tenant()
     shipment_id = uuid.uuid4()
     shipment = PickupRequest(
@@ -699,11 +729,11 @@ async def test_bidirectional_admin_price_override_plan_and_proportional_gst_spli
     shipment.payment_details = PaymentDetails(
         pickup_id=shipment_id,
         freight_payment_mode=FreightPaymentMode.PREPAID,
-        base_freight=100.00,
-        tax_amount=18.00,
-        total_logistics_cost=118.00,
-        pricing_breakdown={"billing_channel": "WALLET"},
-        carrier_cost=_booked_record(forward_cost=Decimal("100.00")),
+        base_freight=base_freight,
+        tax_amount=tax_amount,
+        total_logistics_cost=total,
+        pricing_breakdown=breakdown,
+        carrier_cost=_booked_record(forward_cost=Decimal(str(base_freight))),
     )
     svc = RepricingService(AsyncMock())
     svc.repo.get_active_measurement = AsyncMock(return_value=None)
@@ -712,10 +742,22 @@ async def test_bidirectional_admin_price_override_plan_and_proportional_gst_spli
             SimpleNamespace(
                 txn_type=WalletTxnType.SPEND,
                 status=WalletTxnStatus.COMPLETED,
-                amount=Decimal("118.00"),
+                amount=Decimal(str(total)),
             )
         ]
     )
+    return tenant, shipment, svc
+
+
+@pytest.mark.asyncio
+async def test_bidirectional_admin_price_override_plan_and_proportional_gst_split() -> None:
+    """
+    #568 (1-3): `override_total_price` on `RepriceChange` supports both:
+    - Overpriced (`override_total_price < old_total`): credits wallet (`REFUND`) + `CREDIT_NOTE`.
+    - Underpriced (`override_total_price > old_total`): debits wallet (`SPEND`) + `DEBIT_NOTE`.
+    - Updates `base_freight`, `tax_amount`, and `total_logistics_cost` with proportional 18% GST.
+    """
+    tenant, shipment, svc = _override_world(100.00, 18.00, 118.00, {"billing_channel": "WALLET"})
 
     # 1. Overpriced: ₹118.00 -> ₹59.00 (refund ₹59.00 + CREDIT_NOTE)
     overpriced_change = RepriceChange(
@@ -752,6 +794,58 @@ async def test_bidirectional_admin_price_override_plan_and_proportional_gst_spli
     assert plan_up.payment_writes["total_logistics_cost"] == pytest.approx(177.00)
     assert plan_up.payment_writes["base_freight"] == pytest.approx(150.00)
     assert plan_up.payment_writes["tax_amount"] == pytest.approx(27.00)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("override", "subtotal", "gst", "cgst", "sgst"),
+    [
+        (Decimal("100.00"), 84.75, 15.25, 7.63, 7.62),  # J64 down: refund 59.30 + CREDIT_NOTE
+        (Decimal("200.00"), 169.49, 30.51, 15.26, 15.25),  # up: debit 40.70 + DEBIT_NOTE
+        (Decimal("106.88"), 90.58, 16.30, 8.15, 8.15),  # BUG-01b prod S3 total
+    ],
+)
+async def test_override_rewrites_breakdown_taxable_so_notes_split_at_18_percent(
+    override: Decimal, subtotal: float, gst: float, cgst: float, sgst: float
+) -> None:
+    """
+    BUG-01: an override used to keep the quote's `subtotal` (135.00) next to the overridden
+    `tax_amount`, so the order page showed 135.00 + 15.25 = 100.00 and every credit / debit
+    note was split at 15.25 / 135 = 11.3 %. The breakdown now carries the overridden taxable.
+    """
+    quote_breakdown = {
+        "billing_channel": "WALLET",
+        "subtotal": 135.0,
+        "gst_total": 24.3,
+        "cgst_amount": 12.15,
+        "sgst_amount": 12.15,
+        "igst_amount": 24.3,
+    }
+    tenant, shipment, svc = _override_world(135.00, 24.30, 159.30, quote_breakdown)
+    change = RepriceChange(reason=ChargeAdjustmentReason.ADMIN_EDIT, override_total_price=override)
+
+    plan = await svc._plan(shipment, tenant, change, None)
+
+    breakdown = plan.preview.new_breakdown
+    assert (breakdown["subtotal"], breakdown["gst_total"]) == (subtotal, gst)
+    assert (breakdown["cgst_amount"], breakdown["sgst_amount"], breakdown["igst_amount"]) == (cgst, sgst, gst)
+    assert (plan.payment_writes["base_freight"], plan.payment_writes["tax_amount"]) == (subtotal, gst)
+    assert Decimal(str(subtotal)) + Decimal(str(gst)) == override
+    billed = SimpleNamespace(tax_amount=gst, total_logistics_cost=float(override), pricing_breakdown=breakdown)
+    assert shipment_effective_gst_rate(billed) == 0.18
+
+
+@pytest.mark.asyncio
+async def test_plan_without_override_keeps_the_quote_breakdown_taxable() -> None:
+    """Only an override rewrites the taxable figures; a plain re-plan keeps the quote's subtotal."""
+    quote_breakdown = {"billing_channel": "WALLET", "subtotal": 135.0, "gst_total": 24.3}
+    tenant, shipment, svc = _override_world(135.00, 24.30, 159.30, quote_breakdown)
+    change = RepriceChange(reason=ChargeAdjustmentReason.ADMIN_EDIT, override_total_price=Decimal("159.30"))
+
+    plan = await svc._plan(shipment, tenant, change, None)
+
+    assert plan.preview.new_breakdown["subtotal"] == 135.0
+    assert plan.preview.new_breakdown["gst_total"] == 24.3
 
 
 @pytest.mark.asyncio

@@ -480,7 +480,7 @@ class PickupCreate(SQLModel):
 
 class AddressRead(AddressBase):
     id: UUID
-    user_id: UUID
+    user_id: Optional[UUID] = None
 
 
 class PackageRead(PackageBase):
@@ -735,7 +735,7 @@ class ShipmentActivityRead(SQLModel):
 
     id: UUID
     timestamp: datetime
-    user_id: UUID
+    user_id: Optional[UUID] = None
     activity_type: ActivityType
     summary: Optional[str] = None
     comment: Optional[str] = None

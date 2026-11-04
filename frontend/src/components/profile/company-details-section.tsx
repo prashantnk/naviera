@@ -22,6 +22,7 @@ import { extractApiErrorMessage } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Building2, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -35,8 +36,13 @@ const PROFILE_UPDATED_EVENT = "user-profile-updated";
  * support ticket. Staff accounts are not billed, so the section is hidden for them.
  */
 export function CompanyDetailsSection() {
-  const { user, isAdmin } = useUser();
+  const { user, isAdmin, refreshUser } = useUser();
   const { routeTo } = useTenant();
+  const [savedDetails, setSavedDetails] = useState<{
+    company_name: string;
+    billing_address: string;
+    gstin: string | null;
+  } | null>(null);
   const form = useForm<CompanyDetailsFormValues, unknown, CompanyDetailsParsed>({
     resolver: zodResolver(companyDetailsSchema),
     defaultValues: EMPTY_COMPANY_DETAILS,
@@ -48,17 +54,29 @@ export function CompanyDetailsSection() {
 
   const onSubmit = async (values: CompanyDetailsParsed) => {
     try {
-      await UsersService.updateMyProfile({
-        company_details: toCompanyDetailsPayload(values),
+      const payload = toCompanyDetailsPayload(values);
+      const updated = await UsersService.updateMyProfile({
+        company_details: payload,
+      });
+      setSavedDetails({
+        company_name: updated?.company_name ?? payload.legal_name,
+        billing_address: updated?.billing_address ?? payload.billing_address,
+        gstin: (updated?.gstin !== undefined ? updated.gstin : payload.gstin) ?? null,
       });
       window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
+      void refreshUser?.();
       toast.success("Company details saved");
     } catch (error: unknown) {
       toast.error(extractApiErrorMessage(error, "Could not save your company details"));
     }
   };
 
-  if (user.company_details_locked) {
+  const isLocked = Boolean(user.company_details_locked || savedDetails);
+  const companyName = savedDetails?.company_name ?? user.company_name;
+  const billingAddress = savedDetails?.billing_address ?? user.billing_address;
+  const gstin = savedDetails ? savedDetails.gstin : user.gstin;
+
+  if (isLocked) {
     return (
       <div
         className="space-y-2 rounded-lg border border-border bg-muted/40 p-3"
@@ -71,16 +89,16 @@ export function CompanyDetailsSection() {
         <dl className="space-y-1 text-xs">
           <div>
             <dt className="text-muted-foreground">Company name</dt>
-            <dd className="font-medium">{user.company_name || "-"}</dd>
+            <dd className="font-medium">{companyName || "-"}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Billing address</dt>
-            <dd className="font-medium">{user.billing_address || "-"}</dd>
+            <dd className="font-medium">{billingAddress || "-"}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">GSTIN</dt>
             <dd className="font-mono font-medium" data-testid="profile.company-details.gstin">
-              {user.gstin || "Unregistered"}
+              {gstin || "Unregistered"}
             </dd>
           </div>
         </dl>

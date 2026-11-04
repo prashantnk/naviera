@@ -23,7 +23,7 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 
-from app.models.tenants import User, UserRole
+from app.models.tenants import ServiceScope, User, UserRole
 
 STAFF_USER_ROLES = (
     UserRole.owner,
@@ -48,6 +48,31 @@ def can_view_tenant_finance(user: Optional[User]) -> bool:
 def is_tenant_staff(user: Optional[User]) -> bool:
     """True if the user is a Tenant Staff member (`owner`, `admin`, `operations_user`, `support_user`, `read_only_user`)."""
     return user is not None and user.role in STAFF_USER_ROLES
+
+
+def assert_service_scope(actor: Optional[User], is_b2b: bool) -> None:
+    """
+    Customers may only book, pick up or get rates in the flow(s) their `service_scope`
+    allows (B2C-only can't use B2B cargo and vice versa). Tenant staff are exempt.
+
+    Raises:
+        HTTPException(403): a flow outside the customer's scope.
+    """
+    if actor is None or is_tenant_staff(actor):
+        return
+    scope = actor.service_scope or ServiceScope.B2C
+    if scope == ServiceScope.BOTH:
+        return
+    if is_b2b and scope != ServiceScope.B2B:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is enabled for B2C parcels only; B2B cargo bookings are not allowed.",
+        )
+    if not is_b2b and scope != ServiceScope.B2C:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is enabled for B2B cargo only; B2C parcel bookings are not allowed.",
+        )
 
 
 def is_tenant_admin(user: Optional[User]) -> bool:

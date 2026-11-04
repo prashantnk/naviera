@@ -547,3 +547,34 @@ def test_b2b_lr_compliance_row_lists_invoices_eway_bills_and_value():
     assert "INVOICE NO: N/A" in label.docket_compliance_text(shipment)
     page = _pdf_pages_text(LabelGenerator.generate_pdf(_b2b_lr_shipment(), _tenant()))[0]
     assert "INV-J3-001" in page and "331234567890" in page
+
+
+def test_label_header_prints_human_service_type_and_fits_long_tenant_name():
+    tenant = Tenant(
+        id="d7f31d2d-29cd-49e4-8350-c87bb3676051",
+        name="Logismart Shipments",
+        slug="logismart-test",
+        settings={},
+    )
+    shipment = get_base_mock_shipment()
+    shipment.packages = [_package(1.0, 1)]
+    shipment.payment_details = PaymentDetails(
+        freight_payment_mode=FreightPaymentMode.PREPAID,
+        is_cod=False,
+        cod_amount=0.0,
+    )
+
+    b2c_page = _pdf_pages_text(LabelGenerator.generate_pdf(shipment, tenant))[0]
+    assert "SURFACE ROAD" in b2c_page
+    assert "SURFACE_ROAD" not in b2c_page
+    assert "LOGISMART SHIPMENTS" in b2c_page
+    assert "LOGISMART SHIP..." not in b2c_page
+
+    thermal_page = _pdf_pages_text(
+        LabelGenerator.generate_pdf(shipment, tenant, label_format=label.THERMAL_4X2_FORMAT)
+    )[0]
+    assert "SURFACE ROAD | BOX 1/1" in thermal_page
+    assert "SURFACE_ROAD" not in thermal_page
+    assert "LOGISMART SHIPMENTS" in thermal_page
+    assert "LOGISMART SHIP..." not in thermal_page
+

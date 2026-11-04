@@ -82,7 +82,7 @@ need the API on `:8000`, and must not run concurrently with another DB-touching 
 
 - **Web service (`naviera-backend`, `https://naviera-backend.onrender.com`):** build `pip install poetry && poetry install --only main`; start
   `poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log`.
-- **Scheduled temporal hooks (`.github/workflows/temporal-hooks.yml`):** runs every 14 minutes (`*/14 * * * *`, plus `workflow_dispatch`) and calls `POST $NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` with header `X-Cron-Secret: $CRON_SECRET` (`settings.CRON_SECRET`), running one idempotent iteration of `run_temporal_hooks_iteration()` and keeping the Free Render service warm (or run `poetry run python -m scripts.temporal_hooks_worker` if using a dedicated worker).
+- **Scheduled temporal hooks:** every 14 minutes (`*/14 * * * *`) `POST /api/v1/internal/temporal-hooks/run` with header `X-Cron-Secret: $CRON_SECRET` (`settings.CRON_SECRET`) runs one idempotent iteration of `run_temporal_hooks_iteration()` and keeps the Free Render service warm. **Primary:** Supabase `pg_cron` + `pg_net` job `naviera-temporal-hooks` (Alembic `f9a0b1c2d3e4`; URL and secret in Supabase Vault). **Backup:** `.github/workflows/temporal-hooks.yml` (plus `workflow_dispatch`). Locally, run `poetry run python -m scripts.temporal_hooks_worker` instead. Where to see runs: `docs/RUNBOOK.md` §1.5.
 - **Database:** `DATABASE_URL` and `ALEMBIC_DATABASE_URL` use the Supabase pooler (port `6543`) with the password
   URL-encoded (`$` → `%24`). `DB_ECHO_LOG=False`.
 - **Telemetry (Logfire):** auto-tracing limited to `app.api`, `app.services`, `app.repositories`; `/health` is

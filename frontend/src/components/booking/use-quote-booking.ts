@@ -5,9 +5,11 @@
  * Shared quote → book state machine for the booking wizards.
  *
  * - `requestQuote` prices the exact booking inputs (A-03) and pre-selects a card.
- * - `book` sends the booking with an `Idempotency-Key` (A-17). The key is kept only
- *   when no response arrived (a plain retry then replays the first booking) and is
- *   renewed after any server answer, after a re-quote and when the card changes.
+ * - `book` sends the booking with an `Idempotency-Key` (A-17). The key is kept whenever
+ *   the booking may have committed (no response, any 5xx such as the proxy's 500 after a
+ *   timeout, or 409 "still being processed"), so pressing Book again replays the first
+ *   booking instead of creating a second AWB and debit (BUG-03). It is renewed after any
+ *   other server answer, after a re-quote and when the card changes.
  * - A 409 PRICE_CHANGED opens the confirm dialog; confirming re-sends the same body
  *   with `expected_total = new_total` and a fresh key (DESIGN.md v4, Q7).
  *
@@ -54,15 +56,27 @@ export interface QuoteBookingState {
   cancelPriceChange: () => void;
 }
 
+const SERVER_ERROR_MIN_STATUS = 500;
+const IN_FLIGHT_STATUS = 409;
+const SERVICE_UNAVAILABLE_STATUS = 503;
+
+/** Toast when the outcome of a booking is unknown; the kept key makes a retry safe. */
+export const BOOKING_UNCONFIRMED_MESSAGE =
+  "We couldn't confirm your booking. Check Orders first; pressing Book again is safe and won't charge you twice.";
+
 /**
- * Whether a failure got no HTTP answer (offline, timeout), so a retry with the same
- * Idempotency-Key is safe and replays the first booking if it did commit.
+ * Whether the booking may have committed although no success arrived: no HTTP answer
+ * (offline, timeout), any 5xx (the Next proxy answers 500 when the backend is slow), or
+ * 409 "still being processed" without a PRICE_CHANGED body. Retrying with the same
+ * Idempotency-Key is then safe and replays the first booking if it did commit.
  *
  * @param error - Error thrown by the booking call.
- * @returns True for transport failures.
+ * @returns True when the key must be kept for the retry.
  */
-export function isNoResponseFailure(error: unknown): boolean {
-  return !(error instanceof ApiError);
+export function mayHaveCommitted(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  if (error.status >= SERVER_ERROR_MIN_STATUS) return true;
+  return error.status === IN_FLIGHT_STATUS && parsePriceChanged(error) === null;
 }
 
 /**
@@ -119,7 +133,17 @@ export function useQuoteBooking({ onBooked, bookingFailedMessage }: UseQuoteBook
         toast.success(bookedToastMessage(created));
         onBooked(created);
       } catch (error) {
-        if (!isNoResponseFailure(error)) keyRef.current = null;
+        if (mayHaveCommitted(error)) {
+          // A backend 503 is answered before anything commits; show its retry hint.
+          const isBackendBusy = error instanceof ApiError && error.status === SERVICE_UNAVAILABLE_STATUS;
+          toast.error(
+            isBackendBusy
+              ? extractApiErrorMessage(error, BOOKING_UNCONFIRMED_MESSAGE)
+              : BOOKING_UNCONFIRMED_MESSAGE,
+          );
+          return;
+        }
+        keyRef.current = null;
         const change = parsePriceChanged(error);
         if (change) {
           setPriceChange(change);

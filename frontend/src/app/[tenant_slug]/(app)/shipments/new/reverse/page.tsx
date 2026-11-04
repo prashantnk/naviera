@@ -42,6 +42,7 @@ import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-ba
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
 import {
+  hasMeaningfulReverseDraft,
   reverseShipmentSchema,
   ReverseShipmentFormValues,
 } from "@/lib/validations/shipment";
@@ -280,7 +281,7 @@ function ReverseBookingContent() {
         if (savedDraft && !hasRecoveredRef.current) {
           hasRecoveredRef.current = true;
           const parsed = JSON.parse(savedDraft);
-          if (parsed.values) {
+          if (parsed.values && hasMeaningfulReverseDraft(parsed.values)) {
             const vals = parsed.values;
             if (!Object.values(ServiceType).includes(vals.service_type)) {
               vals.service_type = ServiceType.SURFACE_ROAD;
@@ -300,8 +301,10 @@ function ReverseBookingContent() {
             delete vals.requested_pickup_date;
             delete vals.pickup_time_slot;
             form.reset(vals);
+            toast.info("Recovered your unsaved reverse booking draft.");
+          } else {
+            localStorage.removeItem(DRAFT_KEY);
           }
-          toast.info("Recovered your unsaved reverse booking draft.");
         }
       } catch (err) {
         console.error("Reverse wizard load error:", err);
@@ -316,7 +319,8 @@ function ReverseBookingContent() {
 
   useEffect(() => {
     const subscription = form.watch((values) => {
-      if (isSubmitting || isSubmittedRef.current || fromShipmentId) return;
+      if (isLoading || isSubmitting || isSubmittedRef.current || fromShipmentId) return;
+      if (!hasMeaningfulReverseDraft(values as Partial<ReverseShipmentFormValues>)) return;
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({ values }));
       } catch (error) {
@@ -324,7 +328,7 @@ function ReverseBookingContent() {
       }
     });
     return () => subscription.unsubscribe();
-  }, [form, DRAFT_KEY, isSubmitting, fromShipmentId]);
+  }, [form, DRAFT_KEY, isLoading, isSubmitting, fromShipmentId]);
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,

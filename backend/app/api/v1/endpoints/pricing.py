@@ -46,7 +46,7 @@ async def get_quotes(
     Greyed-out options carry a plain-English `unavailable_reason`; nothing is booked.
     """
     logger.info("API Request: quotes (%s) for tenant '%s'", payload.service_flow.value, current_tenant.slug)
-    return await QuoteService(session).quote_options(current_tenant, payload)
+    return await QuoteService(session).quote_options(current_tenant, payload, current_user)
 
 
 @pricing_router.get("/policy", response_model=PricingPolicyRead)

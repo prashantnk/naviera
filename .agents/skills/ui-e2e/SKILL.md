@@ -7,6 +7,8 @@ description: Runs and extends headless Chrome (CDP :9224 / Playwright / Selenium
 
 Use this skill when running or authoring browser E2E tests in `backend/scripts/tests/ui_golden/`, driving Chrome on CDP `:9224`, verifying visual layout and DOM child-vs-card bounding-box containment, or checking DB-to-UI financial parity via `DbOracle`.
 
+> **Agent Test Catalog ("Changed X → Rerun Y"):** See [`../../knowledge/test-catalog.md`](../../knowledge/test-catalog.md) for the complete 31-screen × 9-persona route matrix (`S01–S31`), flow coverage registry, and verification history.
+
 ## 1. Architecture of `backend/scripts/tests/ui_golden/`
 
 The UI golden suite drives Chrome (attached over CDP `127.0.0.1:9224` or self-launched headless Chrome) against the live Next.js (`:3000`) and FastAPI (`:8000`) servers on the **`logismart-test`** tenant only:

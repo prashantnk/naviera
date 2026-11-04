@@ -16,9 +16,16 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import DBAPIError
 
 from app.models.delhivery_modules import BillingInvoice, InvoiceNoteType
+from app.models.pickups import ShipmentType
 from app.models.tenants import ServiceScope, UserRole
+from app.repositories.delhivery_modules import (
+    LOCK_NOT_AVAILABLE_SQLSTATE,
+    DelhiveryModulesRepository,
+    DocumentSeriesBusyError,
+)
 from app.schemas.v1.delhivery_modules import BillingInvoiceCreate, BillingInvoiceRead
 from app.schemas.v1.tenants import SellerCompanyDetailsSubmit, UserSelfUpdate
 from app.services import gst_documents as gd
@@ -26,6 +33,7 @@ from app.services.delhivery_modules import (
     DelhiveryModulesService,
     merchant_kyc_entry,
     render_gst_document,
+    resolve_place_of_supply,
 )
 from app.services.tenants import TenantService
 from app.services.wallet import today_ist
@@ -409,6 +417,97 @@ async def test_debit_and_credit_notes_quote_the_original_invoice():
     assert credit.line_items[0][gd.CHARGE_LINES_KEY][0]["label"] == "Weight dispute accepted"
 
 
+@pytest.mark.parametrize(
+    ("override_state", "note_type", "amount", "taxable", "tax"),
+    [
+        # J64: booked 159.30 (135.00 + 24.30), admin override to 100.00 -> refund 59.30.
+        ((100.0, 15.25, 84.75), InvoiceNoteType.CREDIT_NOTE, 59.30, 50.25, 9.05),
+        # Override up to 200.00 -> debit 40.70.
+        ((200.0, 30.51, 169.49), InvoiceNoteType.DEBIT_NOTE, 40.70, 34.49, 6.21),
+        # BUG-01b (prod S3): booked 47.88, override up to 106.88 -> debit 59.00 (was 42.09 + 16.91).
+        ((106.88, 16.30, 90.58), InvoiceNoteType.DEBIT_NOTE, 59.00, 50.00, 9.00),
+    ],
+)
+@pytest.mark.parametrize("inter_state", [False, True])
+async def test_override_notes_split_at_18_percent(override_state, note_type, amount, taxable, tax, inter_state):
+    """
+    BUG-01: notes for an admin price override back out GST at 18 % (intra-state CGST + SGST,
+    inter-state IGST). The overridden bill's own rate is 15.25 / 84.75 = 17.994 %, which must
+    snap to the 18 % slab instead of moving the taxable value by a paisa.
+    """
+    kyc = {"status": "APPROVED", "gstin": BUYER_GSTIN_MH} if inter_state else None
+    _tenant_obj, _seller, repo, shipment, service = _world(kyc)
+    payment = shipment.payment_details
+    payment.total_logistics_cost, payment.tax_amount = 159.30, 24.30
+    payment.pricing_breakdown = {"subtotal": 135.0}
+    original = await service.record_shipment_billing_note(shipment=shipment)
+    total, tax_amount, subtotal = override_state
+    payment.total_logistics_cost, payment.tax_amount = total, tax_amount
+    payment.pricing_breakdown = {"subtotal": subtotal}
+
+    note = await service.record_shipment_billing_note(
+        shipment=shipment, note_type=note_type.value, amount_override=amount
+    )
+
+    assert note.note_type == note_type.value and note.original_invoice_id == original.id
+    assert (note.total_amount, note.freight_amount) == (amount, taxable)
+    assert round(note.cgst_amount + note.sgst_amount + note.igst_amount, 2) == tax
+    if inter_state:
+        assert (note.cgst_amount, note.sgst_amount, note.igst_amount) == (0.0, 0.0, tax)
+    else:
+        assert note.igst_amount == 0.0 and round(abs(note.cgst_amount - note.sgst_amount), 2) <= 0.01
+    assert note.line_items[0]["tax_rate_percent"] == 18.0
+
+
+class _LockSession:
+    """Fake AsyncSession for `lock_document_series`: records SQL, optionally times out the lock."""
+
+    def __init__(self, lock_error: Optional[Exception] = None):
+        self.lock_error = lock_error
+        self.statements: List[str] = []
+
+    async def exec(self, statement):
+        sql = str(statement)
+        self.statements.append(sql)
+        if "pg_advisory_xact_lock" in sql and self.lock_error is not None:
+            raise self.lock_error
+        return SimpleNamespace(first=lambda: ("0",))
+
+
+def _db_error(sqlstate: str) -> DBAPIError:
+    return DBAPIError("SELECT pg_advisory_xact_lock", {}, SimpleNamespace(sqlstate=sqlstate))
+
+
+async def test_series_lock_waits_at_most_the_timeout_and_restores_it():
+    """BUG-03: the GST series lock is taken under a local lock_timeout, restored in the same round trip."""
+    session = _LockSession()
+    await DelhiveryModulesRepository(session).lock_document_series(uuid.uuid4(), "2627", "INVOICE")
+    set_timeout, lock = session.statements
+    assert "set_config('lock_timeout', :timeout, true)" in set_timeout
+    assert "pg_advisory_xact_lock" in lock and "set_config('lock_timeout', :previous, true)" in lock
+
+
+async def test_series_lock_timeout_becomes_a_retryable_503():
+    """A lock wait that times out (55P03) aborts the request with 503 before anything commits."""
+    tenant, _seller, repo, shipment, _service = _world()
+    session = _LockSession(lock_error=_db_error(LOCK_NOT_AVAILABLE_SQLSTATE))
+    real_repo = DelhiveryModulesRepository(session)
+    with pytest.raises(DocumentSeriesBusyError):
+        await real_repo.lock_document_series(tenant.id, "2627", "INVOICE")
+    service = DelhiveryModulesService(real_repo)
+    with pytest.raises(HTTPException) as exc:
+        await service._allocate_document_number(tenant, InvoiceNoteType.INVOICE.value, today_ist())
+    assert exc.value.status_code == 503
+    assert exc.value.headers == {"Retry-After": "5"}
+    assert "Nothing was charged" in exc.value.detail
+
+
+async def test_other_lock_errors_are_not_masked():
+    session = _LockSession(lock_error=_db_error("40P01"))
+    with pytest.raises(DBAPIError):
+        await DelhiveryModulesRepository(session).lock_document_series(uuid.uuid4(), "2627", "INVOICE")
+
+
 async def test_issued_invoice_pdf_never_changes_after_a_reweigh():
     """C-04: re-downloading the original invoice after a re-price prints the same lines."""
     tenant, _seller, repo, shipment, service = _world()
@@ -687,3 +786,49 @@ def test_settings_lock_invoice_prefix_mid_fy_and_preserve_on_restore():
     assert "pricing_config" not in restored
     assert restored["company"]["invoice_prefix"] == "LTST"
     assert restored["b2b_access_requests"]["u1"]["status"] == "APPROVED"
+
+
+async def test_reverse_dto_uses_delivery_warehouse_for_place_of_supply_and_bill_to_fallback():
+    """BUG-08: on a REVERSE DTO return, the seller/merchant side is the delivery (return-to) address."""
+    tenant, seller, repo, shipment, service = _world()
+    consumer_pickup = _address(tenant.id, "Bangalore", "Karnataka", "560001")
+    seller_warehouse = _address(tenant.id, "Gurgaon", "Haryana", "122001")
+    repo.addresses = {consumer_pickup.id: consumer_pickup, seller_warehouse.id: seller_warehouse}
+    shipment.pickup_address_id = consumer_pickup.id
+    shipment.delivery_address_id = seller_warehouse.id
+    shipment.shipment_type = ShipmentType.REVERSE
+
+    # 1. Unregistered merchant: place of supply is delivery (Haryana 06), so HR->HR is CGST+SGST
+    assert (
+        resolve_place_of_supply(
+            "06",
+            None,
+            "Karnataka",
+            delivery_state="Haryana",
+            shipment_type=ShipmentType.REVERSE,
+        )
+        == "06"
+    )
+    invoice = await service.record_shipment_billing_note(shipment=shipment)
+    credit = await service.record_shipment_billing_note(
+        shipment=shipment,
+        note_type=InvoiceNoteType.CREDIT_NOTE.value,
+        amount_override=BOOKING_TOTAL,
+    )
+    assert invoice.cgst_amount == 7.20 and invoice.sgst_amount == 7.20 and invoice.igst_amount == 0.0
+    assert credit.cgst_amount == 7.20 and credit.sgst_amount == 7.20 and credit.igst_amount == 0.0
+    assert invoice.line_items[0]["place_of_supply"] == "06"
+    assert "Gurgaon" in invoice.line_items[0][gd.BILL_TO_KEY]["address"]
+
+    # 2. Approved merchant GSTIN state still wins over address state
+    assert (
+        resolve_place_of_supply(
+            "06",
+            BUYER_GSTIN_KA,
+            "Karnataka",
+            delivery_state="Haryana",
+            shipment_type=ShipmentType.REVERSE,
+        )
+        == "29"
+    )
+

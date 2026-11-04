@@ -3,6 +3,7 @@
 > **Canonical Specification:** This file (`.agents/AGENTS.md`) is the single source of truth for AI coding agents (Jetski / Gemini, Claude Code, GitHub Copilot, Codex, Cursor) and human engineers working on **Naviera**. Read this document before analyzing the codebase or writing code.
 > - **Root Pointer:** [`../AGENTS.md`](../AGENTS.md)
 > - **Delhivery One Knowledge Base:** [`knowledge/delhivery-one.md`](knowledge/delhivery-one.md)
+> - **Agent Test Catalog & QA Harnesses:** [`knowledge/test-catalog.md`](knowledge/test-catalog.md)
 > - **Repo-Scoped Agent Skills:** [`skills/delhivery-parity/SKILL.md`](skills/delhivery-parity/SKILL.md) · [`skills/golden-run/SKILL.md`](skills/golden-run/SKILL.md) · [`skills/db-migration/SKILL.md`](skills/db-migration/SKILL.md) · [`skills/ui-e2e/SKILL.md`](skills/ui-e2e/SKILL.md) · [`skills/release-deploy/SKILL.md`](skills/release-deploy/SKILL.md)
 > - **Local Workstation Context (Git-Ignored when present):** `.agents/rules/*.md` (workstation/personal rules), `.agents/TASKS.md` (live task tree), `.agents/knowledge_base/delhivery_one/` (local Delhivery help snapshot).
 
@@ -79,9 +80,13 @@ All backend code must strictly respect the 3-tier boundary:
   - **Mandatory Async Eager Loading:** Always use `selectinload(...)` for child relationships to prevent SQLAlchemy async `MissingGreenlet` serialization errors.
   - **Address Snapshotting:** Editing a shipment's address creates a new snapshot `Address` row rather than mutating a saved address book row in place; deleting from the address book uses soft-delete (`is_saved = False`).
 
-### 3.4 Scheduled Jobs (`temporal-hooks.yml` $\rightarrow$ `POST /api/v1/internal/temporal-hooks/run`)
-- **What runs:** `run_temporal_hooks_iteration()` (`backend/scripts/temporal_hooks_worker.py`) runs across all tenants to expire overdue delivery appointments and place parcels with stale (> 72h in-transit, value $\ge$ ₹50,000) e-way bills into `EXCEPTION` (`ON_HOLD`). Every pass is idempotent.
-- **How it is triggered in production (Free Render plan):** GitHub Actions workflow [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) runs every 14 minutes (`*/14 * * * *`, plus manual `workflow_dispatch`) and sends `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) to `$NAVIERA_API_URL` (`https://naviera-backend.onrender.com`) with header `X-Cron-Secret: $CRON_SECRET` (verified via `secrets.compare_digest` against `settings.CRON_SECRET`; returns `403` when unset). Calling the API every 14 minutes also keeps the Free Render `naviera-backend` web service warm inside its 15-minute idle sleep window (750 free hours/month covers one 24/7 web service).
+### 3.4 Scheduled Jobs (Supabase `pg_cron` primary, GitHub Actions backup $\rightarrow$ `POST /api/v1/internal/temporal-hooks/run`)
+- **What runs:** `run_temporal_hooks_iteration()` (`backend/scripts/temporal_hooks_worker.py`) runs across all tenants. (1) An `IN_TRANSIT` / `OUT_FOR_DELIVERY` parcel whose `appointment_end` has passed goes to `EXCEPTION` with `APPOINTMENT_NEEDED`. (2) An `IN_TRANSIT` parcel with goods value $\ge$ ₹50,000 (`EWAY_BILL_MANDATORY_THRESHOLD`) and no update for > 72 h goes to `EXCEPTION` with `EWAY_BILL_MISSING` ("Update e-way bill"). Every hold goes through `ShipmentLifecycleMachine.validate_transition`, and every pass is idempotent.
+- **Endpoint:** `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) with header `X-Cron-Secret` (verified via `secrets.compare_digest` against `settings.CRON_SECRET`; `403` when unset or wrong). Returns `200` with `appointments_held` / `eway_bills_held`, or `500` with `failed_checks` when a check fails. Logs one `temporal_hooks_run appointments_held=N eway_bills_held=M duration_ms=…` line per call.
+- **PRIMARY trigger: Supabase `pg_cron` + `pg_net`.** Job `naviera-temporal-hooks` runs every 14 minutes (`*/14 * * * *`). The URL and secret live in **Supabase Vault** (`naviera_temporal_hooks_url`, `naviera_cron_secret`), never in git or `cron.job`. Created by Alembic revision `f9a0b1c2d3e4`; the job is a no-op until both Vault secrets exist.
+- **BACKUP trigger: GitHub Actions** [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) (`*/14 * * * *` plus manual `workflow_dispatch`, repository secrets `CRON_SECRET` + `NAVIERA_API_URL=https://naviera-backend.onrender.com`). GitHub `schedule` is best-effort and is throttled on this repo, so it cannot be the only trigger. Overlapping calls are safe.
+- **Keep-warm:** a call every 14 minutes also keeps the Free Render `naviera-backend` web service inside its 15-minute idle sleep window (750 free hours/month covers one 24/7 web service).
+- **Where to see runs:** Supabase → **Integrations → Cron → job runs**; `net._http_response` (HTTP status/body, ~6 h); Render Logs, filter `temporal_hooks_run`; Logfire. See [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md) §1.5.
 
 ---
 
@@ -171,7 +176,7 @@ All backend code must strictly respect the 3-tier boundary:
 | **2. Smoke (`--smoke`)** | `bash backend/scripts/run_golden.sh --smoke` | Resets `logismart-test`, runs `SMOKE_API_SUITES` (B2C lifecycle, B2B lifecycle, pricing matrix) + `SMOKE_UI_SUITES` + `golden_checks.py` invariants + live-count guard (~3–4 min). |
 | **3. Full (Default)** | `bash backend/scripts/run_golden.sh` | Runs static + all pure/DB unit suites + all 8 `golden_journeys/` API suites + all headless Chrome `ui_golden/` suites + `golden_checks.py` (~10–12 min). |
 
-See [`skills/golden-run/SKILL.md`](skills/golden-run/SKILL.md) and [`skills/ui-e2e/SKILL.md`](skills/ui-e2e/SKILL.md) for detailed test execution playbooks.
+See [`knowledge/test-catalog.md`](knowledge/test-catalog.md) (module-to-test decision matrix, 31-screen × 9-persona flow registry, reusable `backend/scripts/qa/` harnesses, and bug-to-regression-test ledger), [`skills/golden-run/SKILL.md`](skills/golden-run/SKILL.md), and [`skills/ui-e2e/SKILL.md`](skills/ui-e2e/SKILL.md) for detailed test execution playbooks.
 
 ---
 

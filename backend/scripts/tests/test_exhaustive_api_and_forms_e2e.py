@@ -497,11 +497,16 @@ async def test_03_rate_calculator_b2c_and_b2b_math() -> None:
     customer_token = _mint_supabase_jwt(
         customer_identity["sub"], customer_identity["email"]
     )
+    b2b_customer = (await load_accounts())[CUSTOMER_B2B_EMAIL]
+    b2b_customer_token = _mint_supabase_jwt(b2b_customer["sub"], b2b_customer["email"])
 
     async with _e2e_client() as client:
         for slug in TENANT_SLUGS:
             for token in (admin_token, customer_token):
                 headers = _build_headers(slug, token)
+                b2b_headers = _build_headers(
+                    slug, b2b_customer_token if token == customer_token else admin_token
+                )
 
                 # Retired endpoints must 404
                 res_retired = await client.post(
@@ -588,9 +593,27 @@ async def test_03_rate_calculator_b2c_and_b2b_math() -> None:
                         "box_count": 3,
                     }
                 ]
+                if token == customer_token:
+                    res_b2c_on_b2b = await client.post(
+                        "/api/v1/quotes",
+                        headers=headers,
+                        json={
+                            "service_flow": "B2B",
+                            "pickup_pincode": "122001",
+                            "delivery_pincode": "400001",
+                            "shipment_type": "FORWARD",
+                            "packages": b2b_packages,
+                            "is_cod": False,
+                            "cod_amount": 0.0,
+                            "shipment_value": 75000.0,
+                            "door_delivery": False,
+                        },
+                    )
+                    assert res_b2c_on_b2b.status_code == 403, res_b2c_on_b2b.text
+
                 res_b2b_godown = await client.post(
                     "/api/v1/quotes",
-                    headers=headers,
+                    headers=b2b_headers,
                     json={
                         "service_flow": "B2B",
                         "pickup_pincode": "122001",
@@ -615,7 +638,7 @@ async def test_03_rate_calculator_b2c_and_b2b_math() -> None:
 
                 res_b2b_door = await client.post(
                     "/api/v1/quotes",
-                    headers=headers,
+                    headers=b2b_headers,
                     json={
                         "service_flow": "B2B",
                         "pickup_pincode": "122001",

@@ -7,6 +7,8 @@ description: Runs Naviera's 3-mode verification suite (--quick static+unit, --sm
 
 Use this skill whenever you need to verify backend or frontend code changes, run static compliance audits (`npm run test:audit`), execute pure unit tests, or run the golden API + UI regression suite on `logismart-test`.
 
+> **Agent Test Catalog ("Changed X → Rerun Y"):** Consult [`../../knowledge/test-catalog.md`](../../knowledge/test-catalog.md) for the module-to-test lookup table, the complete 31-screen × 9-persona flow coverage registry (`J01–J69`), reusable `backend/scripts/qa/` harnesses, and the bug-to-regression-test history.
+
 ## 1. Safety Rules (Mandatory)
 
 1. **`logismart-test` Only:** Every DB-touching test, seed, and reset is hard-locked to `GOLDEN_TENANT_SLUG=logismart-test` (`ALLOWED_TEST_SLUGS` in `backend/scripts/tenant_data_core.py`). Never point tests at live `logismart` or `naviera`.

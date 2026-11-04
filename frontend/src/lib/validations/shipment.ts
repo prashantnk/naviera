@@ -328,6 +328,49 @@ export type ShipmentFormValues = Omit<ForwardShipmentFormValues, "shipment_type"
   qc_notes?: string;
 };
 
+/**
+ * True when a stored reverse booking draft contains user-entered data rather than
+ * untouched mount defaults (BUG-10: prevents a false "Recovered your unsaved reverse
+ * booking draft." toast on first visit to `/shipments/new/reverse`).
+ *
+ * @param vals - Stored draft form values.
+ * @returns Whether the draft has non-default user input worth restoring.
+ */
+export function hasMeaningfulReverseDraft(
+  vals: Partial<ReverseShipmentFormValues> | null | undefined,
+): boolean {
+  if (!vals || typeof vals !== "object") return false;
+  if (
+    Boolean(vals.order_reference_id?.trim()) ||
+    Boolean(vals.reason_for_return?.trim()) ||
+    Boolean(vals.product_category) ||
+    Boolean(vals.other_category_description?.trim()) ||
+    Boolean(vals.qc_notes?.trim()) ||
+    Boolean(vals.pickup_address_id?.trim()) ||
+    Boolean(vals.delivery_address_id?.trim()) ||
+    Boolean(vals.new_pickup_address?.name?.trim() || vals.new_pickup_address?.pincode?.trim()) ||
+    Boolean(vals.new_delivery_address?.name?.trim() || vals.new_delivery_address?.pincode?.trim()) ||
+    Number(vals.payment_details?.shipment_value || 0) > 0 ||
+    (vals.documents?.length || 0) > 0
+  ) {
+    return true;
+  }
+  const pkgs = vals.packages;
+  if (!Array.isArray(pkgs) || pkgs.length === 0) return false;
+  if (pkgs.length > 1) return true;
+  const first = pkgs[0];
+  if (!first || typeof first !== "object") return false;
+  return (
+    Boolean(first.description?.trim()) ||
+    Boolean(first.is_fragile) ||
+    Number(first.box_count || 1) !== 1 ||
+    Number(first.weight ?? 0.5) !== 0.5 ||
+    Number(first.length ?? 10) !== 10 ||
+    Number(first.breadth ?? 10) !== 10 ||
+    Number(first.height ?? 10) !== 10
+  );
+}
+
 /** Delhivery B2B allows up to 5 PO numbers on one LR, entered comma-separated. */
 export const MAX_PO_NUMBERS = 5;
 

@@ -1,12 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   companyPatchFromValues,
   companyValuesFromSettings,
   storedInvoicePrefix,
 } from "./company-profile";
-import { sectionLabel } from "./settings-history-drawer";
+import {
+  revalidateTenantSettingsCache,
+  sectionLabel,
+} from "./settings-history-drawer";
 import { sectionForErrors } from "./settings-sections";
+
+vi.mock("@/lib/supabase", () => ({
+  getSupabaseClient: () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: { access_token: "test-jwt-token" } },
+      }),
+    },
+  }),
+}));
 
 describe("sectionForErrors", () => {
   it("opens the section holding the first invalid field", () => {
@@ -104,5 +117,26 @@ describe("settings history section labels", () => {
     expect(sectionLabel("pricing_policy")).toBe("Pricing");
     expect(sectionLabel("user_roles")).toBe("User role change");
     expect(sectionLabel("something_new")).toBe("something_new");
+  });
+
+  it("revalidates the Next.js tenant settings cache tag on save or restore", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ revalidated: true })));
+
+    await revalidateTenantSettingsCache("logismart-test");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      ["", "api", "revalidate"].join("/"),
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-jwt-token",
+        },
+        body: JSON.stringify({ key: "logismart-test" }),
+      }),
+    );
+    fetchSpy.mockRestore();
   });
 });

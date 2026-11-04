@@ -16,7 +16,10 @@ import {
   SECTION_LABELS as SECTION_TITLES,
   type SettingsSectionId as SectionId,
 } from "@/components/settings/settings-sections";
-import { SettingsHistoryDialog } from "@/components/settings/settings-history-drawer";
+import {
+  revalidateTenantSettingsCache,
+  SettingsHistoryDialog,
+} from "@/components/settings/settings-history-drawer";
 import {
   ChipListInput,
   OrderedTextListEditor,
@@ -53,7 +56,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeServiceIconKey } from "@/lib/icon-registry";
-import { getSupabaseClient } from "@/lib/supabase";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import {
   EscalationLevel,
@@ -593,22 +595,7 @@ export default function SettingsPage() {
         tenantSlug,
       );
 
-      try {
-        const {
-          data: { session },
-        } = await getSupabaseClient(tenantSlug).auth.getSession();
-        const revalidateUrl = ["", "api", "revalidate"].join("/");
-        await fetch(revalidateUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
-          },
-          body: JSON.stringify({ key: tenantSlug }),
-        });
-      } catch {
-        // Non-blocking cache revalidation
-      }
+      await revalidateTenantSettingsCache(tenantSlug);
 
       window.dispatchEvent(new CustomEvent("wallet-updated"));
       setLastSavedValues(data);

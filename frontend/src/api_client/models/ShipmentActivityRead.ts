@@ -9,7 +9,7 @@ import type { ActivityType } from './ActivityType';
 export type ShipmentActivityRead = {
     id: string;
     timestamp: string;
-    user_id: string;
+    user_id?: (string | null);
     activity_type: ActivityType;
     summary?: (string | null);
     comment?: (string | null);

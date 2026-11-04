@@ -869,7 +869,15 @@ async def test_refund_all_refunds_net_debited_with_one_credit_note():
     assert repo.txns[-1].txn_type == WalletTxnType.REFUND and repo.txns[-1].amount == 180.0
     assert FakeNotes.issued == [{"note_type": "CREDIT_NOTE", "amount": 180.0, "id": result.billing_invoice_id}]
     assert repo.adjustments[0].new_total == Decimal("0.00")
-    assert shipment.payment_details.total_logistics_cost == 159.30
+    assert shipment.payment_details.total_logistics_cost == 0.0
+    assert shipment.payment_details.base_freight == 0.0
+    assert shipment.payment_details.tax_amount == 0.0
+
+    # Non-terminal LOST preserves booked price columns so LOST_FOUND can re-bill if found
+    lost_ship = make_shipment([box(20, 15, 10, 2.0)])
+    lost_repo = FakeRepo(txns=[txn(WalletTxnType.SPEND, 159.30)])
+    await service(lost_repo).refund_all(lost_ship, TENANT, ChargeAdjustmentReason.LOST, ADMIN)
+    assert lost_ship.payment_details.total_logistics_cost == 159.30
 
 
 async def test_refund_all_with_nothing_paid_moves_no_money():

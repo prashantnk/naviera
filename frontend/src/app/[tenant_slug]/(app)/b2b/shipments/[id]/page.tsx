@@ -29,6 +29,7 @@ import { splitPoNumbers } from "@/lib/validations/shipment";
 import { canOpenShipmentEdit } from "@/components/shipments/edit-access";
 import { getShipmentStatusBadgeClass } from "@/components/shipments/shipment-stage";
 import { getShipmentStatusLabel } from "@/components/pickups/status-display";
+import { todayApiDate } from "@/components/pickups/pickup-constants";
 import {
   ShipmentPodActions,
   ShipmentPodBanner,
@@ -792,7 +793,7 @@ export default function B2BShipmentDetailsPage() {
                           className="min-w-0 w-full bg-white border-slate-200 shadow-sm text-xs font-semibold h-10"
                           value={selectedDate}
                           onChange={(e) => setSelectedDate(e.target.value)}
-                          min={new Date().toISOString().split("T")[0]}
+                          min={todayApiDate()}
                         />
                       </div>
 

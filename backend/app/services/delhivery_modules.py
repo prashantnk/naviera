@@ -49,10 +49,14 @@ from app.models.pickups import (
     PaymentDetails,
     PickupRequest,
     PickupStatus,
+    ShipmentType,
     WeightUnit,
 )
 from app.models.tenants import Tenant, User, UserRole
-from app.repositories.delhivery_modules import DelhiveryModulesRepository
+from app.repositories.delhivery_modules import (
+    DelhiveryModulesRepository,
+    DocumentSeriesBusyError,
+)
 from app.repositories.shipments import is_b2b_shipment
 from app.repositories.wallet import WalletRepository
 from app.schemas.v1.delhivery_modules import (
@@ -120,6 +124,10 @@ SEPARATE_CHARGE_LINE_FLAG = "separate_charge"
 MANUAL_DOCUMENT_MISSING_VALUE = "NOT PROVIDED"
 GRAMS_PER_KG = 1000.0
 INVOICE_DUE_DAYS = 15
+DOCUMENT_SERIES_BUSY_DETAIL = (
+    "Billing is busy issuing another GST document. Nothing was charged; please try again in a moment."
+)
+DOCUMENT_SERIES_BUSY_RETRY_AFTER_S = "5"
 PERCENT = 100.0
 
 # --- GST documents ----------------------------------------------------------
@@ -352,16 +360,23 @@ def resolve_place_of_supply(
     supplier_state_code: Optional[str],
     buyer_gstin: Optional[str],
     pickup_state: Optional[str],
+    delivery_state: Optional[str] = None,
+    shipment_type: Optional[Union[ShipmentType, str]] = None,
 ) -> Optional[str]:
     """
     Place of supply for a courier / goods-transport service (IGST Act s.12(8)):
     1. registered recipient: the state code of the merchant's GSTIN;
-    2. otherwise the state where the goods are handed over (shipment pickup address);
+    2. otherwise the merchant's shipment side: `delivery_state` (return-to warehouse)
+       on a `REVERSE` DTO shipment, or `pickup_state` on a `FORWARD` shipment;
     3. otherwise (no shipment, e.g. a manual invoice) the supplier's own state.
     """
+    is_reverse = shipment_type == ShipmentType.REVERSE
+    merchant_state = (
+        delivery_state if is_reverse and delivery_state is not None else pickup_state
+    )
     return (
         gst_state_code_from_gstin(buyer_gstin)
-        or gst_state_code_from_state(pickup_state)
+        or gst_state_code_from_state(merchant_state)
         or supplier_state_code
     )
 
@@ -406,7 +421,11 @@ def tenant_gst_rate(tenant: Optional[Tenant]) -> float:
 
 
 def shipment_effective_gst_rate(payment: Optional[PaymentDetails]) -> Optional[float]:
-    """GST rate the pricing engine actually applied to the shipment (tax / taxable subtotal)."""
+    """
+    GST rate the pricing engine actually applied to the shipment (tax / taxable subtotal),
+    snapped to its GST slab. Paise rounding (15.25 / 84.75 = 17.994 %) must not shift
+    the taxable value of a credit / debit note by a paisa (BUG-01).
+    """
     if payment is None or float(payment.tax_amount or 0.0) <= 0:
         return None
     breakdown = payment.pricing_breakdown or {}
@@ -414,7 +433,9 @@ def shipment_effective_gst_rate(payment: Optional[PaymentDetails]) -> Optional[f
     subtotal = float(
         breakdown.get("subtotal") or (float(payment.total_logistics_cost or 0.0) - tax)
     )
-    return tax / subtotal if subtotal > 0 else None
+    if subtotal <= 0:
+        return None
+    return nominal_gst_rate_percent(tax / subtotal * PERCENT) / PERCENT
 
 
 def tenant_document_prefix(tenant: Tenant) -> str:
@@ -891,18 +912,35 @@ class DelhiveryModulesService:
         """
         financial_year = indian_financial_year_label(document_date)
         number_prefix = document_number_prefix(tenant, financial_year, note_type)
-        serial = await self.repo.allocate_document_sequence(
-            tenant_id=tenant.id,
-            financial_year=financial_year,
-            note_type=note_type,
-            number_prefix=number_prefix,
-        )
+        try:
+            serial = await self.repo.allocate_document_sequence(
+                tenant_id=tenant.id,
+                financial_year=financial_year,
+                note_type=note_type,
+                number_prefix=number_prefix,
+            )
+        except DocumentSeriesBusyError as exc:
+            raise self._series_busy() from exc
         return format_document_number(number_prefix, serial)
+
+    @staticmethod
+    def _series_busy() -> HTTPException:
+        """503 for a GST series lock wait that timed out (BUG-03): the whole request rolls back."""
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=DOCUMENT_SERIES_BUSY_DETAIL,
+            headers={"Retry-After": DOCUMENT_SERIES_BUSY_RETRY_AFTER_S},
+        )
 
     async def _shipment_pickup_address(self, shipment: PickupRequest) -> Optional[Address]:
         """The shipment's pickup address snapshot, only when it belongs to the same tenant."""
         pickup = await self.repo.get_address(shipment.pickup_address_id)
         return pickup if pickup is not None and pickup.tenant_id == shipment.tenant_id else None
+
+    async def _shipment_delivery_address(self, shipment: PickupRequest) -> Optional[Address]:
+        """The shipment's delivery address snapshot, only when it belongs to the same tenant."""
+        delivery = await self.repo.get_address(shipment.delivery_address_id)
+        return delivery if delivery is not None and delivery.tenant_id == shipment.tenant_id else None
 
     @staticmethod
     def _configured_rate_percent(tenant: Tenant, payment: Optional[PaymentDetails]) -> float:
@@ -1209,12 +1247,14 @@ class DelhiveryModulesService:
         return [ChargeLine(description or default_label, taxable_value)]
 
     async def _shipment_detail_snapshot(
-        self, shipment: PickupRequest, pickup: Optional[Address]
+        self,
+        shipment: PickupRequest,
+        pickup: Optional[Address],
+        delivery: Optional[Address] = None,
     ) -> Dict[str, Any]:
         """AWB, references, chargeable weight and origin / destination city frozen at issue."""
-        delivery = await self.repo.get_address(shipment.delivery_address_id)
-        if delivery is not None and delivery.tenant_id != shipment.tenant_id:
-            delivery = None
+        if delivery is None:
+            delivery = await self._shipment_delivery_address(shipment)
         payment = shipment.payment_details
         return {
             "shipment_id": str(shipment.id),
@@ -1268,7 +1308,16 @@ class DelhiveryModulesService:
         tenant = await self._require_tenant(shipment.tenant_id)
         supplier = resolve_supplier_gst_profile(tenant)
         pickup = await self._shipment_pickup_address(shipment)
-        bill_to = await self._bill_to_party(tenant, shipment.created_by_user_id, supplier, pickup)
+        delivery = await self._shipment_delivery_address(shipment)
+        shipment_type = getattr(shipment, "shipment_type", None)
+        seller_address = (
+            delivery
+            if shipment_type == ShipmentType.REVERSE and delivery is not None
+            else pickup
+        )
+        bill_to = await self._bill_to_party(
+            tenant, shipment.created_by_user_id, supplier, seller_address
+        )
         inv_date = today_ist()
         section_34_expired = self._is_section_34_expired(normalized_note, original, inv_date)
         breakdown = split_gst(
@@ -1280,7 +1329,11 @@ class DelhiveryModulesService:
             ),
             supplier_state_code=supplier.state_code,
             place_of_supply=resolve_place_of_supply(
-                supplier.state_code, bill_to.gstin, pickup.state if pickup is not None else None
+                supplier.state_code,
+                bill_to.gstin,
+                pickup.state if pickup is not None else None,
+                delivery_state=delivery.state if delivery is not None else None,
+                shipment_type=shipment_type,
             ),
         )
         svc_type = B2B_PTL_SERVICE_TYPE if is_b2b else InvoiceServiceType.DOMESTIC.value
@@ -1298,7 +1351,7 @@ class DelhiveryModulesService:
                 is_separate_charge,
             ),
         )
-        line.update(await self._shipment_detail_snapshot(shipment, pickup))
+        line.update(await self._shipment_detail_snapshot(shipment, pickup, delivery))
         line["service_type"] = svc_type
         if original is not None:
             line.update(
@@ -1355,11 +1408,14 @@ class DelhiveryModulesService:
         )
         if existing is not None:
             return existing
-        await self.repo.lock_document_series(
-            tenant.id,
-            indian_financial_year_label(today_ist()),
-            InvoiceNoteType.INVOICE.value,
-        )
+        try:
+            await self.repo.lock_document_series(
+                tenant.id,
+                indian_financial_year_label(today_ist()),
+                InvoiceNoteType.INVOICE.value,
+            )
+        except DocumentSeriesBusyError as exc:
+            raise self._series_busy() from exc
         existing = await self.repo.get_shipment_billing_document(
             tenant.id, shipment.id, InvoiceNoteType.INVOICE.value
         )

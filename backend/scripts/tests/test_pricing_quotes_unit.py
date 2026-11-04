@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 import pytest
 from fastapi import HTTPException
 
+from app.core.permissions import assert_service_scope
 from app.models.manifests import ServiceFlow
 from app.models.pickups import (
     DimensionUnit,
@@ -25,8 +26,9 @@ from app.models.pickups import (
     ShipmentType,
     WeightUnit,
 )
+from app.models.tenants import ServiceScope, UserRole
 from app.schemas.v1.pickups import PackageCreate
-from app.schemas.v1.pricing import PricingPolicy
+from app.schemas.v1.pricing import PricingPolicy, QuoteRequest
 from app.services import mvp_scope
 from app.services.pricing import delhivery as delhivery_module
 from app.services.pricing import fake_delhivery, weights
@@ -39,6 +41,7 @@ from app.services.pricing.delhivery import (
 )
 from app.services.pricing.policy import policy_of
 from app.services.pricing.quote_service import (
+    QuoteService,
     SellInputs,
     assert_mvp_scope,
     assert_weight_limits,
@@ -336,3 +339,48 @@ def test_mvp_scope_switches(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_utc_helpers_are_naive() -> None:
     assert delhivery_module._utc_now_naive().tzinfo is None
     assert datetime.now(timezone.utc).tzinfo is not None
+
+
+# --- BUG-02: POST /quotes follows the same service-scope rule as booking ---------------
+
+
+def _quote_request(flow: ServiceFlow) -> QuoteRequest:
+    return QuoteRequest(
+        service_flow=flow, pickup_pincode="122001", delivery_pincode="400001", packages=[_box(5.0)]
+    )
+
+
+def _actor(role: UserRole, scope: Optional[ServiceScope]) -> SimpleNamespace:
+    return SimpleNamespace(id=uuid.uuid4(), role=role, service_scope=scope)
+
+
+@pytest.mark.parametrize(
+    ("scope", "flow", "detail"),
+    [
+        (ServiceScope.B2C, ServiceFlow.B2B, "enabled for B2C parcels only"),
+        (None, ServiceFlow.B2B, "enabled for B2C parcels only"),  # unset scope means B2C
+        (ServiceScope.B2B, ServiceFlow.B2C, "enabled for B2B cargo only"),
+    ],
+)
+async def test_quotes_outside_the_customer_scope_are_refused_before_pricing(scope, flow, detail):
+    session = SimpleNamespace()  # any DB / carrier access would raise AttributeError
+    with pytest.raises(HTTPException) as exc:
+        await QuoteService(session).quote_options(
+            TEST_TENANT, _quote_request(flow), _actor(UserRole.customer, scope)
+        )
+    assert exc.value.status_code == 403
+    assert detail in exc.value.detail
+
+
+@pytest.mark.parametrize(
+    ("role", "scope", "flow"),
+    [
+        (UserRole.customer, ServiceScope.BOTH, ServiceFlow.B2B),
+        (UserRole.customer, ServiceScope.B2B, ServiceFlow.B2B),
+        (UserRole.customer, ServiceScope.B2C, ServiceFlow.B2C),
+        (UserRole.operations_user, ServiceScope.B2C, ServiceFlow.B2B),  # staff are exempt
+        (UserRole.admin, None, ServiceFlow.B2B),
+    ],
+)
+def test_service_scope_allows_in_scope_customers_and_staff(role, scope, flow):
+    assert_service_scope(_actor(role, scope), flow == ServiceFlow.B2B)

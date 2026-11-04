@@ -1,10 +1,11 @@
 import logging
 import math
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from app.core.dependencies import get_current_active_user, get_tenant_from_header
 from app.core.idempotency import IdempotencyContext, require_idempotency
@@ -74,13 +75,44 @@ IDEMPOTENCY_MEASUREMENTS = "shipments.measurements"
 IDEMPOTENCY_ADMIN_CHARGE = "shipments.admin_charge"
 
 
+TERMINAL_REFUNDED_STATUSES = frozenset(
+    {
+        PickupStatus.CANCELLED,
+        PickupStatus.QC_FAILED,
+        PickupStatus.REJECTED_AT_PICKUP,
+    }
+)
+
+
 def _serialize_shipment(shipment: PickupRequest, user: User) -> PickupRead:
     """Serializes a shipment to `PickupRead`, exposing `transporter_name` only to tenant staff."""
     ShipmentService._attach_staff_transporter(shipment, user)
     body = PickupRead.model_validate(shipment)
     if not is_tenant_staff(user):
         body.transporter_name = None
+    if body.status in TERMINAL_REFUNDED_STATUSES and body.payment_details is not None:
+        body.payment_details.base_freight = 0.0
+        body.payment_details.tax_amount = 0.0
+        body.payment_details.total_logistics_cost = 0.0
+        body.payment_details.freight_collectible = 0.0
     return body
+
+
+def _serialize_shipment_list(
+    items: Sequence[PickupRequest], user: User
+) -> List[PickupRead]:
+    """Serializes shipment rows for list views, logging and skipping any corrupt row so one bad row cannot 500 the page."""
+    parsed: List[PickupRead] = []
+    for item in items:
+        try:
+            parsed.append(_serialize_shipment(item, user))
+        except ValidationError:
+            logger.exception(
+                "Skipping shipment %s (%s) in list response due to schema validation error",
+                getattr(item, "id", None),
+                getattr(item, "tracking_id", None),
+            )
+    return parsed
 
 
 def _to_measurement_input(payload: MeasurementCreate) -> MeasurementInput:
@@ -233,7 +265,7 @@ async def list_shipments(
     # Calculate total pages
     total_pages = math.ceil(total / size) if size > 0 else 0
 
-    parsed_items = [_serialize_shipment(item, current_user) for item in items]
+    parsed_items = _serialize_shipment_list(items, current_user)
 
     return PaginatedResponse(
         items=parsed_items, total=total, page=page, size=size, pages=total_pages
