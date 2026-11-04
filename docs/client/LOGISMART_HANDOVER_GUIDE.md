@@ -735,7 +735,7 @@ What the customer (or staff) can do, by reason:
 |---|---|
 | Consignee refused / unavailable / rescheduled | Reattempt, Update consignee (B2C), Return to origin |
 | Damaged | Reattempt or Return to origin (B2C); Return to origin or Repack & deliver (B2B) |
-| E-way bill missing | Update e-way bill (12 digits) |
+| E-way bill missing (also raised automatically, see §7.12) | Update e-way bill (12 digits) |
 | Consignee details required | Update consignee (same pincode only) |
 | Payment dispute | Update payment mode |
 | Document needed | Upload document |
@@ -759,7 +759,12 @@ What the customer (or staff) can do, by reason:
 
 **Manage Appointments** (`/b2b/appointments`), tabs **Pending / At risk / Booked**. **Book appointment** (or **Reschedule**) asks for PO number (up to 5 comma-separated POs), PO expiry date (`must be on or after the appointment date`), appointment date and slot. Select several LRs for **Create bulk appointment**. Booking an appointment releases an "Appointment needed" hold.
 
-If the background worker is running, a shipment whose appointment window has passed goes back to **Exception – Appointment needed**, and an in-transit LR with an e-way bill and no update for 7 days goes to **Document needed**.
+An automatic check runs every 14 minutes and puts two kinds of shipment on hold:
+
+- **Appointment needed:** an In transit or Out for delivery shipment whose booked appointment slot has ended. Fix it with **Book appointment** (the new slot must end in the future) or **Deliver without appointment**.
+- **E-way bill missing:** an In transit shipment with goods value of ₹50,000 or more that has had no update for more than 72 hours, because its e-way bill has most likely expired. Fix it with **Update e-way bill**.
+
+The customer sees the hold and the reason on the order timeline.
 
 > **On Delhivery One:** B2B Appointments ([b2b-appointments](https://help.delhivery.com/docs/b2b-appointments)).
 

@@ -101,6 +101,12 @@ describe("CompanyDetailsSection", () => {
         gstin: "29AAGCB7383J1Z4",
       },
     });
+    // BUG-09: immediately switches to locked view without requiring a page reload
+    await waitFor(() =>
+      expect(screen.getByTestId("profile.company-details.view")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("profile.company-details.form")).not.toBeInTheDocument();
+    expect(screen.getByTestId("profile.company-details.gstin")).toHaveTextContent("29AAGCB7383J1Z4");
   });
 
   it("shows locked details read-only with a support-ticket link", () => {

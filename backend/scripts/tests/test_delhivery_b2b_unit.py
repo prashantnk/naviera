@@ -660,7 +660,7 @@ async def test_quote_options_b2b_cards(offline_b2b: _MemoryCache, no_prime_lane:
         shipment_tax_value=10000,
         is_carriers_risk=True,
     )
-    response = await QuoteService(AsyncMock()).quote_options(TEST_TENANT, request)
+    response = await QuoteService(AsyncMock()).quote_options(TEST_TENANT, request, None)
     cards = {card.service_option: card for card in response.options}
     assert set(cards) == {ServiceOption.PRIME_SURFACE, B2B}
     assert cards[ServiceOption.PRIME_SURFACE].serviceable is False

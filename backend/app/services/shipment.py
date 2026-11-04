@@ -17,6 +17,7 @@ from app.core.money import ZERO_MONEY, money_to_float, to_money
 from app.core.permissions import (
     assert_can_manage_shipments_or_pickups,
     assert_not_read_only,
+    assert_service_scope,
     is_tenant_admin,
     is_tenant_staff,
 )
@@ -40,7 +41,7 @@ from app.models.pickups import (
     ShipmentType,
 )
 from app.models.repricing import ChargeAdjustmentReason, MeasurementSource
-from app.models.tenants import ServiceScope, Tenant, User, UserRole
+from app.models.tenants import Tenant, User, UserRole
 from app.repositories.delhivery_modules import DelhiveryModulesRepository
 from app.repositories.manifests import ManifestRepository
 from app.repositories.shipments import ShipmentRepository
@@ -168,6 +169,29 @@ RTO_FREIGHT_REMARK_TEMPLATE = "RTO freight deducted for {tracking_id}"
 def _utc_now_naive() -> datetime:
     """Current UTC time as a naive datetime (TIMESTAMP WITHOUT TIME ZONE columns)."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def ensure_appointment_slot_not_ended(end: datetime, now: Optional[datetime] = None) -> None:
+    """
+    Refuse a delivery appointment slot that has already ended (X1).
+
+    The temporal-hooks worker holds IN_TRANSIT / OFD parcels whose `appointment_end` has
+    passed, so accepting an ended slot would release the hold only for the next run to put
+    it straight back. A naive timestamp is read as UTC, like the TIMESTAMPTZ column does.
+
+    Args:
+        end: Requested slot end.
+        now: Current time (aware UTC); defaults to the wall clock. Injected by tests.
+
+    Raises:
+        HTTPException: 400 when `end` is not in the future.
+    """
+    end_utc = end if end.tzinfo is not None else end.replace(tzinfo=timezone.utc)
+    if end_utc <= (now or datetime.now(timezone.utc)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This appointment slot has already ended. Pick a slot that ends in the future.",
+        )
 
 
 class ShipmentService:
@@ -631,7 +655,7 @@ class ShipmentService:
             delivery_pincode=delivery_pincode,
         )
         is_b2b_order = booking_price.flow == ServiceFlow.B2B
-        self._assert_service_scope(actor, is_b2b_order)
+        assert_service_scope(actor, is_b2b_order)
         self._assert_eway_bill_on_booking(payload)
         payment_model = self._booking_payment_model(
             payload, booking_price, booked_by_staff=actor is None or is_tenant_staff(actor)
@@ -1575,31 +1599,6 @@ class ShipmentService:
             )
 
     @staticmethod
-    def _assert_service_scope(actor: Optional[User], is_b2b: bool) -> None:
-        """
-        Customers may only book in the flow(s) their `service_scope` allows
-        (B2C-only can't book B2B cargo and vice versa). Tenant staff are exempt.
-
-        Raises:
-            HTTPException(403): booking outside the customer's scope.
-        """
-        if actor is None or is_tenant_staff(actor):
-            return
-        scope = actor.service_scope or ServiceScope.B2C
-        if scope == ServiceScope.BOTH:
-            return
-        if is_b2b and scope != ServiceScope.B2B:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is enabled for B2C parcels only; B2B cargo bookings are not allowed.",
-            )
-        if not is_b2b and scope != ServiceScope.B2C:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is enabled for B2B cargo only; B2C parcel bookings are not allowed.",
-            )
-
-    @staticmethod
     def assert_label_available(shipment: PickupRequest) -> None:
         """Shipping labels are never printed for cancelled shipments (400)."""
         if shipment.status == PickupStatus.CANCELLED:
@@ -2228,6 +2227,8 @@ class ShipmentService:
                     "Exceptions; booking an appointment only clears APPOINTMENT_NEEDED."
                 ),
             )
+        if payload.appointment_end is not None:
+            ensure_appointment_slot_not_ended(payload.appointment_end)
 
         diff: Dict[str, Any] = {}
         for k, v in payload.model_dump(exclude_unset=True).items():
@@ -2553,8 +2554,17 @@ class ShipmentService:
                 "Created At (UTC)",
             ]
         )
+        refunded_statuses = {
+            PickupStatus.CANCELLED,
+            PickupStatus.QC_FAILED,
+            PickupStatus.REJECTED_AT_PICKUP,
+        }
         for s in items:
             pd = s.payment_details
+            is_refunded = s.status in refunded_statuses
+            base_freight = 0.0 if is_refunded else (pd.base_freight if pd else 0.0)
+            tax_amount = 0.0 if is_refunded else (pd.tax_amount if pd else 0.0)
+            total_cost = 0.0 if is_refunded else (pd.total_logistics_cost if pd else 0.0)
             writer.writerow(
                 [
                     str(s.id),
@@ -2565,9 +2575,9 @@ class ShipmentService:
                     s.pickup_address.city if s.pickup_address else "",
                     s.delivery_address.city if s.delivery_address else "",
                     f"{(pd.chargeable_weight if pd else 0.0):.2f}",
-                    f"{(pd.base_freight if pd else 0.0):.2f}",
-                    f"{(pd.tax_amount if pd else 0.0):.2f}",
-                    f"{(pd.total_logistics_cost if pd else 0.0):.2f}",
+                    f"{base_freight:.2f}",
+                    f"{tax_amount:.2f}",
+                    f"{total_cost:.2f}",
                     s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 ]
             )

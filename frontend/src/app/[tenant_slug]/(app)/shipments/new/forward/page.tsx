@@ -175,6 +175,7 @@ export default function ForwardBookingSandbox() {
     if (handoff.height) form.setValue("packages.0.height", handoff.height, opts);
     if (handoff.weightKg) form.setValue("packages.0.weight", handoff.weightKg, opts);
     if (handoff.boxCount) form.setValue("packages.0.box_count", handoff.boxCount, opts);
+    if (handoff.description) form.setValue("packages.0.description", handoff.description, opts);
     if (handoff.shipmentValue) form.setValue("payment_details.shipment_value", handoff.shipmentValue, opts);
     if (handoff.isCod) {
       form.setValue("payment_details.is_cod", true, opts);

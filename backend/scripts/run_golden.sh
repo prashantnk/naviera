@@ -78,6 +78,7 @@ FULL_API_SUITES=(
   scripts/tests/golden_journeys/test_suite_10_crosscut.py
   scripts/tests/golden_journeys/test_suite_11_lifecycle.py
   scripts/tests/golden_journeys/test_suite_13_notes_lite.py
+  scripts/tests/golden_journeys/test_suite_14_phase1_gaps.py
 )
 SMOKE_API_SUITES=(  # the money suites: independent of the state files of suites 1-8
   scripts/tests/golden_journeys/test_suite_9_repricing.py
@@ -118,6 +119,7 @@ PURE_UNIT_SUITES=(  # no app, no DB connection (conftest skips the DB for pure m
   scripts/tests/test_pickup_read_ops_fields.py
   scripts/tests/test_ndr_stage_rules.py
   scripts/tests/test_exceptions_consignee_unit.py
+  scripts/tests/test_appointment_slot_guard_unit.py
   scripts/tests/test_platform_guards_unit.py
   scripts/tests/test_settings_history_rules_unit.py
   scripts/tests/test_team_admin_edits_unit.py

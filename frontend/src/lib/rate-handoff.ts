@@ -18,6 +18,7 @@ export const RATE_HANDOFF_KEYS = {
   height: "h",
   weight: "weight",
   boxes: "boxes",
+  description: "desc",
   category: "category",
   isCod: "cod",
   codAmount: "cod_amount",
@@ -34,6 +35,7 @@ export interface RateHandoff {
   height?: number;
   weightKg?: number;
   boxCount?: number;
+  description?: string;
   productCategory?: string;
   isCod?: boolean;
   codAmount?: number;
@@ -87,6 +89,10 @@ export function buildRateHandoffQuery(handoff: RateHandoff): string {
   put(RATE_HANDOFF_KEYS.height, handoff.height);
   put(RATE_HANDOFF_KEYS.weight, handoff.weightKg);
   put(RATE_HANDOFF_KEYS.boxes, handoff.boxCount);
+  const cleanDescription = (handoff.description || "").trim();
+  if (cleanDescription) {
+    put(RATE_HANDOFF_KEYS.description, cleanDescription);
+  }
   put(RATE_HANDOFF_KEYS.category, handoff.productCategory);
   if (handoff.isCod) {
     put(RATE_HANDOFF_KEYS.isCod, "1");
@@ -112,6 +118,7 @@ export function parseRateHandoff(
 ): RateHandoff | null {
   const params = new URLSearchParams(search);
   const category = params.get(RATE_HANDOFF_KEYS.category) || "";
+  const description = (params.get(RATE_HANDOFF_KEYS.description) || "").trim();
   const isCod = params.get(RATE_HANDOFF_KEYS.isCod) === "1";
   const doorDelivery = params.get(RATE_HANDOFF_KEYS.doorDelivery) === "1";
   const handoff: RateHandoff = {
@@ -122,6 +129,7 @@ export function parseRateHandoff(
     height: positiveNumber(params.get(RATE_HANDOFF_KEYS.height)),
     weightKg: positiveNumber(params.get(RATE_HANDOFF_KEYS.weight)),
     boxCount: positiveNumber(params.get(RATE_HANDOFF_KEYS.boxes)),
+    description: description || undefined,
     productCategory: allowedCategories.includes(category) ? category : undefined,
     isCod: isCod || undefined,
     codAmount: isCod ? positiveNumber(params.get(RATE_HANDOFF_KEYS.codAmount)) : undefined,

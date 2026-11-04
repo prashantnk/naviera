@@ -22,6 +22,6 @@ export type AddressRead = {
     scope?: AddressScope;
     is_saved?: boolean;
     id: string;
-    user_id: string;
+    user_id?: (string | null);
 };
 

@@ -6,14 +6,15 @@ Pure unit tests (no DB) for the read-only ops fields on `PickupRead` (WP2 / E-06
 """
 
 import uuid
-from datetime import date, time
+from datetime import date, datetime, time, timezone
 
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1.endpoints.shipments import _serialize_shipment
+from app.api.v1.endpoints.shipments import _serialize_shipment, _serialize_shipment_list
 from app.models.manifests import Manifest, ManifestStatus
 from app.models.pickups import (
+    ActivityType,
     Address,
     PackageDetails,
     PaymentDetails,
@@ -22,12 +23,18 @@ from app.models.pickups import (
     ProductCategory,
     ServiceOption,
     ServiceType,
+    ShipmentActivity,
     ShipmentType,
 )
 from app.models.tenants import User, UserRole
 from app.repositories.manifests import ManifestRepository
 from app.repositories.shipments import ShipmentRepository
-from app.schemas.v1.pickups import PaymentDetailsRead, PickupRead, PublicTrackingRead
+from app.schemas.v1.pickups import (
+    PaymentDetailsRead,
+    PickupRead,
+    PublicTrackingRead,
+    ShipmentActivityRead,
+)
 from app.services.shipment import ShipmentService
 from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 
@@ -247,3 +254,69 @@ async def test_manifest_get_by_id_supports_for_update_and_sync_after_detach() ->
     assert manifest.total_boxes == 0
     assert manifest.status == ManifestStatus.CANCELED
     assert manifest in session.added
+
+
+def test_serialize_shipment_accepts_ownerless_addresses_and_activities() -> None:
+    """BUG-04: `Address.user_id` is nullable, so `PickupRead` and `ShipmentActivityRead` must accept `user_id=None`."""
+    tenant_id = uuid.uuid4()
+    creator_id = uuid.uuid4()
+    shipment = _full_prime_shipment(tenant_id, creator_id)
+    shipment.pickup_address.user_id = None
+    shipment.delivery_address.user_id = None
+
+    staff_user = User(
+        id=uuid.uuid4(), tenant_id=tenant_id, email="ops@t.in", role=UserRole.operations_user
+    )
+    read = _serialize_shipment(shipment, staff_user)
+    assert read.pickup_address.user_id is None
+    assert read.delivery_address.user_id is None
+
+    activity = ShipmentActivity.model_construct(
+        id=uuid.uuid4(),
+        pickup_id=shipment.id,
+        user_id=None,
+        timestamp=datetime(2026, 11, 4, 7, 30, tzinfo=timezone.utc),
+        activity_type=ActivityType.STATUS_CHANGE,
+        is_public=True,
+        summary="In transit",
+        comment=None,
+        diff={},
+    )
+    activity_read = ShipmentActivityRead.model_validate(activity)
+    assert activity_read.user_id is None
+
+
+def test_serialize_shipment_list_skips_corrupt_row_without_500(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """BUG-04: a single corrupt row in a list response is logged and skipped instead of 500ing the whole page."""
+    tenant_id = uuid.uuid4()
+    creator_id = uuid.uuid4()
+    good = _full_prime_shipment(tenant_id, creator_id)
+    corrupt = _full_prime_shipment(tenant_id, creator_id)
+    corrupt.tracking_id = "LOGISMART-TEST-BADROW"
+    object.__setattr__(corrupt, "pickup_address", None)
+
+    staff_user = User(
+        id=uuid.uuid4(), tenant_id=tenant_id, email="ops@t.in", role=UserRole.operations_user
+    )
+    parsed = _serialize_shipment_list([corrupt, good], staff_user)
+    assert [row.id for row in parsed] == [good.id]
+    assert "LOGISMART-TEST-BADROW" in caplog.text
+
+
+def test_serialize_cancelled_shipment_zeroes_freight_charges() -> None:
+    """BUG-07: a cancelled / QC-failed shipment serializes `0.0` freight charges."""
+    tenant_id = uuid.uuid4()
+    creator_id = uuid.uuid4()
+    shipment = _full_prime_shipment(tenant_id, creator_id)
+    shipment.status = PickupStatus.CANCELLED
+    customer = User(
+        id=creator_id, tenant_id=tenant_id, email="cust@t.in", role=UserRole.customer
+    )
+    read = _serialize_shipment(shipment, customer)
+    assert read.payment_details.total_logistics_cost == 0.0
+    assert read.payment_details.base_freight == 0.0
+    assert read.payment_details.tax_amount == 0.0
+
+

@@ -400,6 +400,9 @@ async def test_j27_b2b_heavy_cargo_lr_booking_eway_bill_and_fov() -> None:
             **valid_b2b_payload,
             "order_reference_id": order_ref("J27-B2B-REV"),
             "shipment_type": "REVERSE",
+            # A well-formed reverse request (the schema requires a reason), so the 400 comes
+            # from the MVP-scope guard rather than the 422 payload validation.
+            "reason_for_return": "damaged",
         }
         b2b_rev_resp = await client.post(
             "/api/v1/shipments", headers=b2b_headers, json=b2b_rev_payload

@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.permissions import (
     assert_can_manage_shipments_or_pickups,
     assert_not_read_only,
+    assert_service_scope,
 )
 from app.models.manifests import Manifest, ManifestStatus, ServiceFlow
 from app.models.pickups import (
@@ -558,7 +559,7 @@ class ManifestService:
     ) -> Dict[str, Any]:
         """Creates a SCHEDULED Pickup Request, links validated shipments and assigns a Pickup ID."""
         assert_can_manage_shipments_or_pickups(current_user, "create pickup requests")
-        ShipmentService._assert_service_scope(
+        assert_service_scope(
             current_user,
             payload.service_flow == ServiceFlow.B2B or payload.is_blind_pickup,
         )

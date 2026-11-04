@@ -35,6 +35,7 @@
 | Resource | File | When to Load |
 | :--- | :--- | :--- |
 | **Delhivery Knowledge** | [`.agents/knowledge/delhivery-one.md`](.agents/knowledge/delhivery-one.md) | Reference for Delhivery One feature map, B2C/B2B API wire facts, pricing rules, and 3-step ops playbook. |
+| **Test Catalog & QA Harnesses** | [`.agents/knowledge/test-catalog.md`](.agents/knowledge/test-catalog.md) | Agent decision matrix ("Changed X → Rerun Y"), 31-screen × 9-persona flow registry, reusable `backend/scripts/qa/` harnesses, and bug-to-regression-test history. |
 | **`delhivery-parity`** | [`.agents/skills/delhivery-parity/SKILL.md`](.agents/skills/delhivery-parity/SKILL.md) | Planning, implementing, or reviewing any feature for Delhivery One parity and citing help-center slugs. |
 | **`golden-run`** | [`.agents/skills/golden-run/SKILL.md`](.agents/skills/golden-run/SKILL.md) | Running `--quick`, `--smoke`, or default `full` verification and inspecting `summary.json`. |
 | **`db-migration`** | [`.agents/skills/db-migration/SKILL.md`](.agents/skills/db-migration/SKILL.md) | Authoring or applying Alembic migrations (including raw SQL PostgreSQL `ENUM` changes). |

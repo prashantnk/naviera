@@ -88,15 +88,18 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
+        <DialogHeader className="shrink-0">
           <DialogTitle>My profile</DialogTitle>
           <DialogDescription>
             Your name is shown in the app, on tickets and to the Logismart team.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div
+          data-testid="profile.dialog.body"
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1"
+        >
           <div className="space-y-1.5">
             <Label htmlFor="profile-full-name" className="text-xs font-semibold">
               Full name
@@ -136,7 +139,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
           <ChangePasswordSection />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border pt-3">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

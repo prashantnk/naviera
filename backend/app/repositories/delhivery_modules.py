@@ -4,6 +4,7 @@ from datetime import date
 from typing import Dict, List, Optional, Sequence
 
 from sqlalchemy import Integer, and_, cast, desc, or_, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, func, select
@@ -41,6 +42,13 @@ TICKET_NUMBER_REGEX = "^TKT-[0-9]{8}-[0-9]+$"
 TICKET_SERIAL_PART = 3
 """1-based `-`-separated part of a ticket number holding the serial."""
 TICKET_LOCK_NAMESPACE = "support-ticket-series"
+DOCUMENT_SERIES_LOCK_TIMEOUT = "20s"
+"""Longest wait for a GST series lock (BUG-03); well under the 120 s frontend proxy timeout."""
+LOCK_NOT_AVAILABLE_SQLSTATE = "55P03"
+
+
+class DocumentSeriesBusyError(Exception):
+    """The GST series lock was not granted in time; the caller's transaction is aborted (retryable)."""
 
 
 def ticket_series_lock_key(tenant_id: uuid.UUID) -> int:
@@ -362,13 +370,35 @@ class DelhiveryModulesRepository:
         `pg_advisory_xact_lock(key)` for one GST series: serializes every allocator
         of that series until the CALLER'S transaction commits or rolls back.
         Re-entrant within the same transaction.
+
+        Waits at most `DOCUMENT_SERIES_LOCK_TIMEOUT` (BUG-03): a transaction that holds the
+        series for long must not hang every other booking past the proxy timeout. The previous
+        `lock_timeout` is restored in the same round trip as the lock.
+
+        Raises:
+            DocumentSeriesBusyError: not granted in time. Nothing of the caller's transaction
+                is committed, so the request can simply be retried.
         """
         lock_key = document_series_lock_key(tenant_id, financial_year, note_type)
-        await self.session.exec(
-            text("SELECT pg_advisory_xact_lock(CAST(:lock_key AS BIGINT))").bindparams(
-                lock_key=lock_key
+        previous = (
+            await self.session.exec(
+                text(
+                    "SELECT current_setting('lock_timeout') AS previous, "
+                    "set_config('lock_timeout', :timeout, true)"
+                ).bindparams(timeout=DOCUMENT_SERIES_LOCK_TIMEOUT)
             )
-        )
+        ).first()[0]
+        try:
+            await self.session.exec(
+                text(
+                    "SELECT pg_advisory_xact_lock(CAST(:lock_key AS BIGINT)), "
+                    "set_config('lock_timeout', :previous, true)"
+                ).bindparams(lock_key=lock_key, previous=previous)
+            )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == LOCK_NOT_AVAILABLE_SQLSTATE:
+                raise DocumentSeriesBusyError(note_type) from exc
+            raise
 
     async def next_document_serial(
         self, tenant_id: uuid.UUID, number_prefix: str

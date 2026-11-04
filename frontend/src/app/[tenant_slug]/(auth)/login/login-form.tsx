@@ -211,8 +211,14 @@ export function LoginForm() {
         } else if (STALE_SESSION_STATUSES.has(res.status)) {
           // Token rejected or not a member of this tenant: start clean. A 5xx keeps the
           // session so a backend restart does not log the user out.
+          const backendMinted =
+            typeof session.refresh_token === "string" &&
+            session.refresh_token.startsWith("naviera-rt-");
           window.localStorage.removeItem(`sb-${tenantSlug}-auth-token`);
-          await supabase.auth.signOut().catch(() => {});
+          resetSupabaseClient(tenantSlug);
+          if (!backendMinted) {
+            await supabase.auth.signOut().catch(() => {});
+          }
         }
       } catch {
         // Keep user on login screen if backend verification fails

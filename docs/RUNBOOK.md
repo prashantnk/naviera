@@ -163,7 +163,7 @@ Before opening live traffic on Supabase (`<project-ref>.supabase.co`), verify th
 3. **Allowed Auth Redirect URLs (`D-01`):**
    - Open **Supabase Dashboard → Authentication → URL Configuration** and ensure `Site URL` is set to the production domain (`https://logismart.in` or `https://logismart.naviera.com`) and `Redirect URLs` includes `https://**/<slug>/callback` (e.g. `https://*.naviera.com/callback`, rewritten by `middleware.ts` to `frontend/src/app/[tenant_slug]/callback/page.tsx`) and `http://localhost:3000/**` for local development.
 
-### 1.5 Custom domain (`logismart.in`) on Vercel & scheduled temporal hooks (free GitHub Actions cron)
+### 1.5 Custom domain (`logismart.in`) on Vercel & scheduled temporal hooks (Supabase pg_cron + GitHub Actions backup)
 
 1. **Custom domain (`logismart.in` → `logismart` tenant):**
    - `frontend/src/middleware.ts` reads `CUSTOM_DOMAIN_TENANTS` (comma-separated `<host>:<tenant_slug>` pairs, e.g. `CUSTOM_DOMAIN_TENANTS="logismart.in:logismart,www.logismart.in:logismart"`). When `NEXT_PUBLIC_ROOT_DOMAIN` is set (subdomain mode), requests for any mapped host are rewritten to `/<tenant_slug>/...` identically to `<tenant_slug>.naviera.com`.
@@ -173,19 +173,23 @@ Before opening live traffic on Supabase (`<project-ref>.supabase.co`), verify th
      - Add an `A` record for `@` (apex) pointing to `76.76.21.21`.
      - Add a `CNAME` record for `www` pointing to `cname.vercel-dns.com`.
    - **Render & Supabase allowlists:** include `https://logismart.in` and `https://www.logismart.in` in `BACKEND_CORS_ORIGINS` on Render and `https://logismart.in/**` in Supabase Auth Redirect URLs (§1.4).
-2. **Scheduled temporal hooks via GitHub Actions (free replacement for paid Render cron):**
-   - `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) runs one idempotent iteration of `run_temporal_hooks_iteration()` (`appointments_held`, `eway_bills_held`). It requires header `X-Cron-Secret` matching `settings.CRON_SECRET` (`403` when `CRON_SECRET` is unset or mismatched).
-   - [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml) runs on `*/14 * * * *` (plus manual `workflow_dispatch`), calling `$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` with `curl --retry 3`. Running every 14 minutes also keeps the Free Render `naviera-backend` web instance warm inside its 15-minute idle sleep window (Render's 750 free hours/month covers one 24/7 web service).
+2. **Scheduled temporal hooks (free): Supabase `pg_cron` is PRIMARY, GitHub Actions is the BACKUP:**
+   - `POST /api/v1/internal/temporal-hooks/run` (`backend/app/api/v1/endpoints/internal.py`) runs one idempotent iteration of `run_temporal_hooks_iteration()` (holds overdue appointments as `APPOINTMENT_NEEDED`, and In transit parcels worth ≥ ₹50,000 with no update for > 72 h as `EWAY_BILL_MISSING`). It requires header `X-Cron-Secret` matching `settings.CRON_SECRET` (`403` when `CRON_SECRET` is unset or mismatched). It returns `200 {"status":"ok","appointments_held":N,"eway_bills_held":M}`, or `500` with `failed_checks` when a check failed.
+   - **PRIMARY: Supabase `pg_cron` + `pg_net`.** Job `naviera-temporal-hooks` (`*/14 * * * *`) is created by Alembic revision `f9a0b1c2d3e4` (`backend/alembic/versions/f9a0b1c2d3e4_pg_cron_temporal_hooks.py`; apply only with approval, §3). It calls `net.http_post` with the URL and secret read from **Supabase Vault** at run time (`naviera_temporal_hooks_url` = `https://naviera-backend.onrender.com/api/v1/internal/temporal-hooks/run`, `naviera_cron_secret` = Render's `CRON_SECRET`), with a 120 s timeout for Render cold starts. Until both Vault secrets exist the job does nothing. No secret is stored in git or in `cron.job`.
+   - **BACKUP: [`.github/workflows/temporal-hooks.yml`](../.github/workflows/temporal-hooks.yml)** runs on `*/14 * * * *` (plus manual `workflow_dispatch`), calling `$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run` with `curl --fail --retry 3`. GitHub `schedule` is best-effort: on this repo it fired about every 4 h, and scheduled workflows on a public repo are auto-disabled after 60 days without a push. Overlapping calls with pg_cron are safe (`SKIP LOCKED` plus status filters).
+   - Running every 14 minutes also keeps the Free Render `naviera-backend` web instance warm inside its 15-minute idle sleep window (Render's 750 free hours/month covers one 24/7 web service).
    - **Required secrets:**
      - **Render (`naviera-backend` environment):** `CRON_SECRET=<32-byte-hex-secret>`
+     - **Supabase Vault (SQL Editor, values never committed):** `select vault.create_secret('<url>', 'naviera_temporal_hooks_url');` and `select vault.create_secret('<CRON_SECRET>', 'naviera_cron_secret');`
      - **GitHub Actions repository secrets:** `CRON_SECRET` (same value as Render) and `NAVIERA_API_URL` (`https://naviera-backend.onrender.com`).
-   - **Run manually:** open **GitHub → Actions → temporal-hooks → Run workflow** (on branch `master`) or run `curl -sS -X POST -H "X-Cron-Secret: $CRON_SECRET" "$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run"`.
-   - **Rotate `CRON_SECRET`:** generate a fresh secret (`openssl rand -hex 32`), update `CRON_SECRET` in **Render Dashboard → `naviera-backend` → Environment** (which restarts the API), then update the `CRON_SECRET` repository secret in **GitHub → Settings → Secrets and variables → Actions** and click **Actions → temporal-hooks → Run workflow** to verify HTTP `200`.
-   - **Disable the scheduled job:** either clear/remove `CRON_SECRET` on Render (`naviera-backend` immediately rejects calls to `/api/v1/internal/temporal-hooks/run` with `403`) or disable the workflow in **GitHub → Actions → temporal-hooks → ⋯ → Disable workflow**.
-   - **Where to see scheduler runs (3 places):**
-     1. **GitHub Actions (`prashantnk/naviera`):** open [`https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml`](https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml) (or **GitHub → `prashantnk/naviera` → Actions → temporal-hooks**). Click any run → `run-temporal-hooks` → **Trigger temporal hooks iteration** to see the JSON response (`{"status":"ok","appointments_held":N,"eway_bills_held":M}`) and `HTTP 200`.
-     2. **Render (`naviera-backend` → Logs):** filter by `temporal_hooks_run` or `/internal/temporal-hooks/run`. Every run logs one structured `INFO` line: `temporal_hooks_run expired_appointments=N stale_eway_holds=M duration_ms=...`.
-     3. **Logfire EU (`prashantnk/naviera` at `https://logfire-eu.pydantic.dev/prashantnk/naviera`):** inspect the FastAPI trace span for `POST /api/v1/internal/temporal-hooks/run`, or run this SQL Workbench query:
+   - **Run manually:** open **GitHub → Actions → temporal-hooks → Run workflow** (on branch `master`), or run `curl -sS -X POST -H "X-Cron-Secret: $CRON_SECRET" "$NAVIERA_API_URL/api/v1/internal/temporal-hooks/run"`.
+   - **Rotate `CRON_SECRET`:** generate a fresh secret (`openssl rand -hex 32`), update `CRON_SECRET` in **Render Dashboard → `naviera-backend` → Environment** (which restarts the API), then update Vault (`select vault.update_secret((select id from vault.secrets where name = 'naviera_cron_secret'), '<new>');`) and the `CRON_SECRET` repository secret in **GitHub → Settings → Secrets and variables → Actions**. Verify with **Actions → temporal-hooks → Run workflow** (HTTP `200`) and the next `net._http_response` row (status `200`).
+   - **Disable the scheduled jobs:** clear/remove `CRON_SECRET` on Render (`naviera-backend` immediately rejects every call with `403`), or disable each trigger: `select cron.unschedule('naviera-temporal-hooks');` (Supabase) and **GitHub → Actions → temporal-hooks → ⋯ → Disable workflow**.
+   - **Where to see scheduler runs:**
+     1. **Supabase (primary):** **Supabase Dashboard → Integrations → Cron → `naviera-temporal-hooks` → job runs** (or SQL: `select status, return_message, start_time from cron.job_run_details order by start_time desc limit 10;`). That shows the job ran; the HTTP result of each call is in `select id, status_code, content, created from net._http_response order by created desc limit 10;` (expect `200`; rows are kept ~6 h).
+     2. **GitHub Actions (backup, `prashantnk/naviera`):** open [`https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml`](https://github.com/prashantnk/naviera/actions/workflows/temporal-hooks.yml) (or **GitHub → `prashantnk/naviera` → Actions → temporal-hooks**). Click any run → `run-temporal-hooks` → **Trigger temporal hooks iteration** to see the JSON response (`{"status":"ok","appointments_held":N,"eway_bills_held":M}`) and `HTTP 200`.
+     3. **Render (`naviera-backend` → Logs):** filter by `temporal_hooks_run` or `/internal/temporal-hooks/run`. Every run (from either trigger) logs one line: `temporal_hooks_run appointments_held=N eway_bills_held=M duration_ms=...` (`INFO`, or `ERROR` with the value `None` for a failed check).
+     4. **Logfire EU (`prashantnk/naviera` at `https://logfire-eu.pydantic.dev/prashantnk/naviera`):** inspect the FastAPI trace span for `POST /api/v1/internal/temporal-hooks/run`, or run this SQL Workbench query:
         ```sql
         SELECT start_timestamp, span_name, http_response_status_code, duration, message
         FROM records
@@ -204,7 +208,7 @@ Deploy the parts of one release in this order, all from the **same commit**:
 ```mermaid
 flowchart LR
     M["1. alembic upgrade (approved revisions only)"] --> B["2. Backend API (Render web service)"]
-    B --> W["3. temporal_hooks_worker (Render background worker, SAME build)"]
+    B --> W["3. Temporal hooks (run inside the API build; nothing extra to deploy)"]
     W --> F["4. Frontend (Vercel)"]
 ```
 
@@ -215,8 +219,10 @@ flowchart LR
    poetry install --only main
    poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
    ```
-3. **Background worker**: expires overdue delivery appointments and flags stale e-way bills, for
-   **all tenants** in one loop.
+3. **Temporal hooks**: hold overdue delivery appointments and stale e-way bills, for **all tenants**.
+   In production they run inside the API (same build) through `POST /api/v1/internal/temporal-hooks/run`,
+   called by the Supabase `pg_cron` job (primary) and GitHub Actions (backup), see §1.5. Nothing extra to
+   deploy. Only if you run a dedicated worker instead:
    ```bash
    poetry run python -m scripts.temporal_hooks_worker
    ```

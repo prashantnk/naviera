@@ -106,6 +106,7 @@ function buildBookingHandoffQuery(values: RateCalculatorFormValues): string {
     height: firstBox?.height,
     weightKg: firstBox?.weight,
     boxCount: firstBox?.box_count,
+    description: firstBox?.description,
     productCategory: values.product_category,
     isCod: values.is_cod,
     codAmount: values.cod_amount,

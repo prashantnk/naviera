@@ -70,7 +70,7 @@ from app.schemas.v1.pickups import NdrExceptionResolveRequest
 from app.services import ndr_rules
 from app.services.delhivery_modules import DelhiveryModulesService, tenant_gst_rate
 from app.services.repricing import ExtraBillCharge, MeasurementInput, RepriceChange
-from app.services.shipment import ShipmentService
+from app.services.shipment import ShipmentService, ensure_appointment_slot_not_ended
 from app.services.shipment_lifecycle import ShipmentLifecycleMachine
 from app.services.wallet import WalletService
 
@@ -972,6 +972,7 @@ class ExceptionsService:
         """Book a delivery appointment slot."""
         start = self._require(context.request.appointment_start, "appointment_start is required.")
         end = self._require(context.request.appointment_end, "appointment_end is required.")
+        ensure_appointment_slot_not_ended(end)
         shipment = context.shipment
         diff = {
             "appointment_start": {
@@ -1004,7 +1005,7 @@ class ExceptionsService:
         """
         Release an APPOINTMENT_NEEDED hold without a slot (D-08). The expired window is
         cleared (recorded as a waiver), otherwise the worker would put the parcel back on
-        hold every 5 minutes for the same expired appointment.
+        hold on every run for the same expired appointment.
         """
         shipment = context.shipment
         diff: Dict[str, Any] = {}

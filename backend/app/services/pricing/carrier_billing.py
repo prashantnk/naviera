@@ -324,15 +324,20 @@ def _seller_taxable_amount(payment: Any, seller_billed: Decimal) -> Decimal:
     """
     Seller price before GST, including the pre-GST portion of any GST-inclusive
     `bill_adjustments` added on top of the engine quote (note: `ADMIN_PRICE_OVERRIDE`
-    already updates `payment.tax_amount` proportionally).
+    already updates `payment.tax_amount` proportionally across the entire `seller_billed`).
     """
     breakdown = getattr(payment, "pricing_breakdown", None) or {}
     adjustments = breakdown.get("bill_adjustments") or []
+    if any(
+        isinstance(a, dict) and a.get("kind") == "ADMIN_PRICE_OVERRIDE"
+        for a in adjustments
+    ):
+        return to_money(seller_billed - to_money(payment.tax_amount))
     adj_gross = sum(
         (
             to_money(a.get("amount"))
             for a in adjustments
-            if isinstance(a, dict) and a.get("kind") != "ADMIN_PRICE_OVERRIDE"
+            if isinstance(a, dict)
         ),
         Decimal(0),
     )

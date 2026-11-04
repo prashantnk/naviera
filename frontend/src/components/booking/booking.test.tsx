@@ -19,7 +19,7 @@ import {
   optionCardTestId,
   transitLineText,
 } from "./quote-step";
-import { bookedToastMessage, isNoResponseFailure } from "./use-quote-booking";
+import { bookedToastMessage, mayHaveCommitted } from "./use-quote-booking";
 import { toValuationInput } from "./use-shipment-valuation";
 
 function option(overrides: Partial<QuoteOption> = {}): QuoteOption {
@@ -159,9 +159,20 @@ describe("booking helpers", () => {
     expect(transitLineText({ transit_days: null, expected_delivery_date: null })).toBeNull();
   });
 
-  it("keeps the Idempotency-Key only when no HTTP answer arrived", () => {
-    expect(isNoResponseFailure(new Error("Network Error"))).toBe(true);
-    expect(isNoResponseFailure(apiError(400, {}))).toBe(false);
+  it("keeps the Idempotency-Key whenever the booking may have committed (BUG-03)", () => {
+    expect(mayHaveCommitted(new Error("Network Error"))).toBe(true);
+    expect(mayHaveCommitted(apiError(500, {}))).toBe(true);
+    expect(mayHaveCommitted(apiError(503, { detail: "Billing is busy" }))).toBe(true);
+    expect(mayHaveCommitted(apiError(409, { detail: "Idempotency key in flight" }))).toBe(true);
+    expect(
+      mayHaveCommitted(
+        apiError(409, {
+          detail: { code: PRICE_CHANGED_CODE, new_total: 170.1, expected_total: 159.3 },
+        }),
+      ),
+    ).toBe(false);
+    expect(mayHaveCommitted(apiError(400, {}))).toBe(false);
+    expect(mayHaveCommitted(apiError(403, {}))).toBe(false);
   });
 
   it("shows the booked total from the API in the toast", () => {

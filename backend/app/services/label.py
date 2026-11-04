@@ -94,6 +94,7 @@ TERMS_FOOTER_TEMPLATE = "Carried subject to {tenant} Terms of Service & Carriage
 B2C_HEADER_Y = 5.6 * inch
 B2C_HEADER_RULE_Y = 5.4 * inch
 B2C_HEADER_BRAND_FONT_SIZE = 16
+B2C_HEADER_BRAND_MIN_FONT_SIZE = 8
 B2C_HEADER_SERVICE_FONT_SIZE = 12
 B2C_ADDRESS_TOP_Y = 5.3 * inch
 B2C_ADDRESS_FLOOR_Y = 2.8 * inch
@@ -207,6 +208,12 @@ def safe_float(value) -> float:
         return float(value)
     except (ValueError, TypeError):
         return 0.0
+
+
+def service_type_label(service_type) -> str:
+    """Human-readable service mode label without internal enum underscores."""
+    raw = getattr(service_type, "value", service_type) or ""
+    return str(raw).replace("_", " ")
 
 
 def fitted_code128(
@@ -653,7 +660,7 @@ class LabelGenerator:
                 f"{tracking_str}-B{box_idx}" if box_total > 1 else tracking_str
             )
             right_meta = (
-                f"{shipment.service_type.value.replace('_', ' ')} | BOX {box_idx}/{box_total}"
+                f"{service_type_label(shipment.service_type)} | BOX {box_idx}/{box_total}"
             )
             c.setFont(BOLD_FONT, 8)
             c.drawRightString(3.85 * inch, 1.78 * inch, right_meta)
@@ -663,7 +670,7 @@ class LabelGenerator:
                 - pdfmetrics.stringWidth(right_meta, BOLD_FONT, 8)
                 - B2C_SECTION_GAP
             )
-            brand_size = _fit_font_size(brand, BOLD_FONT, 10, 7, brand_width)
+            brand_size = _fit_font_size(brand, BOLD_FONT, 10, 6, brand_width)
             c.setFont(BOLD_FONT, brand_size)
             c.drawString(
                 0.15 * inch,
@@ -721,19 +728,27 @@ class LabelGenerator:
     @staticmethod
     def _draw_b2c_header(c: canvas.Canvas, shipment: PickupRequest, tenant: Tenant) -> None:
         """Brand on the left, service type on the right, then a rule."""
-        service = shipment.service_type.value
+        service = service_type_label(shipment.service_type)
         c.setFont(BOLD_FONT, B2C_HEADER_SERVICE_FONT_SIZE)
         c.drawRightString(LABEL_WIDTH - LABEL_TEXT_X, B2C_HEADER_Y, service)
+        brand = tenant.name.upper()
         brand_width = (
             LABEL_TEXT_WIDTH
             - pdfmetrics.stringWidth(service, BOLD_FONT, B2C_HEADER_SERVICE_FONT_SIZE)
             - B2C_SECTION_GAP
         )
-        c.setFont(BOLD_FONT, B2C_HEADER_BRAND_FONT_SIZE)
+        brand_size = _fit_font_size(
+            brand,
+            BOLD_FONT,
+            B2C_HEADER_BRAND_FONT_SIZE,
+            B2C_HEADER_BRAND_MIN_FONT_SIZE,
+            brand_width,
+        )
+        c.setFont(BOLD_FONT, brand_size)
         c.drawString(
             LABEL_TEXT_X,
             B2C_HEADER_Y,
-            _ellipsize(tenant.name.upper(), BOLD_FONT, B2C_HEADER_BRAND_FONT_SIZE, brand_width),
+            _ellipsize(brand, BOLD_FONT, brand_size, brand_width),
         )
         c.line(LABEL_RULE_INSET, B2C_HEADER_RULE_Y, LABEL_WIDTH - LABEL_RULE_INSET, B2C_HEADER_RULE_Y)
 
@@ -906,7 +921,7 @@ class LabelGenerator:
         c.setFont("Helvetica", 10)
         date_str = shipment.created_at.strftime("%d/%m/%Y")
         c.drawString(left_margin, 755, f"LR Date: {date_str}")
-        c.drawString(left_margin, 740, f"Service Speed: {shipment.service_type.value.replace('_', ' ')}")
+        c.drawString(left_margin, 740, f"Service Speed: {service_type_label(shipment.service_type)}")
         
         # --- 3. Consignor (FROM) & Consignee (TO) Details Box ---
         box_top = 710

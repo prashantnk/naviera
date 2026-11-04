@@ -11,9 +11,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { extractApiErrorMessage, formatIstDateTime } from "@/lib/utils";
+import { getSupabaseClient } from "@/lib/supabase";
 import { History, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+
+/**
+ * Busts the Next.js ISR cache (`tenant-<slug>` tag) after a settings save or
+ * snapshot restore so marketing/public pages reflect the updated tenant config
+ * immediately without waiting for the 1-hour revalidation window.
+ */
+export async function revalidateTenantSettingsCache(
+  tenantSlug: string,
+): Promise<void> {
+  if (!tenantSlug) {
+    return;
+  }
+  try {
+    const {
+      data: { session },
+    } = await getSupabaseClient(tenantSlug).auth.getSession();
+    const revalidateUrl = ["", "api", "revalidate"].join("/");
+    await fetch(revalidateUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ key: tenantSlug }),
+    });
+  } catch {
+    // Non-blocking cache revalidation
+  }
+}
 
 interface SettingsHistoryDialogProps {
   open: boolean;
@@ -83,6 +113,7 @@ export function SettingsHistoryDialog({
     setRestoringId(entry.id);
     try {
       await TenantsService.restoreSettingsVersion(entry.id, tenantSlug);
+      await revalidateTenantSettingsCache(tenantSlug);
       toast.success(`Restored settings snapshot #${entry.version}.`);
       setConfirmEntry(null);
       await onRestored();

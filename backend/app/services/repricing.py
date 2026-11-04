@@ -118,6 +118,8 @@ MEASUREMENT_ID_KEY = "measurement_id"
 RTO_SURCHARGE_KEY = "rto_surcharge"
 RTO_BILLING_KEY = "rto_billing"
 """`pricing_breakdown` marker written when the RTO leg is billed (plan C2)."""
+GST_INCLUSIVE_DIVISOR = Decimal("1.18")
+"""Splits an admin-overridden (GST-inclusive) bill into taxable value and 18 % GST."""
 
 PRE_PICKUP_STATUSES: FrozenSet[PickupStatus] = frozenset(
     {PickupStatus.DRAFT, PickupStatus.OPEN, PickupStatus.ASSIGNED}
@@ -762,8 +764,10 @@ class RepricingService:
         """
         Refunds everything paid towards the bill (cancellation, pickup rejection, LOST):
         one REFUND of the net debited amount + a CREDIT_NOTE of exactly that amount.
-        Separate charges (Mathadi etc.) are never refunded. Price columns are left as
-        booked; the adjustment row records the bill going to ₹0. Flushes, never commits.
+        Separate charges (Mathadi etc.) are never refunded. Terminal pre-pickup refunds
+        (`CANCELLATION`, `PICKUP_REJECTION_REFUND`) zero `payment_details` price columns
+        after issuing the credit note; `LOST` keeps booked price columns so `LOST_FOUND`
+        can re-bill if the parcel is found. Flushes, never commits.
         """
         if idempotency_key:
             existing = await self.repo.get_adjustment_by_idempotency_key(tenant.id, idempotency_key)
@@ -775,6 +779,11 @@ class RepricingService:
         old_total = to_money(payment.total_logistics_cost)
         weight = to_weight(payment.chargeable_weight)
         movements = [_Movement(WalletTxnType.REFUND, -paid)] if is_billable_delta(paid) and paid > 0 else []
+        terminal_refund = reason in (
+            ChargeAdjustmentReason.CANCELLATION,
+            ChargeAdjustmentReason.PICKUP_REJECTION_REFUND,
+        )
+        new_fc = ZERO_MONEY if terminal_refund else to_money(payment.freight_collectible)
         preview = RepricePreview(
             shipment_id=shipment.id,
             reason=reason,
@@ -793,10 +802,20 @@ class RepricingService:
             old_cod_amount=to_money(payment.cod_amount),
             new_cod_amount=to_money(payment.cod_amount),
             old_freight_collectible=to_money(payment.freight_collectible),
-            new_freight_collectible=to_money(payment.freight_collectible),
+            new_freight_collectible=new_fc,
             collectible_frozen=bool(cod_payout.is_collectible_frozen(shipment)),
             changed=True,
             warnings=(),
+        )
+        payment_writes: Dict[str, Any] = (
+            {
+                "base_freight": 0.0,
+                "tax_amount": 0.0,
+                "total_logistics_cost": 0.0,
+                "freight_collectible": ZERO_MONEY,
+            }
+            if terminal_refund
+            else {}
         )
         plan = _Plan(
             preview=preview,
@@ -812,12 +831,14 @@ class RepricingService:
             ),
             movements=movements,
             measurement_draft=None,
-            payment_writes={},
+            payment_writes=payment_writes,
             header_writes={},
             is_b2b=is_b2b_shipment(shipment),
         )
         change = RepriceChange(reason=reason, idempotency_key=idempotency_key, remark=remark)
         wallet_txn, note = await self._settle(shipment, tenant, plan, change)
+        if payment_writes:
+            self._write_shipment(shipment, plan, None)
         adjustment = await self._record_adjustment(shipment, plan, change, actor, wallet_txn, note, None)
         await self.session.flush()
         return RepriceResult(
@@ -1068,6 +1089,8 @@ class RepricingService:
             new_breakdown[MEASUREMENT_ID_KEY] = str(active.id)
 
         payment_writes = _payment_writes(payment, inputs, quote, new_total, new_breakdown, new_cod, new_fc, frozen)
+        if _has_price_override(adjustments):
+            _stamp_override_tax(new_breakdown, new_total)
         header_writes = _header_writes(shipment, change)
         wallet_net = to_money(sum((m.amount for m in movements), ZERO_MONEY))
         settlement = _settlement_kind(new_channel, inputs.mode, wallet_net, old_fc, new_fc, old_total, new_total)
@@ -1784,6 +1807,38 @@ def _plan_movements(
     return movements
 
 
+def _has_price_override(adjustments: List[Any]) -> bool:
+    """True when the bill carries an admin price override (the total no longer follows the quote)."""
+    return any(isinstance(a, dict) and a.get("kind") == "ADMIN_PRICE_OVERRIDE" for a in adjustments)
+
+
+def _override_tax_split(new_total: Decimal) -> Tuple[Decimal, Decimal]:
+    """(taxable value, GST) of an admin-overridden GST-inclusive bill at the fixed 18 % rate."""
+    taxable = to_money(new_total / GST_INCLUSIVE_DIVISOR)
+    return taxable, to_money(new_total - taxable)
+
+
+def _stamp_override_tax(breakdown: Dict[str, Any], new_total: Decimal) -> None:
+    """
+    Rewrites the breakdown's taxable/GST figures for an overridden bill (BUG-01).
+
+    The quote's `subtotal` would otherwise stay next to the overridden `tax_amount`: the order
+    page would show Subtotal 135.00 + GST 15.25 = 100.00, and `shipment_effective_gst_rate`
+    (15.25 / 135 = 11.3 %) would split every credit / debit note at the wrong rate.
+    """
+    taxable, gst = _override_tax_split(new_total)
+    cgst = to_money(gst / 2)
+    breakdown.update(
+        {
+            "subtotal": money_to_float(taxable),
+            "gst_total": money_to_float(gst),
+            "cgst_amount": money_to_float(cgst),
+            "sgst_amount": money_to_float(to_money(gst - cgst)),
+            "igst_amount": money_to_float(gst),
+        }
+    )
+
+
 def _payment_writes(
     payment: PaymentDetails,
     inputs: _Inputs,
@@ -1795,14 +1850,8 @@ def _payment_writes(
     frozen: bool,
 ) -> Dict[str, Any]:
     """Every payment_details column apply() writes."""
-    adjustments = new_breakdown.get(BILL_ADJUSTMENTS_KEY) or []
-    has_price_override = any(
-        isinstance(a, dict) and a.get("kind") == "ADMIN_PRICE_OVERRIDE"
-        for a in adjustments
-    )
-    if has_price_override:
-        taxable = to_money(new_total / Decimal("1.18"))
-        gst = to_money(new_total - taxable)
+    if _has_price_override(new_breakdown.get(BILL_ADJUSTMENTS_KEY) or []):
+        taxable, gst = _override_tax_split(new_total)
         base_freight_val = money_to_float(taxable)
         tax_amount_val = money_to_float(gst)
     else:

@@ -435,14 +435,15 @@ export default function ShipmentDetailsPage() {
   const isReverse = shipment.shipment_type === ShipmentType.REVERSE;
   const disputeHref = routeTo(DISPUTES_MISMATCH_HREF);
 
+  const sellerAddress = isReverse ? shipment.delivery_address : shipment.pickup_address;
   const sellerCompanyName =
-    shipment.pickup_address.company_name ||
+    sellerAddress.company_name ||
     user?.company_name ||
-    shipment.pickup_address.name ||
+    sellerAddress.name ||
     user?.full_name ||
     DEFAULT_SELLER_NAME;
   const sellerGstin =
-    shipment.pickup_address.gstin ||
+    sellerAddress.gstin ||
     user?.gstin ||
     SELLER_GST_NOT_CONFIGURED;
   // Booking only manifests the order; the pickup date/slot exist once it is on a
@@ -456,7 +457,8 @@ export default function ShipmentDetailsPage() {
     ? linkedManifest?.time_slot || shipment.pickup_time_slot
     : null;
   const bookedServiceLabel = serviceLabel(shipment);
-  const sellerCityLine = `${shipment.pickup_address.city}, ${shipment.pickup_address.state}, ${shipment.pickup_address.pincode}`;
+  const pickupCityLine = `${shipment.pickup_address.city}, ${shipment.pickup_address.state}, ${shipment.pickup_address.pincode}`;
+  const sellerCityLine = `${sellerAddress.city}, ${sellerAddress.state}, ${sellerAddress.pincode}`;
 
   const firstPkg = shipment.packages[0];
   const dimensionSummary = firstPkg
@@ -1404,7 +1406,7 @@ export default function ShipmentDetailsPage() {
                       shipment.pickup_address.name}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {sellerCityLine}
+                    {pickupCityLine}
                   </p>
                 </div>
 
