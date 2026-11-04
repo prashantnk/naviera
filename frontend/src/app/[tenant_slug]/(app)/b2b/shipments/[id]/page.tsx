@@ -52,6 +52,12 @@ import { IconSelect } from "@/components/ui/icon-select";
 import { PICKUP_TIME_SLOT_OPTIONS, toOptions, DOCUMENT_TYPE_OPTIONS } from "@/lib/form-options";
 import { downloadShippingLabel } from "@/lib/api";
 import { documentReferenceUrl, openDocument, uploadTenantDocument } from "@/lib/document-storage";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import { format, parseISO } from "date-fns";
@@ -92,9 +98,26 @@ export default function B2BShipmentDetailsPage() {
   const { routeTo, tenantSlug } = useTenant();
   const { capabilities } = useUser();
 
-  const [shipment, setShipment] = useState<PickupRead | null>(null);
-  const [timeline, setTimeline] = useState<ShipmentActivityRead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const detailCacheKey = buildQueryCacheKey(
+    tenantSlug,
+    "session",
+    "shipment-detail",
+    { shipmentId }
+  );
+  const cachedDetail = getCachedQuery<{
+    shipment: PickupRead;
+    timeline: ShipmentActivityRead[];
+  }>(detailCacheKey);
+
+  const [shipment, setShipment] = useState<PickupRead | null>(
+    () => cachedDetail?.shipment ?? null
+  );
+  const [timeline, setTimeline] = useState<ShipmentActivityRead[]>(
+    () => cachedDetail?.timeline ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => !hasCachedQuery(detailCacheKey)
+  );
   const [isPrinting, setIsPrinting] = useState(false);
   // Bumped after every reload so the charges history refetches with the shipment.
   const [chargesRefreshKey, setChargesRefreshKey] = useState(0);
@@ -135,21 +158,36 @@ export default function B2BShipmentDetailsPage() {
 
   const fetchDetails = useCallback(async () => {
     if (!shipmentId) return;
+    const cached = getCachedQuery<{
+      shipment: PickupRead;
+      timeline: ShipmentActivityRead[];
+    }>(detailCacheKey);
+    if (cached !== null) {
+      setShipment(cached.shipment);
+      setTimeline(cached.timeline);
+      setLoading(false);
+    }
     try {
       const [shipmentData, timelineData] = await Promise.all([
         ShipmentsService.getShipmentDetails(shipmentId),
         ShipmentsService.getShipmentTimeline(shipmentId),
       ]);
+      setCachedQuery(detailCacheKey, {
+        shipment: shipmentData,
+        timeline: timelineData,
+      });
       setShipment(shipmentData);
       setTimeline(timelineData);
       setChargesRefreshKey((key) => key + 1);
     } catch (error) {
       console.error("Failed to fetch B2B shipment details:", error);
-      toast.error("Failed to load shipment details.");
+      if (cached === null) {
+        toast.error("Failed to load shipment details.");
+      }
     } finally {
       setLoading(false);
     }
-  }, [shipmentId]);
+  }, [shipmentId, detailCacheKey]);
 
   useEffect(() => {
     fetchDetails();
@@ -307,10 +345,30 @@ export default function B2BShipmentDetailsPage() {
     }
   }, [shipment]);
 
-  if (loading) {
+  if (loading && !shipment) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div
+        data-testid="b2b-shipment-detail-loading-skeleton"
+        className="max-w-7xl mx-auto space-y-6 pb-12"
+      >
+        <div className="flex items-center gap-4 border-b border-slate-200 pb-6">
+          <Button variant="outline" size="icon" asChild className="h-9 w-9 shrink-0">
+            <Link href={routeTo("/b2b/shipments")} prefetch={true}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div className="space-y-2 flex-1">
+            <div className="h-7 w-56 rounded-lg bg-slate-100 animate-pulse" />
+            <div className="h-4 w-80 rounded bg-slate-100 animate-pulse" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="h-64 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+            <div className="h-64 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+          </div>
+          <div className="h-96 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+        </div>
       </div>
     );
   }

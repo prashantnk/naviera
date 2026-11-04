@@ -4,6 +4,7 @@
 import { AddressRead, AddressesService, AddressScope } from "@/api_client";
 import { AddAddressDialog } from "@/components/forms/add-address-dialog";
 import { EditAddressDialog } from "@/components/forms/edit-address-dialog";
+import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/components/auth/auth-guard";
 import { DataTable } from "@/components/ui/data-table";
@@ -23,6 +24,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { IconSelect } from "@/components/ui/icon-select";
 import {
+  invalidateAddressesCache,
+  setCachedAddresses,
+  useAddresses,
+} from "@/hooks/use-addresses";
+import {
   ADDRESS_CATEGORY_OPTIONS,
   ADDRESS_SCOPE_OPTIONS,
   toOptions,
@@ -38,7 +44,7 @@ import {
   Trash2,
   BookOpen,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { columns } from "./columns";
 
@@ -47,8 +53,13 @@ const CATEGORY_FILTER_OPTIONS = withAllOption(toOptions(ADDRESS_CATEGORY_OPTIONS
 const SCOPE_FILTER_OPTIONS = withAllOption(toOptions(ADDRESS_SCOPE_OPTIONS), "All scopes");
 
 export default function AddressBookPage() {
-  const [data, setData] = useState<AddressRead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { tenantSlug } = useTenant();
+  const {
+    addresses: data,
+    loading,
+    refresh,
+    setAddresses: setData,
+  } = useAddresses(tenantSlug);
   const { user, isAdmin, capabilities } = useUser();
 
   // Dialog States
@@ -57,37 +68,38 @@ export default function AddressBookPage() {
     null
   );
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [scopeFilter, setScopeFilter] = useState<string>("ALL");
 
-  const fetchAddresses = async () => {
-    setLoading(true);
+  const fetchAddresses = useCallback(async () => {
     try {
-      const response = await AddressesService.listSavedAddresses();
-      setData(response);
+      await refresh({ force: true });
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAddresses();
-  }, []);
+  }, [refresh]);
 
   const executeDelete = async () => {
-    if (!deleteConfirmId) return;
+    if (!deleteConfirmId || isDeleting) return;
+    setIsDeleting(true);
+    const idToRemove = deleteConfirmId;
     try {
-      await AddressesService.deleteSavedAddress(deleteConfirmId);
+      await AddressesService.deleteSavedAddress(idToRemove);
+      const next = data.filter((addr) => addr.id !== idToRemove);
+      setData(next);
+      invalidateAddressesCache(tenantSlug);
+      setCachedAddresses(tenantSlug, next);
       toast.success("Address removed successfully");
       setDeleteConfirmId(null);
-      fetchAddresses();
+      void fetchAddresses();
     } catch {
       toast.error("Failed to delete address");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -241,9 +253,25 @@ export default function AddressBookPage() {
       </div>
 
       {/* Table Block */}
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      {loading && data.length === 0 ? (
+        <div
+          data-testid="addresses-loading-skeleton"
+          aria-busy="true"
+          aria-label="Loading saved addresses"
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs space-y-3"
+        >
+          <div className="h-9 w-full animate-pulse rounded-lg bg-slate-100" />
+          {[0, 1, 2, 3].map((rowIdx) => (
+            <div
+              key={rowIdx}
+              className="grid grid-cols-4 gap-4 items-center py-2.5 border-b border-slate-100 last:border-b-0"
+            >
+              <div className="h-4 w-36 animate-pulse rounded bg-slate-200/80" />
+              <div className="h-4 w-48 animate-pulse rounded bg-slate-100" />
+              <div className="h-4 w-28 animate-pulse rounded bg-slate-100" />
+              <div className="h-6 w-20 animate-pulse rounded-full bg-slate-100 justify-self-end" />
+            </div>
+          ))}
         </div>
       ) : data.length === 0 ? (
         <div className="flex flex-col h-72 items-center justify-center border border-slate-200 rounded-xl bg-white shadow-xs space-y-4 text-center p-6">
@@ -283,11 +311,27 @@ export default function AddressBookPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-3 mt-4 border-t border-slate-100 pt-4">
-            <Button variant="outline" className="cursor-pointer" onClick={() => setDeleteConfirmId(null)}>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              disabled={isDeleting}
+              onClick={() => setDeleteConfirmId(null)}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" className="cursor-pointer" onClick={executeDelete}>
-              Yes, Remove
+            <Button
+              variant="destructive"
+              className="cursor-pointer"
+              disabled={isDeleting}
+              onClick={executeDelete}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Removing...
+                </>
+              ) : (
+                "Yes, Remove"
+              )}
             </Button>
           </div>
         </DialogContent>

@@ -57,6 +57,12 @@ import {
 } from "@/components/wallet/shipment-pod-controls";
 import { downloadShippingLabel } from "@/lib/api";
 import { openDocument } from "@/lib/document-storage";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage, formatTimeSlot, safeFormatDate } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import {
@@ -305,10 +311,30 @@ export default function ShipmentDetailsPage() {
   const { routeTo, tenantSlug } = useTenant();
   const { user, capabilities } = useUser();
 
-  const [shipment, setShipment] = useState<PickupRead | null>(null);
-  const [linkedManifest, setLinkedManifest] = useState<ManifestResponse | null>(null);
-  const [timeline, setTimeline] = useState<ShipmentActivityRead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const detailCacheKey = buildQueryCacheKey(
+    tenantSlug,
+    "session",
+    "shipment-detail",
+    { shipmentId }
+  );
+  const cachedDetail = getCachedQuery<{
+    shipment: PickupRead;
+    timeline: ShipmentActivityRead[];
+    linkedManifest: ManifestResponse | null;
+  }>(detailCacheKey);
+
+  const [shipment, setShipment] = useState<PickupRead | null>(
+    () => cachedDetail?.shipment ?? null
+  );
+  const [linkedManifest, setLinkedManifest] = useState<ManifestResponse | null>(
+    () => cachedDetail?.linkedManifest ?? null
+  );
+  const [timeline, setTimeline] = useState<ShipmentActivityRead[]>(
+    () => cachedDetail?.timeline ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => !hasCachedQuery(detailCacheKey)
+  );
   const [isPrinting, setIsPrinting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -355,6 +381,17 @@ export default function ShipmentDetailsPage() {
 
   const fetchDetails = useCallback(async () => {
     if (!shipmentId) return;
+    const cached = getCachedQuery<{
+      shipment: PickupRead;
+      timeline: ShipmentActivityRead[];
+      linkedManifest: ManifestResponse | null;
+    }>(detailCacheKey);
+    if (cached !== null) {
+      setShipment(cached.shipment);
+      setTimeline(cached.timeline);
+      setLinkedManifest(cached.linkedManifest);
+      setLoading(false);
+    }
     try {
       const [shipmentData, timelineData] = await Promise.all([
         ShipmentsService.getShipmentDetails(shipmentId),
@@ -363,11 +400,21 @@ export default function ShipmentDetailsPage() {
       setShipment(shipmentData);
       setTimeline(timelineData);
       setChargesRefreshKey((key) => key + 1);
+      setCachedQuery(detailCacheKey, {
+        shipment: shipmentData,
+        timeline: timelineData,
+        linkedManifest: null,
+      });
       if (shipmentData.manifest_id) {
         ManifestsService.listManifests(undefined, undefined, undefined, tenantSlug)
           .then((manifests) => {
             const match = manifests.find((m) => m.id === shipmentData.manifest_id) ?? null;
             setLinkedManifest(match);
+            setCachedQuery(detailCacheKey, {
+              shipment: shipmentData,
+              timeline: timelineData,
+              linkedManifest: match,
+            });
           })
           .catch(() => setLinkedManifest(null));
       } else {
@@ -378,7 +425,7 @@ export default function ShipmentDetailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [shipmentId, tenantSlug]);
+  }, [shipmentId, tenantSlug, detailCacheKey]);
 
   useEffect(() => {
     fetchDetails();
@@ -419,10 +466,30 @@ export default function ShipmentDetailsPage() {
     [timeline]
   );
 
-  if (loading) {
+  if (loading && !shipment) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div
+        data-testid="shipment-detail-loading-skeleton"
+        className="max-w-6xl mx-auto space-y-6 pb-12"
+      >
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-5 flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild className="h-9 w-9">
+            <Link href={routeTo("/shipments")} prefetch={true}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div className="space-y-2 flex-1">
+            <div className="h-7 w-56 rounded-lg bg-slate-100 animate-pulse" />
+            <div className="h-4 w-80 rounded bg-slate-100 animate-pulse" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="h-64 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+            <div className="h-64 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+          </div>
+          <div className="h-96 rounded-xl border border-slate-200 bg-white p-6 animate-pulse" />
+        </div>
       </div>
     );
   }

@@ -46,7 +46,7 @@ export default function PrimeLanesPage() {
         </div>
         {canEdit && (
           <Button variant="outline" size="sm" asChild className="bg-white">
-            <Link href={routeTo("/settings")} data-testid="prime-lanes.back-to-settings">
+            <Link href={routeTo("/settings")} prefetch={true} data-testid="prime-lanes.back-to-settings">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Markups &amp; COD fee: Workspace Settings ▸ Pricing
             </Link>

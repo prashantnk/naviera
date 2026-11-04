@@ -29,21 +29,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ALL_FILTER_VALUE } from "@/lib/form-options";
+import { prefetchAddresses } from "@/hooks/use-addresses";
 import {
   buildQueryCacheKey,
+  fetchWithCache,
   getCachedQuery,
   hasCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { format } from "date-fns";
-import { CalendarRange, ChevronDown, Loader2, Plus, Printer, Search, Truck, X } from "lucide-react";
+import { CalendarRange, ChevronDown, Plus, Printer, Search, Truck, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 
+import { buildEligibleShipmentsCacheKey } from "./create-pickup-request-form";
 import {
   ConfirmPickupDialog,
   DispatchPickupDialog,
@@ -281,6 +284,27 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
     };
   }, [serviceFlow, statusFilter, tenantSlug, requestKey, cacheKey]);
 
+  // Pre-warm saved pickup locations and Ready to Ship shipments in the background
+  // so clicking "Create pickup request" renders in 0ms with addresses + shipments populated.
+  useEffect(() => {
+    if (!tenantSlug || !capabilities.canBook) return;
+    let cancelled = false;
+    void prefetchAddresses(tenantSlug).then((addresses) => {
+      if (cancelled || !addresses || addresses.length === 0) return;
+      for (const addr of addresses.slice(0, 3)) {
+        const eligibleKey = buildEligibleShipmentsCacheKey(tenantSlug, serviceFlow, addr.id);
+        if (!hasCachedQuery(eligibleKey)) {
+          void fetchWithCache(eligibleKey, () =>
+            Promise.resolve(ManifestsService.listEligibleShipments(serviceFlow, addr.id, tenantSlug))
+          ).catch(() => {});
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantSlug, serviceFlow, capabilities.canBook]);
+
   const locationNames = useMemo(() => {
     const names = new Set(manifests.map((m) => m.pickup_location_name).filter(Boolean));
     return Array.from(names) as string[];
@@ -495,7 +519,7 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
         </div>
         {capabilities.canBook && (
           <Button asChild className="h-10 rounded-lg px-4 font-semibold shadow-sm w-full sm:w-auto">
-            <Link href={routeTo(flowConfig.createHref)}>
+            <Link href={routeTo(flowConfig.createHref)} prefetch={true}>
               Create pickup request <Plus className="ml-2 h-4 w-4" />
             </Link>
           </Button>
@@ -610,27 +634,50 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
 
       {/* Desktop table */}
       <div className="relative hidden min-h-[320px] md:block">
-        {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/50 backdrop-blur-[1px]">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        {loading && manifests.length === 0 ? (
+          <div
+            data-testid="pickup-requests-loading-skeleton"
+            aria-busy="true"
+            aria-label="Loading pickup requests"
+            className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3"
+          >
+            <div className="h-9 w-full animate-pulse rounded-lg bg-muted/60" />
+            {[0, 1, 2, 3].map((rowIdx) => (
+              <div
+                key={rowIdx}
+                className="grid grid-cols-5 gap-4 items-center py-3 border-b border-border/60 last:border-b-0"
+              >
+                <div className="h-4 w-28 animate-pulse rounded bg-muted/70" />
+                <div className="h-4 w-44 animate-pulse rounded bg-muted/50" />
+                <div className="h-4 w-32 animate-pulse rounded bg-muted/50" />
+                <div className="h-6 w-24 animate-pulse rounded-full bg-muted/60" />
+                <div className="h-8 w-28 animate-pulse rounded-lg bg-muted/50 justify-self-end" />
+              </div>
+            ))}
           </div>
+        ) : (
+          <DataTable columns={columns} data={visibleManifests} />
         )}
-        <DataTable columns={columns} data={visibleManifests} />
       </div>
 
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
-        {loading && (
-          <div className="flex justify-center py-10">
-            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+        {loading && manifests.length === 0 && (
+          <div className="space-y-3">
+            {[0, 1, 2].map((rowIdx) => (
+              <div
+                key={rowIdx}
+                className="h-28 w-full animate-pulse rounded-xl border border-border bg-card p-4"
+              />
+            ))}
           </div>
         )}
-        {!loading && visibleManifests.length === 0 && (
+        {(!loading || manifests.length > 0) && visibleManifests.length === 0 && (
           <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
             No pickup requests found.
           </div>
         )}
-        {!loading &&
+        {(!loading || manifests.length > 0) &&
           visibleManifests.map((manifest) => (
             <div
               key={manifest.id}

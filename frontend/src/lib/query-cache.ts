@@ -28,6 +28,7 @@ interface CacheEntry<T = unknown> {
 }
 
 const memoryCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
 
 let testOverrideEnabled = false;
 
@@ -61,9 +62,9 @@ function _stableSerialize(params?: Record<string, unknown>): string {
  * @returns Canonical cache key string.
  */
 export function buildQueryCacheKey(
-  tenantSlug: string,
-  scopeKey: string,
-  endpoint: string,
+  tenantSlug: string | null | undefined,
+  scopeKey?: string | null | undefined,
+  endpoint: string = "",
   params?: Record<string, unknown>,
 ): string {
   const cleanTenant = (tenantSlug || "default").trim().toLowerCase();
@@ -121,6 +122,50 @@ export function setCachedQuery<T>(
 }
 
 /**
+ * Fetches data using `fetcher`, returning cached data immediately when warm
+ * (unless `options.force` is true), deduplicating concurrent in-flight requests
+ * for the same key, and writing the resolved result into the cache.
+ *
+ * @param key - Cache key from `buildQueryCacheKey`.
+ * @param fetcher - Async function that resolves the fresh payload.
+ * @param options - Optional `{ force, ttlMs }` settings.
+ * @returns Resolved payload.
+ */
+export async function fetchWithCache<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  options?: { force?: boolean; ttlMs?: number },
+): Promise<T> {
+  if (!options?.force) {
+    const cached = getCachedQuery<T>(key);
+    if (cached !== null) {
+      return cached;
+    }
+    if (key && _isCacheActive()) {
+      const existing = inFlightRequests.get(key) as Promise<T> | undefined;
+      if (existing) {
+        return existing;
+      }
+    }
+  }
+
+  const requestPromise = Promise.resolve()
+    .then(() => fetcher())
+    .then((data) => {
+      setCachedQuery(key, data, options?.ttlMs);
+      return data;
+    })
+    .finally(() => {
+      inFlightRequests.delete(key);
+    });
+
+  if (key && _isCacheActive()) {
+    inFlightRequests.set(key, requestPromise);
+  }
+  return requestPromise;
+}
+
+/**
  * Invalidates all cached queries, or only entries matching a tenant/prefix token.
  *
  * @param matchToken - Optional tenant slug or key substring to evict selectively.
@@ -128,12 +173,18 @@ export function setCachedQuery<T>(
 export function invalidateQueryCache(matchToken?: string): void {
   if (!matchToken || !matchToken.trim()) {
     memoryCache.clear();
+    inFlightRequests.clear();
     return;
   }
   const needle = matchToken.trim().toLowerCase();
   for (const key of Array.from(memoryCache.keys())) {
     if (key.startsWith(`${needle}::`) || key.includes(needle)) {
       memoryCache.delete(key);
+    }
+  }
+  for (const key of Array.from(inFlightRequests.keys())) {
+    if (key.startsWith(`${needle}::`) || key.includes(needle)) {
+      inFlightRequests.delete(key);
     }
   }
 }
@@ -145,6 +196,7 @@ export function invalidateQueryCache(matchToken?: string): void {
 export function enableQueryCacheForTests(enabled: boolean): void {
   testOverrideEnabled = enabled;
   memoryCache.clear();
+  inFlightRequests.clear();
 }
 
 if (typeof window !== "undefined") {

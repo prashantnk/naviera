@@ -19,6 +19,7 @@ import { Loader2, Plus, User, Building2, Phone, Mail, MapPin, Tag, Eye, Contact 
 import { useState, useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { invalidateAddressesCache } from "@/hooks/use-addresses";
 import { usePincodeLocator } from "@/hooks/use-pincode-locator";
 import * as z from "zod";
 
@@ -176,6 +177,7 @@ export function AddAddressDialog({
             }
 
             await AddressesService.createSavedAddress(payload);
+            invalidateAddressesCache();
             toast.success("Address saved successfully!");
             setOpen(false);
             form.reset();

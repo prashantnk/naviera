@@ -803,9 +803,7 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
             disabled={loading}
             className="h-9 bg-white text-xs font-semibold"
           >
-            <RefreshCw
-              className={cn("mr-1.5 size-3.5", loading && "animate-spin")}
-            />
+            <RefreshCw className="mr-1.5 size-3.5" />
             Refresh
           </Button>
         </div>
@@ -867,12 +865,6 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
 
       {/* Desktop Table */}
       <div className="relative hidden md:block rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
-        {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px]">
-            <Loader2 className="size-7 animate-spin text-primary" />
-          </div>
-        )}
-
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-xs">
             <thead>
@@ -899,7 +891,20 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.length === 0 && !loading ? (
+              {loading && rows.length === 0 ? (
+                <tr data-testid="exceptions-loading-skeleton">
+                  <td colSpan={8} className="py-8 px-4">
+                    <div className="space-y-2.5">
+                      {[0, 1, 2].map((idx) => (
+                        <div
+                          key={idx}
+                          className="h-11 w-full rounded-lg bg-slate-100 animate-pulse"
+                        />
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ) : rows.length === 0 && !loading ? (
                 <tr>
                   <td colSpan={8} className="py-16 text-center">
                     <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-slate-500">
@@ -1079,9 +1084,14 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
 
       {/* Mobile Cards */}
       <div className="space-y-3 md:hidden">
-        {loading && (
-          <div className="flex justify-center py-10">
-            <Loader2 className="size-7 animate-spin text-primary" />
+        {loading && rows.length === 0 && (
+          <div className="space-y-2.5 py-4">
+            {[0, 1].map((idx) => (
+              <div
+                key={idx}
+                className="h-28 w-full rounded-xl bg-slate-100 animate-pulse"
+              />
+            ))}
           </div>
         )}
 

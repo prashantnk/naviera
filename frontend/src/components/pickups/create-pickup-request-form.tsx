@@ -14,7 +14,6 @@
  * server (`ManifestService`), with the UI only collecting the selection.
  */
 import {
-  AddressesService,
   AddressRead,
   EligibleShipmentRead,
   ManifestsService,
@@ -34,7 +33,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  fetchAddressesCached,
+  getCachedAddresses,
+  hasCachedAddresses,
+} from "@/hooks/use-addresses";
 import { PICKUP_TIME_SLOT_OPTIONS } from "@/lib/form-options";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  invalidateQueryCache,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { format, parseISO, startOfToday } from "date-fns";
 import {
@@ -79,6 +90,20 @@ const BLIND_PICKUP_NEEDS_LR_MESSAGE =
 /** Shown if "Create" is pressed before the pickup locations / Ready to Ship list loaded. */
 export const PICKER_STILL_LOADING_MESSAGE =
   "Still loading the Ready to Ship shipments for this location. Please wait a moment.";
+
+/**
+ * Builds the canonical SWR cache key for `GET /manifests/eligible-shipments`.
+ */
+export function buildEligibleShipmentsCacheKey(
+  tenantSlug: string,
+  serviceFlow: ServiceFlow,
+  locationId: string,
+): string {
+  return buildQueryCacheKey(tenantSlug, "session", "eligible-shipments", {
+    serviceFlow,
+    locationId,
+  });
+}
 
 /** A selectable pickup location (saved address, or the prefilled snapshot). */
 interface LocationOption {
@@ -153,9 +178,17 @@ export function CreatePickupRequestForm({
   const { tenantSlug, routeTo } = useTenant();
   const flowConfig = PICKUP_FLOW_CONFIG[serviceFlow];
 
-  const [addresses, setAddresses] = useState<AddressRead[]>([]);
-  const [loadingAddresses, setLoadingAddresses] = useState(true);
-  const [locationId, setLocationId] = useState(initialLocationId ?? "");
+  const [addresses, setAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
+  const [loadingAddresses, setLoadingAddresses] = useState<boolean>(
+    () => !hasCachedAddresses(tenantSlug)
+  );
+  const [locationId, setLocationId] = useState<string>(() => {
+    if (initialLocationId) return initialLocationId;
+    const warm = getCachedAddresses(tenantSlug);
+    return warm && warm.length === 1 ? warm[0].id : "";
+  });
 
   const startDate = _resolveInitialDate(initialDate);
   const [scheduledDate, setScheduledDate] = useState(startDate);
@@ -166,10 +199,28 @@ export function CreatePickupRequestForm({
   const [blindBoxes, setBlindBoxes] = useState("");
   const [expectedBoxes, setExpectedBoxes] = useState("1");
 
-  const [eligible, setEligible] = useState<EligibleShipmentRead[]>([]);
-  const [eligibleLoadedFor, setEligibleLoadedFor] = useState<string | null>(null);
+  const initialEligibleKey = locationId
+    ? buildEligibleShipmentsCacheKey(tenantSlug, serviceFlow, locationId)
+    : "";
+  const [eligible, setEligible] = useState<EligibleShipmentRead[]>(() =>
+    initialEligibleKey
+      ? (getCachedQuery<EligibleShipmentRead[]>(initialEligibleKey) ?? [])
+      : []
+  );
+  const [eligibleLoadedFor, setEligibleLoadedFor] = useState<string | null>(() =>
+    initialEligibleKey && hasCachedQuery(initialEligibleKey) ? locationId : null
+  );
   const loadingEligible = Boolean(locationId) && eligibleLoadedFor !== locationId;
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    if (!initialEligibleKey) return new Set();
+    const warmRows = getCachedQuery<EligibleShipmentRead[]>(initialEligibleKey);
+    if (!warmRows) return new Set();
+    const preselect = new Set(initialShipmentIds ?? []);
+    if (preselect.size > 0) {
+      return new Set(warmRows.map((row) => row.id).filter((id) => preselect.has(id)));
+    }
+    return new Set(warmRows.map((row) => row.id));
+  });
   const pendingPreselect = useRef<Set<string>>(new Set(initialShipmentIds ?? []));
 
   const [submitting, setSubmitting] = useState(false);
@@ -179,14 +230,26 @@ export function CreatePickupRequestForm({
 
   useEffect(() => {
     let ignore = false;
-    AddressesService.listSavedAddresses(null, tenantSlug)
+    const warm = getCachedAddresses(tenantSlug);
+    if (warm !== null) {
+      setAddresses(warm);
+      setLoadingAddresses(false);
+      if (!initialLocationId && warm.length === 1) {
+        setLocationId((prev) => prev || warm[0].id);
+      }
+    }
+    fetchAddressesCached(tenantSlug, { force: warm !== null })
       .then((rows) => {
         if (ignore) return;
         setAddresses(rows);
-        if (!initialLocationId && rows.length === 1) setLocationId(rows[0].id);
+        if (!initialLocationId && rows.length === 1) {
+          setLocationId((prev) => prev || rows[0].id);
+        }
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(extractApiErrorMessage(err, "Failed to load pickup locations."));
+        if (!ignore && warm === null) {
+          setError(extractApiErrorMessage(err, "Failed to load pickup locations."));
+        }
       })
       .finally(() => {
         if (!ignore) setLoadingAddresses(false);
@@ -199,20 +262,36 @@ export function CreatePickupRequestForm({
   useEffect(() => {
     if (!locationId) return;
     let ignore = false;
+    const eligibleKey = buildEligibleShipmentsCacheKey(tenantSlug, serviceFlow, locationId);
+    const warmRows = getCachedQuery<EligibleShipmentRead[]>(eligibleKey);
+    if (warmRows !== null) {
+      setEligible(warmRows);
+      setEligibleLoadedFor(locationId);
+      const preselect = pendingPreselect.current;
+      if (preselect.size > 0) {
+        setSelectedIds(new Set(warmRows.map((row) => row.id).filter((id) => preselect.has(id))));
+      } else {
+        setSelectedIds(new Set(warmRows.map((row) => row.id)));
+      }
+      pendingPreselect.current = new Set();
+    }
     ManifestsService.listEligibleShipments(serviceFlow, locationId, tenantSlug)
       .then((rows) => {
+        setCachedQuery(eligibleKey, rows);
         if (ignore) return;
         setEligible(rows);
-        const preselect = pendingPreselect.current;
-        if (preselect.size > 0) {
-          setSelectedIds(new Set(rows.map((row) => row.id).filter((id) => preselect.has(id))));
-        } else {
-          setSelectedIds(new Set(rows.map((row) => row.id)));
+        if (warmRows === null) {
+          const preselect = pendingPreselect.current;
+          if (preselect.size > 0) {
+            setSelectedIds(new Set(rows.map((row) => row.id).filter((id) => preselect.has(id))));
+          } else {
+            setSelectedIds(new Set(rows.map((row) => row.id)));
+          }
+          pendingPreselect.current = new Set();
         }
-        pendingPreselect.current = new Set();
       })
       .catch((err: unknown) => {
-        if (ignore) return;
+        if (ignore || warmRows !== null) return;
         setEligible([]);
         setSelectedIds(new Set());
         toast.error(extractApiErrorMessage(err, "Failed to load Ready to Ship shipments."));
@@ -305,6 +384,9 @@ export function CreatePickupRequestForm({
         },
         tenantSlug
       );
+      invalidateQueryCache("manifests-list");
+      invalidateQueryCache("eligible-shipments");
+      invalidateQueryCache("shipments-list");
       const slotNotice = (created as { notice?: string | null }).notice;
       toast.success(`Pickup request ${created.pickup_request_number ?? ""} created`, {
         description: slotNotice
@@ -326,7 +408,7 @@ export function CreatePickupRequestForm({
       {/* Header */}
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="icon" asChild className="mt-1 shrink-0">
-          <Link href={routeTo(flowConfig.listHref)} aria-label="Back to pickup requests">
+          <Link href={routeTo(flowConfig.listHref)} prefetch={true} aria-label="Back to pickup requests">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -355,11 +437,14 @@ export function CreatePickupRequestForm({
           <MapPin className="h-4 w-4 text-primary" /> Pickup location
         </h2>
         {loadingAddresses ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <div
+            data-testid="pickup-locations-skeleton"
+            className="h-10 w-full animate-pulse rounded-lg bg-muted/60"
+          />
         ) : locationOptions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No saved pickup locations yet.{" "}
-            <Link href={routeTo("/address-book")} className="font-medium text-primary hover:underline">
+            <Link href={routeTo("/address-book")} prefetch={true} className="font-medium text-primary hover:underline">
               Add one in the Address Book
             </Link>
             .
@@ -509,8 +594,13 @@ export function CreatePickupRequestForm({
               Select a pickup location to see its Ready to Ship shipments.
             </p>
           ) : loadingEligible ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div
+              data-testid="eligible-shipments-skeleton"
+              className="space-y-2 py-2"
+            >
+              <div className="h-9 w-full animate-pulse rounded-lg bg-muted/60" />
+              <div className="h-10 w-full animate-pulse rounded-lg bg-muted/40" />
+              <div className="h-10 w-full animate-pulse rounded-lg bg-muted/40" />
             </div>
           ) : eligible.length === 0 && isBlind ? (
             <div

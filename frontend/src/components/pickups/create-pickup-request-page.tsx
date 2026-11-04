@@ -7,7 +7,6 @@
  * `useSearchParams` in `<Suspense>` as required for production builds.
  */
 import { ServiceFlow } from "@/api_client";
-import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
@@ -42,8 +41,13 @@ export function CreatePickupRequestPage({ serviceFlow }: { serviceFlow: ServiceF
   return (
     <Suspense
       fallback={
-        <div className="flex justify-center py-16">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div
+          data-testid="create-pickup-suspense-skeleton"
+          className="mx-auto max-w-5xl space-y-6 pb-28"
+        >
+          <div className="h-12 w-72 animate-pulse rounded-lg bg-muted/60" />
+          <div className="h-28 w-full animate-pulse rounded-xl border border-border bg-card p-6" />
+          <div className="h-44 w-full animate-pulse rounded-xl border border-border bg-card p-6" />
         </div>
       }
     >

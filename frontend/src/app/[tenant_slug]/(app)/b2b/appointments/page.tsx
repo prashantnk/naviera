@@ -36,6 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import {
   CalendarClock,
@@ -43,7 +49,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  Loader2,
   MoreVertical,
   Plus,
   Search,
@@ -114,6 +119,7 @@ function LrCell({ row }: { row: AppointmentRow }) {
     <div className="flex flex-col">
       <Link
         href={routeTo(`/b2b/shipments/${row.shipment_id}`)}
+        prefetch={true}
         className="font-mono text-sm font-semibold text-primary hover:underline"
       >
         {row.tracking_id || row.order_reference_id || "Pending"}
@@ -168,7 +174,7 @@ function RowActions({ row, canBook, isBookedTab, onBook }: RowActionsProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
           <DropdownMenuItem asChild>
-            <Link href={routeTo(`/b2b/shipments/${row.shipment_id}`)}>
+            <Link href={routeTo(`/b2b/shipments/${row.shipment_id}`)} prefetch={true}>
               <Eye className="mr-2 h-4 w-4 text-slate-500" />
               View LR
             </Link>
@@ -201,8 +207,25 @@ export default function ManageAppointmentsPage() {
   const consignee = useDebounced(consigneeInput);
   const city = useDebounced(cityInput);
 
-  const [data, setData] = useState<AppointmentListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "b2b-appointments", {
+    tab,
+    search,
+    consignee,
+    city,
+    status,
+    pddFrom,
+    pddTo,
+    expiredOnly,
+    page,
+    size,
+  });
+
+  const [data, setData] = useState<AppointmentListResponse | null>(() =>
+    getCachedQuery<AppointmentListResponse>(cacheKey)
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => !hasCachedQuery(cacheKey)
+  );
   const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -216,7 +239,13 @@ export default function ManageAppointmentsPage() {
 
   useEffect(() => {
     let ignore = false;
-    setLoading(true);
+    const cached = getCachedQuery<AppointmentListResponse>(cacheKey);
+    if (cached !== null && refreshKey === 0) {
+      setData(cached);
+      setLoading(false);
+    } else if (cached === null) {
+      setLoading(true);
+    }
     AppointmentsService.listAppointments(
       tab,
       search || null,
@@ -231,12 +260,15 @@ export default function ManageAppointmentsPage() {
       tenantSlug
     )
       .then((response) => {
+        setCachedQuery(cacheKey, response);
         if (ignore) return;
         setData(response);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(extractApiErrorMessage(err, "Failed to load appointments."));
+        if (!ignore && cached === null) {
+          setError(extractApiErrorMessage(err, "Failed to load appointments."));
+        }
       })
       .finally(() => {
         if (!ignore) setLoading(false);
@@ -244,7 +276,7 @@ export default function ManageAppointmentsPage() {
     return () => {
       ignore = true;
     };
-  }, [tab, search, consignee, city, status, pddFrom, pddTo, expiredOnly, page, size, tenantSlug, refreshKey]);
+  }, [tab, search, consignee, city, status, pddFrom, pddTo, expiredOnly, page, size, tenantSlug, refreshKey, cacheKey]);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total ?? 0;
@@ -449,11 +481,6 @@ export default function ManageAppointmentsPage() {
 
       {/* Desktop table */}
       <div className="relative hidden overflow-hidden rounded-xl border border-slate-200 bg-white md:block">
-        {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
-            <Loader2 className="h-7 w-7 animate-spin text-primary" />
-          </div>
-        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-slate-50 text-sm text-slate-700">
@@ -478,6 +505,20 @@ export default function ManageAppointmentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {loading && rows.length === 0 && (
+                <tr data-testid="appointments-loading-skeleton">
+                  <td colSpan={canBook ? 6 : 5} className="px-4 py-8">
+                    <div className="space-y-2.5">
+                      {[0, 1, 2].map((idx) => (
+                        <div
+                          key={idx}
+                          className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                        />
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )}
               {rows.length === 0 && !loading && (
                 <tr>
                   <td colSpan={canBook ? 6 : 5} className="px-4 py-16 text-center text-sm text-slate-500">
@@ -519,9 +560,14 @@ export default function ManageAppointmentsPage() {
 
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
-        {loading && (
-          <div className="flex justify-center py-10">
-            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+        {loading && rows.length === 0 && (
+          <div className="space-y-2.5 py-4">
+            {[0, 1].map((idx) => (
+              <div
+                key={idx}
+                className="h-24 w-full rounded-xl bg-slate-100 animate-pulse"
+              />
+            ))}
           </div>
         )}
         {!loading && rows.length === 0 && (

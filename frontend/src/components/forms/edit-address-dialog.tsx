@@ -27,6 +27,7 @@ import { Loader2, User, Building2, Phone, Mail, MapPin, Tag, Eye, Contact } from
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { invalidateAddressesCache } from "@/hooks/use-addresses";
 import { usePincodeLocator } from "@/hooks/use-pincode-locator";
 import * as z from "zod";
 
@@ -138,6 +139,7 @@ export function EditAddressDialog({
         // Force scope to PRIVATE for non-admins
         scope: isAdmin ? data.scope : AddressScope.PRIVATE,
       } as AddressUpdate);
+      invalidateAddressesCache();
       toast.success("Address updated successfully!");
       setOpen(false);
       onSuccess();

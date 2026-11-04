@@ -23,6 +23,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
+from app.core.dependencies import cache_tenant, get_cached_tenant_by_id
 from app.core.permissions import (
     assert_not_read_only,
     can_view_tenant_finance,
@@ -537,11 +538,17 @@ class DelhiveryModulesService:
             tenant_id: Tenant whose users are looked up.
             rows: ORM rows carrying `merchant_user_id`; mutated in place.
         """
+        unresolved = [
+            row for row in rows if not getattr(row, "_merchant_email_resolved", False)
+        ]
+        if not unresolved:
+            return
         emails = await self.repo.get_user_emails(
-            tenant_id, [row.merchant_user_id for row in rows]
+            tenant_id, [row.merchant_user_id for row in unresolved]
         )
-        for row in rows:
+        for row in unresolved:
             object.__setattr__(row, MERCHANT_EMAIL_ATTR, emails.get(row.merchant_user_id))
+            object.__setattr__(row, "_merchant_email_resolved", True)
 
     # ------------------------------------------------------------------
     # 1. COD Remittances
@@ -894,7 +901,11 @@ class DelhiveryModulesService:
 
     async def _require_tenant(self, tenant_id: uuid.UUID) -> Tenant:
         """Loads the tenant whose settings drive GST documents (404 if missing)."""
-        tenant = await self.repo.get_tenant(tenant_id)
+        tenant = get_cached_tenant_by_id(tenant_id)
+        if tenant is None:
+            tenant = await self.repo.get_tenant(tenant_id)
+            if tenant is not None:
+                cache_tenant(tenant)
         if tenant is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
@@ -1902,11 +1913,26 @@ class DelhiveryModulesService:
         Overwrites each row's `shipment_status` with the live shipment status label, as a
         committed (not dirty) value so this read never writes back to the table.
         """
-        shipment_ids = [row.shipment_id for row in rows if row.shipment_id is not None]
-        if not shipment_ids:
-            return
-        statuses = await self.repo.get_shipment_statuses(tenant_id, shipment_ids)
+        unresolved_rows: List[WeightDispute] = []
         for row in rows:
+            if getattr(row, "_shipment_status_resolved", False):
+                joined_status = getattr(row, "_joined_shipment_status", None)
+                if joined_status is not None:
+                    set_committed_value(
+                        row,
+                        "shipment_status",
+                        self._shipment_status_label(joined_status),
+                    )
+            elif row.shipment_id is not None:
+                unresolved_rows.append(row)
+
+        if not unresolved_rows:
+            return
+        shipment_ids = [
+            row.shipment_id for row in unresolved_rows if row.shipment_id is not None
+        ]
+        statuses = await self.repo.get_shipment_statuses(tenant_id, shipment_ids)
+        for row in unresolved_rows:
             if row.shipment_id in statuses:
                 set_committed_value(
                     row,

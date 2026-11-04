@@ -10,7 +10,7 @@ from app.core.db import get_session
 from app.core.permissions import assert_not_read_only
 from app.models.pickups import Address, AddressCategory, AddressScope
 from app.models.tenants import Tenant, User, UserRole
-from app.repositories.addresses import AddressRepository
+from app.repositories.addresses import AddressRepository, invalidate_address_cache
 from app.schemas.v1.pickups import AddressCreate, AddressUpdate
 
 
@@ -59,11 +59,24 @@ class AddressService:
         self.address_repo = address_repo
 
     async def list_saved_addresses(
-        self, user: User, tenant: Tenant, category: Optional[AddressCategory] = None
+        self,
+        user: User,
+        tenant: Tenant,
+        category: Optional[AddressCategory] = None,
+        *,
+        is_saved: Optional[bool] = True,
+        search: Optional[str] = None,
+        skip: int = 0,
+        limit: Optional[int] = None,
     ) -> List[Address]:
-
         return await self.address_repo.list_saved_addresses(
-            tenant_id=tenant.id, user_id=user.id, category=category
+            tenant_id=tenant.id,
+            user_id=user.id,
+            category=category,
+            is_saved=is_saved,
+            search=search,
+            skip=skip,
+            limit=limit,
         )
 
     async def create_saved_address(
@@ -105,7 +118,9 @@ class AddressService:
                 for key, value in address_data.items():
                     setattr(existing, key, value)
                 existing.user_id = user.id  # Track who reactivated/claims it
-                return await self.address_repo.create_address(existing)
+                saved = await self.address_repo.create_address(existing)
+                invalidate_address_cache(tenant.id)
+                return saved
 
         address_data = payload.model_dump(exclude={"is_saved"})
         # Convert the Pydantic schema to the SQLModel database object
@@ -116,7 +131,9 @@ class AddressService:
             is_saved=True,  # Force it to be a permanent address book entry
             address_signature=sig,
         )
-        return await self.address_repo.create_address(new_address)
+        saved = await self.address_repo.create_address(new_address)
+        invalidate_address_cache(tenant.id)
+        return saved
 
     async def update_saved_address(
         self, address_id: uuid.UUID, payload: AddressUpdate, user: User, tenant: Tenant
@@ -197,7 +214,9 @@ class AddressService:
                 is_saved=True,
                 address_signature=sig,
             )
-            return await self.address_repo.create_address(new_address)
+            saved = await self.address_repo.create_address(new_address)
+            invalidate_address_cache(tenant.id)
+            return saved
 
         for key, value in merged_values.items():
             setattr(address, key, value)
@@ -212,6 +231,7 @@ class AddressService:
                 # Soft delete current one, return existing active duplicate
                 address.is_saved = False
                 await self.address_repo.create_address(address)
+                invalidate_address_cache(tenant.id)
                 return existing
             if not await self.address_repo.is_address_referenced(tenant.id, existing.id):
                 # Reactivate unreferenced soft-deleted duplicate
@@ -223,9 +243,12 @@ class AddressService:
 
                 address.is_saved = False
                 await self.address_repo.create_address(address)
+                invalidate_address_cache(tenant.id)
                 return existing
 
-        return await self.address_repo.create_address(address)  # Reuses add/commit
+        saved = await self.address_repo.create_address(address)  # Reuses add/commit
+        invalidate_address_cache(tenant.id)
+        return saved
 
     async def delete_saved_address(
         self, address_id: uuid.UUID, user: User, tenant: Tenant
@@ -254,6 +277,7 @@ class AddressService:
         # Soft delete: Unmark as saved so historical shipments don't break!
         address.is_saved = False
         await self.address_repo.create_address(address)
+        invalidate_address_cache(tenant.id)
         return {"detail": "Address removed successfully"}
 
 

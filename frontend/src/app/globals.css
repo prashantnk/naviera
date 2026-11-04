@@ -138,3 +138,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+[data-nav-pending="true"] {
+  opacity: 0.8;
+  transform: scale(0.99);
+  transition: opacity 75ms ease-out, transform 75ms ease-out;
+}

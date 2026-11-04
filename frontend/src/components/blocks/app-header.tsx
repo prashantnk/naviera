@@ -129,7 +129,7 @@ export function AppHeader() {
           asChild
           className="hidden md:flex h-9 border-slate-200 text-slate-600 hover:text-primary"
         >
-          <Link href={routeTo("/")}>
+          <Link href={routeTo("/")} prefetch={true}>
             <Globe className="mr-2 h-4 w-4" />
             Public Website
           </Link>
@@ -218,14 +218,14 @@ export function AppHeader() {
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
-              <Link href={routeTo("/wallet")} className="flex items-center">
+              <Link href={routeTo("/wallet")} prefetch={true} className="flex items-center">
                 <Wallet className="mr-2.5 h-4 w-4 text-slate-500" />
                 <span>Wallet & Billing Ledger</span>
               </Link>
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
-              <Link href={routeTo("/address-book")} className="flex items-center">
+              <Link href={routeTo("/address-book")} prefetch={true} className="flex items-center">
                 <MapPin className="mr-2.5 h-4 w-4 text-slate-500" />
                 <span>Saved Address Book</span>
               </Link>
@@ -233,7 +233,7 @@ export function AppHeader() {
 
             {capabilities.canManageTeam && (
               <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
-                <Link href={routeTo("/team")} className="flex items-center">
+                <Link href={routeTo("/team")} prefetch={true} className="flex items-center">
                   <Users className="mr-2.5 h-4 w-4 text-slate-500" />
                   <span>Team & Role Scopes</span>
                 </Link>
@@ -241,7 +241,7 @@ export function AppHeader() {
             )}
             {capabilities.canManageSettings && (
               <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2">
-                <Link href={routeTo("/settings")} className="flex items-center">
+                <Link href={routeTo("/settings")} prefetch={true} className="flex items-center">
                   <Settings className="mr-2.5 h-4 w-4 text-slate-500" />
                   <span>Workspace Settings</span>
                 </Link>
@@ -249,7 +249,7 @@ export function AppHeader() {
             )}
 
             <DropdownMenuItem asChild className="cursor-pointer rounded-lg py-2 md:hidden">
-              <Link href={routeTo("/")} className="flex items-center">
+              <Link href={routeTo("/")} prefetch={true} className="flex items-center">
                 <Globe className="mr-2.5 h-4 w-4 text-slate-500" />
                 <span>Public Website</span>
               </Link>

@@ -453,12 +453,16 @@ export default function SupportTicketsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center">
-                    <div className="inline-flex items-center gap-2 text-slate-500">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <span>Loading support tickets</span>
+              {loading && tickets.length === 0 ? (
+                <tr data-testid="support-tickets-loading-skeleton">
+                  <td colSpan={6} className="py-8 px-4">
+                    <div className="space-y-2.5">
+                      {[0, 1, 2].map((idx) => (
+                        <div
+                          key={idx}
+                          className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                        />
+                      ))}
                     </div>
                   </td>
                 </tr>
@@ -530,10 +534,14 @@ export default function SupportTicketsPage() {
         </div>
 
         <div className="md:hidden divide-y divide-slate-100" data-testid="support.tickets.cards">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              Loading support tickets
+          {loading && tickets.length === 0 ? (
+            <div className="space-y-2.5 p-4">
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-20 w-full rounded-lg bg-slate-100 animate-pulse"
+                />
+              ))}
             </div>
           ) : tickets.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm font-semibold text-slate-700">

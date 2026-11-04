@@ -2,7 +2,6 @@
 "use client";
 
 import {
-  AddressesService,
   AddressCreate,
   AddressRead,
   AddressScope,
@@ -49,6 +48,7 @@ import { EWayBillBanner } from "@/components/forms/eway-bill-banner";
 import { AddressFieldset } from "@/components/forms/address-fieldset";
 import { addressSchema, ShipmentFormValues } from "@/lib/validations/shipment";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -318,7 +318,9 @@ export default function EditShipmentPage() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
-  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
 
   // Snapshot of the loaded values: the diff base for "send only changed fields".
   const [initialValues, setInitialValues] = useState<EditShipmentValues | null>(null);
@@ -328,10 +330,10 @@ export default function EditShipmentPage() {
   useEditPackageTestIds(formRef, !loading, TEST_ID);
 
   useEffect(() => {
-    AddressesService.listSavedAddresses()
+    fetchAddressesCached(tenantSlug)
       .then(setSavedAddresses)
       .catch(console.error);
-  }, []);
+  }, [tenantSlug]);
 
   const form = useForm<EditShipmentValues>({
     resolver: zodResolver(editShipmentSchema) as unknown as Resolver<EditShipmentValues>,

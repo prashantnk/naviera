@@ -3,7 +3,6 @@
 
 import React, { Suspense, useCallback, useEffect, useState, useRef } from "react";
 import {
-  AddressesService,
   AddressRead,
   AddressCategory,
   FreightPaymentMode,
@@ -41,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-banner";
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
 import {
   hasMeaningfulReverseDraft,
   reverseShipmentSchema,
@@ -60,8 +60,10 @@ function ReverseBookingContent() {
   const fromShipmentId = searchParams.get("from_shipment_id");
   const DRAFT_KEY = `shipment-draft-reverse-${tenantSlug}`;
 
-  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => Boolean(fromShipmentId));
   const [sourceTrackingId, setSourceTrackingId] = useState<string | null>(null);
   const hasRecoveredRef = useRef(false);
   const isSubmittedRef = useRef(false);
@@ -141,9 +143,15 @@ function ReverseBookingContent() {
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
+    const warmAddresses = getCachedAddresses(tenantSlug);
+    if (warmAddresses !== null) {
+      setSavedAddresses(warmAddresses);
+    }
     const loadInitialData = async () => {
       try {
-        const addresses = await AddressesService.listSavedAddresses();
+        const addresses = await fetchAddressesCached(tenantSlug, {
+          force: warmAddresses !== null,
+        });
         setSavedAddresses(addresses);
 
         if (fromShipmentId) {

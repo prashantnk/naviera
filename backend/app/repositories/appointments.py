@@ -196,20 +196,33 @@ class AppointmentsRepository:
         where = _scope_filters(scope) + [_tab_clause(tab, scope)] + _filter_clauses(
             filters, scope.today
         )
-        total = (
-            await self.session.exec(select(func.count()).select_from(PickupRequest).where(*where))
-        ).one()
         if tab == AppointmentTab.pending:
             order = [desc(col(PickupRequest.created_at))]
         else:
             order = [nulls_last(col(PickupRequest.appointment_start).asc())]
         statement = (
-            select(PickupRequest)
+            select(
+                PickupRequest,
+                func.count().over().label("_total_count"),
+            )
             .where(*where)
             .order_by(*order)
             .offset(offset)
             .limit(limit)
             .options(*_row_load_options())
         )
-        rows = (await self.session.exec(statement)).unique().all()
-        return list(rows), int(total)
+        raw_rows = (await self.session.exec(statement)).unique().all()
+        if raw_rows:
+            first = raw_rows[0]
+            if isinstance(first, PickupRequest):
+                return list(raw_rows), len(raw_rows)  # type: ignore[return-value]
+            total = int(first[1] or 0)
+            return [r[0] for r in raw_rows], total
+        if offset <= 0:
+            return [], 0
+        total = (
+            await self.session.exec(
+                select(func.count()).select_from(PickupRequest).where(*where)
+            )
+        ).one()
+        return [], int(total or 0)

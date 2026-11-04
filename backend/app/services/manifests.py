@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.dependencies import cache_tenant, get_cached_tenant_by_id
 from app.core.permissions import (
     assert_can_manage_shipments_or_pickups,
     assert_not_read_only,
@@ -24,7 +25,15 @@ from app.models.pickups import (
 )
 from app.models.repricing import MeasurementSource
 from app.models.tenants import Tenant, User, UserRole
-from app.repositories.manifests import ManifestRepository
+from app.repositories.addresses import get_cached_address_by_id
+from app.repositories.manifests import (
+    ManifestRepository,
+    cache_eligible_shipments,
+    cache_manifests_list,
+    get_cached_eligible_shipments,
+    get_cached_manifests_list,
+    invalidate_manifests_cache,
+)
 from app.repositories.shipments import ShipmentRepository
 from app.schemas.v1.manifests import ManifestCreate, ManifestDispatchMeasurement
 from app.schemas.v1.pickups import PackageCreate
@@ -366,6 +375,9 @@ class ManifestService:
     # =====================================================================
 
     async def _get_address_or_404(self, address_id: uuid.UUID, tenant_id: uuid.UUID) -> Address:
+        cached_addr = get_cached_address_by_id(tenant_id, address_id)
+        if cached_addr is not None:
+            return cached_addr
         addresses = await self.repo.get_addresses([address_id], tenant_id)
         if address_id not in addresses:
             raise HTTPException(
@@ -392,6 +404,8 @@ class ManifestService:
         return manifest
 
     async def _get_manifest_address(self, manifest: Manifest) -> Optional[Address]:
+        if getattr(manifest, "_pickup_address_loaded", False):
+            return getattr(manifest, "_pickup_address", None)
         addresses = await self.repo.get_addresses([manifest.pickup_address_id], manifest.tenant_id)
         return addresses.get(manifest.pickup_address_id)
 
@@ -575,7 +589,11 @@ class ManifestService:
 
         use_declared_boxes = payload.is_blind_pickup or not shipments
         
-        tenant = await self.session.get(Tenant, tenant_id)
+        tenant = get_cached_tenant_by_id(tenant_id)
+        if tenant is None:
+            tenant = await self.session.get(Tenant, tenant_id)
+            if tenant is not None:
+                cache_tenant(tenant)
         cutoff = DEFAULT_CUTOFF
         if tenant and tenant.settings and tenant.settings.get("operations"):
             cutoff = tenant.settings["operations"].get("pickup_cutoff_time") or DEFAULT_CUTOFF
@@ -598,6 +616,7 @@ class ManifestService:
             await self.repo.link_shipments(manifest, shipments, current_user.id if current_user else None)
 
         await self.session.commit()
+        invalidate_manifests_cache(tenant_id)
         refreshed = await self._get_manifest_or_404(manifest.id, tenant_id)
         resp = self._to_response(refreshed, pickup_addr)
         if adjusted:
@@ -613,24 +632,53 @@ class ManifestService:
         scheduled_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         """Lists pickup requests with optional flow/status/date filters (customer-scoped)."""
+        user_scope_id = current_user.id if self._is_customer(current_user) else None
+        cached = get_cached_manifests_list(
+            tenant_id=tenant_id,
+            user_scope_id=user_scope_id,
+            service_flow=service_flow,
+            status_filter=status_filter,
+            scheduled_date=scheduled_date,
+        )
+        if cached is not None:
+            return cached
+
         manifests = await self.repo.list_manifests(
             tenant_id,
             service_flow=service_flow,
             status=status_filter,
             scheduled_date=scheduled_date,
         )
-        addresses = await self.repo.get_addresses(
-            [m.pickup_address_id for m in manifests if m.pickup_address_id], tenant_id
+        missing_addr_ids = [
+            m.pickup_address_id
+            for m in manifests
+            if m.pickup_address_id and not getattr(m, "_pickup_address_loaded", False)
+        ]
+        addresses = (
+            await self.repo.get_addresses(missing_addr_ids, tenant_id)
+            if missing_addr_ids
+            else {}
         )
         response = []
         for manifest in manifests:
-            address = addresses.get(manifest.pickup_address_id)
+            address = (
+                getattr(manifest, "_pickup_address", None)
+                if getattr(manifest, "_pickup_address_loaded", False)
+                else addresses.get(manifest.pickup_address_id)
+            )
             if self._is_customer(current_user) and not self._customer_owns_manifest(
                 manifest, address, current_user
             ):
                 continue
             response.append(self._to_response(manifest, address))
-        return response
+        return cache_manifests_list(
+            response,
+            tenant_id=tenant_id,
+            user_scope_id=user_scope_id,
+            service_flow=service_flow,
+            status_filter=status_filter,
+            scheduled_date=scheduled_date,
+        )
 
     async def list_eligible_shipments(
         self,
@@ -640,15 +688,25 @@ class ManifestService:
         current_user: User | None = None,
     ) -> List[Dict[str, Any]]:
         """OPEN shipments of one flow that ship from the given pickup location (Create PUR picker)."""
+        user_scope_id = current_user.id if self._is_customer(current_user) else None
+        cached = get_cached_eligible_shipments(
+            tenant_id=tenant_id,
+            user_scope_id=user_scope_id,
+            service_flow=service_flow,
+            pickup_address_id=pickup_address_id,
+        )
+        if cached is not None:
+            return cached
+
         pickup_addr = await self._get_address_or_404(pickup_address_id, tenant_id)
         self._assert_can_use_pickup_address(pickup_addr, current_user)
         shipments = await self.repo.list_open_unlinked_shipments(
             tenant_id,
             is_b2b=service_flow == ServiceFlow.B2B,
             pickup_pincode=pickup_addr.pincode,
-            created_by_user_id=current_user.id if self._is_customer(current_user) else None,
+            created_by_user_id=user_scope_id,
         )
-        return [
+        eligible = [
             {
                 "id": s.id,
                 "tracking_id": s.tracking_id,
@@ -662,6 +720,13 @@ class ManifestService:
             for s in shipments
             if self._is_same_pickup_location(s.pickup_address, pickup_addr)
         ]
+        return cache_eligible_shipments(
+            eligible,
+            tenant_id=tenant_id,
+            user_scope_id=user_scope_id,
+            service_flow=service_flow,
+            pickup_address_id=pickup_address_id,
+        )
 
     async def get_pickup_candidates(
         self,
@@ -690,10 +755,23 @@ class ManifestService:
         selection_owners = self._linked_owner_ids(selected)
 
         manifests = await self.repo.list_scheduled_manifests(tenant_id, service_flow, date.today())
-        addresses = await self.repo.get_addresses([m.pickup_address_id for m in manifests], tenant_id)
+        missing_addr_ids = [
+            m.pickup_address_id
+            for m in manifests
+            if m.pickup_address_id and not getattr(m, "_pickup_address_loaded", False)
+        ]
+        addresses = (
+            await self.repo.get_addresses(missing_addr_ids, tenant_id)
+            if missing_addr_ids
+            else {}
+        )
         candidates = []
         for manifest in manifests:
-            address = addresses.get(manifest.pickup_address_id)
+            address = (
+                getattr(manifest, "_pickup_address", None)
+                if getattr(manifest, "_pickup_address_loaded", False)
+                else addresses.get(manifest.pickup_address_id)
+            )
             if not self._is_same_pickup_location(anchor_address, address):
                 continue
             if self._is_customer(current_user) and not self._customer_owns_manifest(
@@ -740,6 +818,7 @@ class ManifestService:
         if not refreshed.is_blind_pickup:
             await self.repo.set_total_boxes(refreshed, self._total_boxes(refreshed.pickups))
         await self.session.commit()
+        invalidate_manifests_cache(tenant_id)
         refreshed = await self._get_manifest_or_404(manifest.id, tenant_id)
         return self._to_response(refreshed, address)
 
@@ -757,6 +836,7 @@ class ManifestService:
         self._assert_can_access_manifest(manifest, address, current_user, "cancel")
 
         manifest = await self.repo.cancel_manifest(manifest)
+        invalidate_manifests_cache(tenant_id)
         return self._to_response(manifest, address)
 
     async def mark_out_for_pickup(
@@ -773,6 +853,7 @@ class ManifestService:
                 f"Only SCHEDULED pickups can go out for pickup (current: {manifest.status.value})."
             )
         manifest = await self.repo.mark_out_for_pickup(manifest)
+        invalidate_manifests_cache(tenant_id)
         return self._to_response(manifest, await self._get_manifest_address(manifest))
 
     async def mark_not_picked(
@@ -793,6 +874,7 @@ class ManifestService:
                 f"Cannot mark a {manifest.status.value} pickup as not picked."
             )
         manifest = await self.repo.mark_not_picked(manifest, reason, current_user.id)
+        invalidate_manifests_cache(tenant_id)
         return self._to_response(manifest, await self._get_manifest_address(manifest))
 
     async def dispatch_manifest(
@@ -850,7 +932,11 @@ class ManifestService:
             measured_shipment_ids=measured_ids,
         )
         if measurement_list:
-            tenant = await self.session.get(Tenant, tenant_id)
+            tenant = get_cached_tenant_by_id(tenant_id)
+            if tenant is None:
+                tenant = await self.session.get(Tenant, tenant_id)
+                if tenant is not None:
+                    cache_tenant(tenant)
             if tenant is None:
                 raise self._bad_request("Tenant not found.")
             shipment_service = ShipmentService(ShipmentRepository(self.session))
@@ -918,6 +1004,7 @@ class ManifestService:
             self.session.add(manifest)
 
         await self.session.commit()
+        invalidate_manifests_cache(tenant_id)
         manifest = await self._get_manifest_or_404(manifest_id, tenant_id)
         return self._to_response(manifest, await self._get_manifest_address(manifest))
 

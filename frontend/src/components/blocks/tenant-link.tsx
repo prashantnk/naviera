@@ -12,8 +12,9 @@ import type { ComponentProps } from "react";
  */
 export function TenantLink({
   href,
+  prefetch = true,
   ...rest
 }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
   const { routeTo } = useTenant();
-  return <Link href={routeTo(href)} {...rest} />;
+  return <Link href={routeTo(href)} prefetch={prefetch} {...rest} />;
 }

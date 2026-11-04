@@ -39,6 +39,11 @@ import {
 } from "@/components/ui/form";
 import { InputAdornment } from "@/components/ui/form-extras";
 import { Input } from "@/components/ui/input";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import { NoticeBanner, NoticeTone } from "./notice-banner";
@@ -112,7 +117,10 @@ function _swallowEnter(event: KeyboardEvent<HTMLDivElement>): void {
  * @param props - See `PricingPolicyPanelProps`.
  */
 export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelProps) {
-  const [saved, setSaved] = useState<PricingPolicyRead | null>(null);
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "pricing-policy");
+  const [saved, setSaved] = useState<PricingPolicyRead | null>(() =>
+    getCachedQuery<PricingPolicyRead>(cacheKey)
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pending, setPending] = useState<PricingPolicy | null>(null);
@@ -120,7 +128,7 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
 
   const form = useForm<PricingPolicyFormValues>({
     resolver: zodResolver(pricingPolicySchema),
-    defaultValues: EMPTY_FORM,
+    defaultValues: saved ? policyToFormValues(saved) : EMPTY_FORM,
     mode: "onChange",
   });
 
@@ -130,21 +138,30 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
   useEffect(() => {
     if (!tenantSlug) return;
     let cancelled = false;
+    const cached = getCachedQuery<PricingPolicyRead>(cacheKey);
+    if (cached !== null && reloadKey === 0) {
+      setSaved(cached);
+      setLoadError(null);
+      reset(policyToFormValues(cached));
+    }
     fetchPricingPolicy(tenantSlug).then(
       (policy) => {
+        setCachedQuery(cacheKey, policy);
         if (cancelled) return;
         setSaved(policy);
         setLoadError(null);
         reset(policyToFormValues(policy));
       },
       (err: unknown) => {
-        if (!cancelled) setLoadError(extractApiErrorMessage(err, LOAD_ERROR_TEXT));
+        if (!cancelled && cached === null) {
+          setLoadError(extractApiErrorMessage(err, LOAD_ERROR_TEXT));
+        }
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [tenantSlug, reset, reloadKey]);
+  }, [tenantSlug, cacheKey, reset, reloadKey]);
 
   /** Re-fetches the policy ("Try again" after a load error). */
   const load = useCallback(() => setReloadKey((key) => key + 1), []);
@@ -172,6 +189,7 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
     setIsSaving(true);
     try {
       const updated = await updatePricingPolicy(pending, tenantSlug);
+      setCachedQuery(cacheKey, updated);
       setSaved(updated);
       form.reset(policyToFormValues(updated));
       setPending(null);
@@ -209,9 +227,10 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
 
   if (!saved) {
     return (
-      <div data-testid={`${TEST_ID}.loading`} className="flex items-center gap-2 py-10 text-sm text-slate-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading pricing settings…
+      <div data-testid={`${TEST_ID}.loading`} className="space-y-3 py-6 text-sm text-slate-500">
+        <span className="sr-only">Loading pricing settings…</span>
+        <div className="h-24 w-full rounded-xl bg-slate-100 animate-pulse" />
+        <div className="h-32 w-full rounded-xl bg-slate-100 animate-pulse" />
       </div>
     );
   }
