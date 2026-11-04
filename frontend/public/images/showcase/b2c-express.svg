@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" fill="none">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="960" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="55%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="accent1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#DC2626" />
+      <stop offset="100%" stop-color="#EA580C" />
+    </linearGradient>
+    <linearGradient id="cardGlass1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95" />
+    </linearGradient>
+    <pattern id="grid1" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#334155" stroke-width="0.7" stroke-opacity="0.45" />
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="600" fill="url(#bg1)" />
+  <rect width="960" height="600" fill="url(#grid1)" />
+  <circle cx="780" cy="120" r="210" fill="#DC2626" fill-opacity="0.12" />
+  <circle cx="180" cy="480" r="220" fill="#38BDF8" fill-opacity="0.1" />
+
+  <!-- Top Telemetry Header inside Illustration -->
+  <rect x="48" y="38" width="864" height="54" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1.5" />
+  <circle cx="76" cy="65" r="6" fill="#22C55E" />
+  <text x="92" y="70" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="1">B2C EXPRESS PARCEL NETWORK · LIVE DISPATCH TELEMETRY</text>
+  <rect x="708" y="50" width="186" height="30" rx="8" fill="#0F172A" stroke="#475569" />
+  <text x="801" y="70" text-anchor="middle" fill="#38BDF8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">29,000+ PIN CODES</text>
+
+  <!-- Left Main Card: Express AWB & Route Corridor -->
+  <rect x="48" y="114" width="520" height="444" rx="20" fill="url(#cardGlass1)" stroke="#334155" stroke-width="1.5" />
+
+  <!-- AWB Header -->
+  <rect x="76" y="142" width="128" height="28" rx="6" fill="url(#accent1)" />
+  <text x="140" y="160" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="800" letter-spacing="0.8">EXPRESS AIR / SURF</text>
+  <text x="218" y="161" fill="#94A3B8" font-family="monospace" font-size="14" font-weight="700">AWB #LGSM84920143</text>
+  <rect x="432" y="140" width="108" height="30" rx="15" fill="#14532D" stroke="#22C55E" stroke-width="1.2" />
+  <text x="486" y="159" text-anchor="middle" fill="#4ADE80" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700">OUT FOR DELIVERY</text>
+
+  <!-- Origin -> Destination Route Box -->
+  <rect x="76" y="190" width="464" height="106" rx="14" fill="#0F172A" stroke="#334155" />
+  <text x="102" y="218" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">ORIGIN HUB</text>
+  <text x="102" y="246" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="800">New Delhi</text>
+  <text x="102" y="270" fill="#94A3B8" font-family="monospace" font-size="13">PIN 110037 · Okhla Hub</text>
+
+  <!-- Route Arrow -->
+  <line x1="252" y1="242" x2="352" y2="242" stroke="#DC2626" stroke-width="3" stroke-dasharray="6 5" />
+  <circle cx="252" cy="242" r="5" fill="#DC2626" />
+  <polygon points="358,242 346,235 346,249" fill="#DC2626" />
+  <rect x="270" y="212" width="68" height="20" rx="10" fill="#1E293B" stroke="#475569" />
+  <text x="304" y="226" text-anchor="middle" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700">NEXT-DAY</text>
+
+  <text x="514" y="218" text-anchor="end" fill="#64748B" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">DESTINATION</text>
+  <text x="514" y="246" text-anchor="end" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="800">Mumbai</text>
+  <text x="514" y="270" text-anchor="end" fill="#94A3B8" font-family="monospace" font-size="13">PIN 400001 · Fort</text>
+
+  <!-- 4-Step Live Milestone Bar -->
+  <text x="76" y="330" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700" letter-spacing="0.8">REAL-TIME SHIPMENT LIFECYCLE</text>
+  <line x1="100" y1="364" x2="510" y2="364" stroke="#334155" stroke-width="4" />
+  <line x1="100" y1="364" x2="395" y2="364" stroke="#22C55E" stroke-width="4" />
+
+  <circle cx="100" cy="364" r="11" fill="#22C55E" />
+  <path d="M95 364 L99 368 L106 360" stroke="#0F172A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="100" y="394" text-anchor="middle" fill="#E2E8F0" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">Picked Up</text>
+
+  <circle cx="240" cy="364" r="11" fill="#22C55E" />
+  <path d="M235 364 L239 368 L246 360" stroke="#0F172A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="240" y="394" text-anchor="middle" fill="#E2E8F0" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">Bagged at Hub</text>
+
+  <circle cx="385" cy="364" r="11" fill="#22C55E" />
+  <circle cx="385" cy="364" r="5" fill="#0F172A" />
+  <text x="385" y="394" text-anchor="middle" fill="#4ADE80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">Out for Delivery</text>
+
+  <circle cx="510" cy="364" r="11" fill="#1E293B" stroke="#64748B" stroke-width="2.5" />
+  <text x="510" y="394" text-anchor="middle" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600">OTP Delivered</text>
+
+  <!-- Barcode & Label Footer -->
+  <rect x="76" y="424" width="464" height="106" rx="14" fill="#0F172A" stroke="#334155" />
+  <!-- Barcode lines -->
+  <g fill="#E2E8F0">
+    <rect x="98" y="444" width="4" height="48" />
+    <rect x="106" y="444" width="2" height="48" />
+    <rect x="112" y="444" width="6" height="48" />
+    <rect x="122" y="444" width="2" height="48" />
+    <rect x="128" y="444" width="4" height="48" />
+    <rect x="136" y="444" width="8" height="48" />
+    <rect x="148" y="444" width="2" height="48" />
+    <rect x="154" y="444" width="4" height="48" />
+    <rect x="162" y="444" width="6" height="48" />
+    <rect x="172" y="444" width="2" height="48" />
+    <rect x="178" y="444" width="4" height="48" />
+    <rect x="186" y="444" width="6" height="48" />
+    <rect x="196" y="444" width="2" height="48" />
+    <rect x="202" y="444" width="8" height="48" />
+    <rect x="214" y="444" width="4" height="48" />
+    <rect x="222" y="444" width="2" height="48" />
+    <rect x="228" y="444" width="6" height="48" />
+  </g>
+  <text x="166" y="510" text-anchor="middle" fill="#94A3B8" font-family="monospace" font-size="11">LGSM-8492-0143</text>
+
+  <line x1="258" y1="440" x2="258" y2="514" stroke="#334155" stroke-width="1.5" />
+  <text x="280" y="462" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">Thermal 4×6&quot; Label &amp; Manifest Ready</text>
+  <text x="280" y="486" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13">Weight Slab: 0.5 kg – 5.0 kg · Prepaid &amp; COD</text>
+  <text x="280" y="508" fill="#38BDF8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">SMS / WhatsApp Consignee Tracking Link Active</text>
+
+  <!-- Right Top Card: Isometric Express Parcel Box -->
+  <rect x="592" y="114" width="320" height="226" rx="20" fill="url(#cardGlass1)" stroke="#334155" stroke-width="1.5" />
+  <text x="620" y="148" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">DOORSTEP PICKUP &amp; SCAN</text>
+
+  <!-- Isometric Box Illustration -->
+  <g transform="translate(685, 165)">
+    <!-- Top face -->
+    <polygon points="65,0 130,32 65,64 0,32" fill="#F59E0B" />
+    <!-- Packing tape across top -->
+    <polygon points="56,4 74,4 74,60 56,60" fill="#FEF3C7" fill-opacity="0.75" />
+    <!-- Left face -->
+    <polygon points="0,32 65,64 65,134 0,102" fill="#D97706" />
+    <!-- Right face -->
+    <polygon points="65,64 130,32 130,102 65,134" fill="#B45309" />
+    <!-- Shipping label on left face -->
+    <polygon points="14,52 50,70 50,104 14,86" fill="#FFFFFF" />
+    <line x1="20" y1="64" x2="44" y2="76" stroke="#0F172A" stroke-width="3" />
+    <line x1="20" y1="74" x2="40" y2="84" stroke="#DC2626" stroke-width="2.5" />
+  </g>
+  <text x="752" y="322" text-anchor="middle" fill="#E2E8F0" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700"> Tamper-Evident Flyer &amp; Box</text>
+
+  <!-- Right Bottom Card: Doorstep OTP & COD Verification -->
+  <rect x="592" y="358" width="320" height="200" rx="20" fill="url(#cardGlass1)" stroke="#334155" stroke-width="1.5" />
+  <text x="620" y="392" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">CONSIGNEE OTP VERIFICATION</text>
+  <rect x="620" y="410" width="264" height="58" rx="12" fill="#0F172A" stroke="#22C55E" stroke-width="1.5" />
+  <text x="640" y="446" fill="#4ADE80" font-family="monospace" font-size="24" font-weight="800" letter-spacing="6">4 8 2 9</text>
+  <rect x="780" y="424" width="88" height="30" rx="8" fill="#14532D" />
+  <text x="824" y="444" text-anchor="middle" fill="#86EFAC" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700">VERIFIED</text>
+
+  <text x="620" y="500" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">99.8% First-Attempt Delivery SLA</text>
+  <text x="620" y="524" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="13">Instant POD capture &amp; NDR buyer confirmation</text>
+</svg>

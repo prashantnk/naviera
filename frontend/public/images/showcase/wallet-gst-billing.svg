@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" fill="none">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="960" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="55%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <pattern id="grid4" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#334155" stroke-width="0.7" stroke-opacity="0.45" />
+    </pattern>
+  </defs>
+
+  <rect width="960" height="600" fill="url(#bg4)" />
+  <rect width="960" height="600" fill="url(#grid4)" />
+  <circle cx="800" cy="140" r="210" fill="#22C55E" fill-opacity="0.12" />
+  <circle cx="160" cy="480" r="220" fill="#38BDF8" fill-opacity="0.1" />
+
+  <!-- Top Telemetry Header -->
+  <rect x="48" y="38" width="864" height="54" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1.5" />
+  <circle cx="76" cy="65" r="6" fill="#22C55E" />
+  <text x="92" y="70" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="1">UNIFIED PREPAID WALLET · COD REMITTANCE &amp; GST BILLING ENGINE</text>
+  <rect x="676" y="50" width="218" height="30" rx="8" fill="#0F172A" stroke="#475569" />
+  <text x="785" y="70" text-anchor="middle" fill="#4ADE80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">SAC 996812 / 996511 GST</text>
+
+  <!-- Left Card: Prepaid Wallet & Immutable Ledger -->
+  <rect x="48" y="114" width="520" height="444" rx="20" fill="#1E293B" fill-opacity="0.95" stroke="#334155" stroke-width="1.5" />
+
+  <!-- Wallet Balance Card -->
+  <rect x="76" y="142" width="464" height="114" rx="16" fill="#0F172A" stroke="#22C55E" stroke-width="1.5" />
+  <text x="102" y="172" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">AVAILABLE PREPAID WALLET BALANCE</text>
+  <text x="102" y="214" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="800">₹1,48,250.00</text>
+  <text x="102" y="238" fill="#4ADE80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="700">Instant UPI QR &amp; UTR Auto-Verification</text>
+  <rect x="392" y="168" width="124" height="38" rx="10" fill="#14532D" stroke="#22C55E" />
+  <text x="454" y="192" text-anchor="middle" fill="#FFFFFF" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800">+ RECHARGE UPI</text>
+
+  <!-- Immutable Wallet Transactions List -->
+  <text x="76" y="286" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">ATOMIC LEDGER &amp; REPRICING AUDIT TRAIL</text>
+
+  <rect x="76" y="302" width="464" height="66" rx="12" fill="#0F172A" stroke="#334155" />
+  <text x="98" y="330" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">TAX INVOICE · LGSM/26-27/INV/00418</text>
+  <text x="98" y="352" fill="#94A3B8" font-family="monospace" font-size="12">Booking Debit · AWB #LGSM84920143</text>
+  <text x="516" y="340" text-anchor="end" fill="#F8FAFC" font-family="monospace" font-size="15" font-weight="800">-₹412.00</text>
+
+  <rect x="76" y="380" width="464" height="66" rx="12" fill="#0F172A" stroke="#334155" />
+  <text x="98" y="408" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">CREDIT NOTE · LGSM/26-27/CN/00092</text>
+  <text x="98" y="430" fill="#94A3B8" font-family="monospace" font-size="12">Weight Dispute Approved · Auto-Refund</text>
+  <text x="516" y="418" text-anchor="end" fill="#4ADE80" font-family="monospace" font-size="15" font-weight="800">+₹118.00</text>
+
+  <rect x="76" y="458" width="464" height="72" rx="12" fill="#0F172A" stroke="#334155" />
+  <text x="98" y="486" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">COD REMITTANCE · BATCH #REM-2026-084</text>
+  <text x="98" y="508" fill="#38BDF8" font-family="monospace" font-size="12">NEFT UTR #HDFCN52026110499 · Settled to Bank</text>
+  <text x="516" y="496" text-anchor="end" fill="#38BDF8" font-family="monospace" font-size="16" font-weight="800">₹64,900.00</text>
+
+  <!-- Right Column: GST Compliance & Tax Split -->
+  <rect x="592" y="114" width="320" height="444" rx="20" fill="#1E293B" fill-opacity="0.95" stroke="#334155" stroke-width="1.5" />
+  <text x="620" y="148" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">FY-SCOPED GST DOCUMENT ENGINE</text>
+
+  <rect x="620" y="168" width="264" height="118" rx="14" fill="#0F172A" stroke="#38BDF8" stroke-width="1.2" />
+  <text x="640" y="196" fill="#38BDF8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800">18% GST PLACE-OF-SUPPLY SPLIT</text>
+  <text x="640" y="224" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">Intra-State: 9% CGST + 9% SGST</text>
+  <text x="640" y="248" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">Inter-State: 18% IGST</text>
+  <text x="640" y="272" fill="#94A3B8" font-family="monospace" font-size="11">B2B GSTIN &amp; B2C Unregistered Ready</text>
+
+  <rect x="620" y="304" width="264" height="112" rx="14" fill="#0F172A" stroke="#334155" />
+  <text x="640" y="332" fill="#4ADE80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800">HSN / SAC CLASSIFICATION</text>
+  <text x="640" y="358" fill="#F8FAFC" font-family="monospace" font-size="13" font-weight="700">SAC 996812 · Courier Express</text>
+  <text x="640" y="382" fill="#F8FAFC" font-family="monospace" font-size="13" font-weight="700">SAC 996511 · Road Cargo GTA</text>
+  <text x="640" y="402" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="11">Downloadable PDF Tax Invoices &amp; Notes</text>
+
+  <rect x="620" y="432" width="264" height="98" rx="14" fill="#0F172A" stroke="#334155" />
+  <text x="640" y="460" fill="#FBBF24" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800">TRANSPARENT RATE CALCULATOR</text>
+  <text x="640" y="486" fill="#F8FAFC" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700">Zero Hidden Surcharges</text>
+  <text x="640" y="508" fill="#94A3B8" font-family="system-ui, -apple-system, sans-serif" font-size="12">Instant zone, fuel, COD &amp; FOV breakdown</text>
+</svg>

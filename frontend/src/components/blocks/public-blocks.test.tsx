@@ -1,10 +1,30 @@
 // frontend/src/components/blocks/public-blocks.test.tsx
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ERROR_FALLBACK_TITLE, ErrorFallback } from "./error-fallback";
 import { FOOTER_LEGAL_LINKS, Footer, resolveSocialLinks } from "./footer";
 import { FeaturesSection } from "./features-section";
+import {
+  DEFAULT_SHOWCASE_SLIDES,
+  HeroSection,
+  SHOWCASE_ROTATION_MS,
+  resolveShowcaseSlides,
+} from "./hero-section";
 import { LEGAL_PATHS } from "@/lib/legal";
+
+const routerPush = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ tenant_slug: "logismart-test" }),
+  usePathname: () => "/logismart-test",
+  useRouter: () => ({ push: routerPush, replace: vi.fn() }),
+}));
+
+vi.mock("@/lib/supabase", () => ({
+  getSupabaseClient: () => ({
+    auth: { getSession: async () => ({ data: { session: null } }) },
+  }),
+}));
 
 vi.mock("@/components/providers/tenant-provider", () => ({
   useTenant: () => ({
@@ -64,7 +84,7 @@ describe("Footer legal links (C-08)", () => {
   });
 });
 
-describe("FeaturesSection client names (C-15)", () => {
+describe("FeaturesSection client names (C-15) & Dual-Engine Architecture", () => {
   it("renders tenant-configured names as plain text without brand colours", () => {
     render(
       <FeaturesSection
@@ -79,10 +99,130 @@ describe("FeaturesSection client names (C-15)", () => {
     const names = screen.getAllByText("Acme Traders");
     expect(names.length).toBeGreaterThan(0);
     expect(names[0]).not.toHaveAttribute("style");
+    expect(screen.getByTestId("dual-engine-section")).toBeInTheDocument();
+    expect(screen.getByTestId("operational-workflow-section")).toBeInTheDocument();
+    expect(screen.getByTestId("marketing-cta-banner")).toBeInTheDocument();
   });
 
   it("renders no client wall when the tenant configured none", () => {
     render(<FeaturesSection content={{ headline: "Why us", features: [] }} />);
     expect(screen.queryByText("Clients")).not.toBeInTheDocument();
+  });
+});
+
+describe("HeroSection 4-slide auto-rotating showcase (no stacked images)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("renders 4 slide tabs and strictly one active image inside the viewport", () => {
+    render(
+      <HeroSection
+        title="International & Domestic Courier & Cargo Services"
+        subtitle="Air, Cargo, Train & Transport."
+        ctaText="Book Your Shipment"
+        ctaLink="/shipments/new"
+        badge="Logismart Pvt. Ltd."
+        trustPartners={["DHL", "Blue Dart"]}
+      />,
+    );
+
+    const viewport = screen.getByTestId("hero-showcase-viewport");
+    const renderedImages = viewport.querySelectorAll("img");
+    expect(renderedImages).toHaveLength(1);
+
+    const tabs = [
+      screen.getByTestId("hero-showcase-tab-0"),
+      screen.getByTestId("hero-showcase-tab-1"),
+      screen.getByTestId("hero-showcase-tab-2"),
+      screen.getByTestId("hero-showcase-tab-3"),
+    ];
+    expect(tabs).toHaveLength(4);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute(
+      "src",
+      DEFAULT_SHOWCASE_SLIDES[0].fallbackSrc,
+    );
+    expect(screen.getByTestId("hero-showcase-title")).toHaveTextContent(
+      DEFAULT_SHOWCASE_SLIDES[0].title,
+    );
+  });
+
+  it("switches active slide when clicking slide tabs or prev/next controls", () => {
+    render(
+      <HeroSection
+        title="International & Domestic Courier & Cargo Services"
+        subtitle="Air, Cargo, Train & Transport."
+        ctaText="Book Your Shipment"
+        ctaLink="/shipments/new"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("hero-showcase-tab-2"));
+    expect(screen.getByTestId("hero-showcase-tab-2")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("hero-showcase-title")).toHaveTextContent(
+      DEFAULT_SHOWCASE_SLIDES[2].title,
+    );
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute(
+      "src",
+      DEFAULT_SHOWCASE_SLIDES[2].fallbackSrc,
+    );
+
+    fireEvent.click(screen.getByTestId("hero-showcase-next"));
+    expect(screen.getByTestId("hero-showcase-tab-3")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute(
+      "src",
+      DEFAULT_SHOWCASE_SLIDES[3].fallbackSrc,
+    );
+
+    fireEvent.click(screen.getByTestId("hero-showcase-prev"));
+    expect(screen.getByTestId("hero-showcase-tab-2")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("auto-advances slides on timer and pauses while hovered", () => {
+    vi.useFakeTimers();
+    render(
+      <HeroSection
+        title="International & Domestic Courier & Cargo Services"
+        subtitle="Air, Cargo, Train & Transport."
+        ctaText="Book Your Shipment"
+        ctaLink="/shipments/new"
+      />,
+    );
+
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute("data-slide-index", "0");
+
+    act(() => {
+      vi.advanceTimersByTime(SHOWCASE_ROTATION_MS);
+    });
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute("data-slide-index", "1");
+
+    const showcase = screen.getByTestId("hero-showcase");
+    fireEvent.mouseEnter(showcase);
+    act(() => {
+      vi.advanceTimersByTime(SHOWCASE_ROTATION_MS * 2);
+    });
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute("data-slide-index", "1");
+
+    fireEvent.mouseLeave(showcase);
+    act(() => {
+      vi.advanceTimersByTime(SHOWCASE_ROTATION_MS);
+    });
+    expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute("data-slide-index", "2");
+  });
+
+  it("upgrades legacy bento seed URLs to local showcase SVGs while supporting custom tenant overrides", () => {
+    const legacy = resolveShowcaseSlides([
+      "https://images.unsplash.com/photo-1542296332-2e4473faf563?q=80&w=2070",
+      "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070",
+    ]);
+    expect(legacy.map((s) => s.imageSrc)).toEqual(
+      DEFAULT_SHOWCASE_SLIDES.map((s) => s.fallbackSrc),
+    );
+
+    const custom = resolveShowcaseSlides(["/custom-slide-1.svg"]);
+    expect(custom[0].imageSrc).toBe("/custom-slide-1.svg");
+    expect(custom[1].imageSrc).toBe(DEFAULT_SHOWCASE_SLIDES[1].fallbackSrc);
   });
 });
