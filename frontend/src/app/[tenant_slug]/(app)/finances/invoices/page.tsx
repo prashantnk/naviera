@@ -424,12 +424,17 @@ export default function InvoicesListPage() {
 
       <Card className="border-slate-200 shadow-xs overflow-hidden bg-white">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-slate-500 gap-2">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <span className="text-sm font-medium">
-                Loading billing records
-              </span>
+          {loading && invoices.length === 0 ? (
+            <div
+              data-testid="invoices-loading-skeleton"
+              className="space-y-2.5 p-6"
+            >
+              {[0, 1, 2].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                />
+              ))}
             </div>
           ) : filteredInvoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center">

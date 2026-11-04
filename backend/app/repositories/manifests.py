@@ -1,9 +1,14 @@
+import copy
 import random
+import sys
+import threading
+import time
 import uuid
 from datetime import date
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import and_, func
+from sqlalchemy.orm import joinedload, noload, selectinload
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -20,6 +25,206 @@ from app.repositories.shipments import b2b_shipment_clause
 IS_B2B_COLUMN_LABEL = "is_b2b"
 MEASUREMENT_PENDING_DIFF_KEY = "measurement_pending"
 """Activity-diff marker: a blind LR was picked up without Actual pieces (plan B5)."""
+
+# --- Short-Lived Tenant-Scoped Manifests Cache (15s TTL) ---
+_MANIFEST_CACHE_TTL_SECONDS: float = 15.0
+_MANIFEST_CACHE_MAX_SIZE: int = 512
+_MANIFEST_CACHE_FORCE_ENABLED: bool = False
+_manifest_cache_lock = threading.Lock()
+_ManifestCacheKey = Tuple[
+    uuid.UUID,
+    Optional[uuid.UUID],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+]
+_EligibleShipmentsCacheKey = Tuple[
+    uuid.UUID,
+    Optional[uuid.UUID],
+    str,
+    uuid.UUID,
+]
+_manifest_list_cache: Dict[_ManifestCacheKey, Tuple[float, List[Dict[str, Any]]]] = {}
+_eligible_shipments_cache: Dict[
+    _EligibleShipmentsCacheKey, Tuple[float, List[Dict[str, Any]]]
+] = {}
+
+
+def _is_manifests_cache_enabled() -> bool:
+    if _MANIFEST_CACHE_FORCE_ENABLED:
+        return True
+    return "pytest" not in sys.modules
+
+
+def set_manifests_cache_enabled_for_tests(enabled: bool) -> None:
+    """Explicitly enables or disables the manifests list cache inside unit tests."""
+    global _MANIFEST_CACHE_FORCE_ENABLED
+    _MANIFEST_CACHE_FORCE_ENABLED = enabled
+    if not enabled:
+        clear_manifests_cache()
+
+
+def _build_manifest_cache_key(
+    *,
+    tenant_id: uuid.UUID,
+    user_scope_id: Optional[uuid.UUID] = None,
+    service_flow: Optional[ServiceFlow] = None,
+    status_filter: Optional[ManifestStatus] = None,
+    scheduled_date: Optional[date] = None,
+) -> _ManifestCacheKey:
+    flow_val = (
+        service_flow.value
+        if hasattr(service_flow, "value")
+        else (str(service_flow) if service_flow is not None else None)
+    )
+    status_val = (
+        status_filter.value
+        if hasattr(status_filter, "value")
+        else (str(status_filter) if status_filter is not None else None)
+    )
+    date_val = scheduled_date.isoformat() if scheduled_date is not None else None
+    return (tenant_id, user_scope_id, flow_val, status_val, date_val)
+
+
+def get_cached_manifests_list(
+    *,
+    tenant_id: uuid.UUID,
+    user_scope_id: Optional[uuid.UUID] = None,
+    service_flow: Optional[ServiceFlow] = None,
+    status_filter: Optional[ManifestStatus] = None,
+    scheduled_date: Optional[date] = None,
+) -> Optional[List[Dict[str, Any]]]:
+    """Returns a deep copy of cached serialized manifests on hit, or None on miss/expiry."""
+    if not _is_manifests_cache_enabled():
+        return None
+    key = _build_manifest_cache_key(
+        tenant_id=tenant_id,
+        user_scope_id=user_scope_id,
+        service_flow=service_flow,
+        status_filter=status_filter,
+        scheduled_date=scheduled_date,
+    )
+    now = time.monotonic()
+    with _manifest_cache_lock:
+        entry = _manifest_list_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, cached = entry
+        if now >= expires_at:
+            _manifest_list_cache.pop(key, None)
+            return None
+        return copy.deepcopy(cached)
+
+
+def cache_manifests_list(
+    items: List[Dict[str, Any]],
+    *,
+    tenant_id: uuid.UUID,
+    user_scope_id: Optional[uuid.UUID] = None,
+    service_flow: Optional[ServiceFlow] = None,
+    status_filter: Optional[ManifestStatus] = None,
+    scheduled_date: Optional[date] = None,
+) -> List[Dict[str, Any]]:
+    """Stores a deep copy of serialized manifests in the 15s TTL cache."""
+    snapshot = copy.deepcopy(items)
+    if not _is_manifests_cache_enabled():
+        return snapshot
+    key = _build_manifest_cache_key(
+        tenant_id=tenant_id,
+        user_scope_id=user_scope_id,
+        service_flow=service_flow,
+        status_filter=status_filter,
+        scheduled_date=scheduled_date,
+    )
+    expires_at = time.monotonic() + _MANIFEST_CACHE_TTL_SECONDS
+    with _manifest_cache_lock:
+        if len(_manifest_list_cache) >= _MANIFEST_CACHE_MAX_SIZE:
+            _manifest_list_cache.clear()
+        _manifest_list_cache[key] = (expires_at, snapshot)
+    return copy.deepcopy(snapshot)
+
+
+def get_cached_eligible_shipments(
+    *,
+    tenant_id: uuid.UUID,
+    user_scope_id: Optional[uuid.UUID],
+    service_flow: ServiceFlow,
+    pickup_address_id: uuid.UUID,
+) -> Optional[List[Dict[str, Any]]]:
+    """Returns a deep copy of cached eligible shipments on hit, or None on miss/expiry."""
+    if not _is_manifests_cache_enabled():
+        return None
+    flow_val = (
+        service_flow.value if hasattr(service_flow, "value") else str(service_flow)
+    )
+    key: _EligibleShipmentsCacheKey = (
+        tenant_id,
+        user_scope_id,
+        flow_val,
+        pickup_address_id,
+    )
+    now = time.monotonic()
+    with _manifest_cache_lock:
+        entry = _eligible_shipments_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, cached = entry
+        if now >= expires_at:
+            _eligible_shipments_cache.pop(key, None)
+            return None
+        return copy.deepcopy(cached)
+
+
+def cache_eligible_shipments(
+    items: List[Dict[str, Any]],
+    *,
+    tenant_id: uuid.UUID,
+    user_scope_id: Optional[uuid.UUID],
+    service_flow: ServiceFlow,
+    pickup_address_id: uuid.UUID,
+) -> List[Dict[str, Any]]:
+    """Stores a deep copy of eligible shipments in the 15s TTL cache."""
+    snapshot = copy.deepcopy(items)
+    if not _is_manifests_cache_enabled():
+        return snapshot
+    flow_val = (
+        service_flow.value if hasattr(service_flow, "value") else str(service_flow)
+    )
+    key: _EligibleShipmentsCacheKey = (
+        tenant_id,
+        user_scope_id,
+        flow_val,
+        pickup_address_id,
+    )
+    expires_at = time.monotonic() + _MANIFEST_CACHE_TTL_SECONDS
+    with _manifest_cache_lock:
+        if len(_eligible_shipments_cache) >= _MANIFEST_CACHE_MAX_SIZE:
+            _eligible_shipments_cache.clear()
+        _eligible_shipments_cache[key] = (expires_at, snapshot)
+    return copy.deepcopy(snapshot)
+
+
+def invalidate_manifests_cache(tenant_id: Optional[uuid.UUID] = None) -> None:
+    """
+    Evicts cached manifest list entries for `tenant_id` (or all tenants when None)
+    immediately on any manifest, linked-shipment, or warehouse-address mutation.
+    """
+    with _manifest_cache_lock:
+        if tenant_id is None:
+            _manifest_list_cache.clear()
+            _eligible_shipments_cache.clear()
+            return
+        for key in list(_manifest_list_cache.keys()):
+            if key[0] == tenant_id:
+                _manifest_list_cache.pop(key, None)
+        for elig_key in list(_eligible_shipments_cache.keys()):
+            if elig_key[0] == tenant_id:
+                _eligible_shipments_cache.pop(elig_key, None)
+
+
+def clear_manifests_cache() -> None:
+    """Clears the entire manifests cache."""
+    invalidate_manifests_cache(None)
 
 
 class ManifestRepository:
@@ -40,11 +245,14 @@ class ManifestRepository:
             joinedload(PickupRequest.payment_details),
             joinedload(PickupRequest.pickup_address),
             joinedload(PickupRequest.delivery_address),
+            noload(PickupRequest.documents),
+            noload(PickupRequest.activities),
         )
 
     async def create_manifest(self, manifest: Manifest) -> Manifest:
         self.session.add(manifest)
         await self.session.flush()
+        invalidate_manifests_cache(manifest.tenant_id)
         return manifest
 
     async def get_manifest_by_id(
@@ -53,21 +261,53 @@ class ManifestRepository:
         tenant_id: uuid.UUID,
         for_update: bool = False,
     ) -> Manifest | None:
-        query = (
-            select(Manifest)
+        if for_update:
+            query = (
+                select(Manifest)
+                .where(
+                    Manifest.id == manifest_id,
+                    Manifest.tenant_id == tenant_id,
+                )
+                .options(
+                    selectinload(Manifest.pickups).options(
+                        *self._shipment_eager_options()
+                    )
+                )
+                .execution_options(populate_existing=True)
+                .with_for_update()
+            )
+            result = await self.session.exec(query)
+            return result.first()
+
+        joined_query = (
+            select(Manifest, Address)
+            .outerjoin(
+                Address,
+                and_(
+                    col(Address.id) == col(Manifest.pickup_address_id),
+                    Address.tenant_id == tenant_id,
+                ),
+            )
             .where(
                 Manifest.id == manifest_id,
                 Manifest.tenant_id == tenant_id,
             )
             .options(
-                selectinload(Manifest.pickups).options(*self._shipment_eager_options())
+                selectinload(Manifest.pickups).options(
+                    *self._shipment_eager_options()
+                )
             )
             .execution_options(populate_existing=True)
         )
-        if for_update:
-            query = query.with_for_update()
-        result = await self.session.exec(query)
-        return result.first()
+        row = (await self.session.exec(joined_query)).first()
+        if row is None:
+            return None
+        if isinstance(row, Manifest):
+            return row
+        manifest_obj, addr_obj = row[0], row[1]
+        object.__setattr__(manifest_obj, "_pickup_address", addr_obj)
+        object.__setattr__(manifest_obj, "_pickup_address_loaded", True)
+        return manifest_obj
 
     async def lock_manifest(self, manifest_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
         """
@@ -139,6 +379,7 @@ class ManifestRepository:
         self.session.add(manifest)
         await self._release_linked_shipments(manifest)
         await self.session.commit()
+        invalidate_manifests_cache(manifest.tenant_id)
 
         refreshed = await self.get_manifest_by_id(manifest.id, manifest.tenant_id)
         return refreshed or manifest
@@ -148,6 +389,7 @@ class ManifestRepository:
         manifest.status = ManifestStatus.OUT_FOR_PICKUP
         self.session.add(manifest)
         await self.session.commit()
+        invalidate_manifests_cache(manifest.tenant_id)
         refreshed = await self.get_manifest_by_id(manifest.id, manifest.tenant_id)
         return refreshed or manifest
 
@@ -165,6 +407,7 @@ class ManifestRepository:
             comment=f"Pickup {manifest.pickup_request_number or manifest.id} not picked: {failure_reason}",
         )
         await self.session.commit()
+        invalidate_manifests_cache(manifest.tenant_id)
         refreshed = await self.get_manifest_by_id(manifest.id, manifest.tenant_id)
         return refreshed or manifest
 
@@ -275,6 +518,7 @@ class ManifestRepository:
             self.session.add(manifest)
 
         await self.session.flush()
+        invalidate_manifests_cache(manifest.tenant_id)
         return picked_list
 
     async def get_shipments_with_flow(
@@ -331,6 +575,7 @@ class ManifestRepository:
                 )
             )
         await self.session.flush()
+        invalidate_manifests_cache(manifest.tenant_id)
 
     async def list_manifests(
         self,
@@ -339,7 +584,21 @@ class ManifestRepository:
         status: Optional[ManifestStatus] = None,
         scheduled_date: Optional[date] = None,
     ) -> List[Manifest]:
-        query = select(Manifest).where(Manifest.tenant_id == tenant_id)
+        query = (
+            select(
+                Manifest,
+                Address,
+                func.count().over().label("_total_count"),
+            )
+            .outerjoin(
+                Address,
+                and_(
+                    col(Address.id) == col(Manifest.pickup_address_id),
+                    Address.tenant_id == tenant_id,
+                ),
+            )
+            .where(Manifest.tenant_id == tenant_id)
+        )
         if service_flow is not None:
             query = query.where(Manifest.service_flow == service_flow)
         if status is not None:
@@ -347,11 +606,35 @@ class ManifestRepository:
         if scheduled_date is not None:
             query = query.where(Manifest.scheduled_date == scheduled_date)
         query = query.options(
-            selectinload(Manifest.pickups).options(selectinload(PickupRequest.packages))
-        ).order_by(col(Manifest.scheduled_date).desc())
+            selectinload(Manifest.pickups).options(
+                selectinload(PickupRequest.packages),
+                noload(PickupRequest.documents),
+                noload(PickupRequest.activities),
+                noload(PickupRequest.payment_details),
+                noload(PickupRequest.pickup_address),
+                noload(PickupRequest.delivery_address),
+            )
+        ).order_by(
+            col(Manifest.scheduled_date).desc(),
+            col(Manifest.created_at).desc(),
+        )
 
-        result = await self.session.exec(query)
-        return list(result.all())
+        raw_rows = (await self.session.exec(query)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, Manifest):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[2] or 0)
+        manifests: List[Manifest] = []
+        for row in raw_rows:
+            manifest_obj: Manifest = row[0]
+            addr_obj: Optional[Address] = row[1]
+            object.__setattr__(manifest_obj, "_pickup_address", addr_obj)
+            object.__setattr__(manifest_obj, "_pickup_address_loaded", True)
+            object.__setattr__(manifest_obj, "_total_count", total)
+            manifests.append(manifest_obj)
+        return manifests
 
     async def list_scheduled_manifests(
         self,
@@ -361,7 +644,18 @@ class ManifestRepository:
     ) -> List[Manifest]:
         """SCHEDULED pickups of one flow with 'scheduled_date >= from_date' (add-to-existing candidates)."""
         query = (
-            select(Manifest)
+            select(
+                Manifest,
+                Address,
+                func.count().over().label("_total_count"),
+            )
+            .outerjoin(
+                Address,
+                and_(
+                    col(Address.id) == col(Manifest.pickup_address_id),
+                    Address.tenant_id == tenant_id,
+                ),
+            )
             .where(
                 Manifest.tenant_id == tenant_id,
                 Manifest.service_flow == service_flow,
@@ -370,13 +664,32 @@ class ManifestRepository:
             )
             .options(
                 selectinload(Manifest.pickups).options(
-                    selectinload(PickupRequest.packages)
+                    selectinload(PickupRequest.packages),
+                    noload(PickupRequest.documents),
+                    noload(PickupRequest.activities),
+                    noload(PickupRequest.payment_details),
+                    noload(PickupRequest.pickup_address),
+                    noload(PickupRequest.delivery_address),
                 )
             )
             .order_by(col(Manifest.scheduled_date).asc())
         )
-        result = await self.session.exec(query)
-        return list(result.all())
+        raw_rows = (await self.session.exec(query)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, Manifest):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[2] or 0)
+        manifests: List[Manifest] = []
+        for row in raw_rows:
+            manifest_obj: Manifest = row[0]
+            addr_obj: Optional[Address] = row[1]
+            object.__setattr__(manifest_obj, "_pickup_address", addr_obj)
+            object.__setattr__(manifest_obj, "_pickup_address_loaded", True)
+            object.__setattr__(manifest_obj, "_total_count", total)
+            manifests.append(manifest_obj)
+        return manifests
 
     async def list_open_unlinked_shipments(
         self,

@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 import uuid
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer
@@ -27,6 +27,7 @@ _auth_cache_lock = threading.Lock()
 _tenant_by_slug_cache: Dict[str, Tuple[float, Tenant]] = {}
 _tenant_by_id_cache: Dict[uuid.UUID, Tuple[float, Tenant]] = {}
 _user_by_tenant_sub_cache: Dict[Tuple[uuid.UUID, str], Tuple[float, User]] = {}
+_users_by_tenant_cache: Dict[uuid.UUID, Tuple[float, List[User]]] = {}
 
 
 def _is_auth_cache_enabled() -> bool:
@@ -152,6 +153,33 @@ def cache_user(user: Any) -> Any:
     return _clone_user(detached)
 
 
+def get_cached_tenant_users(tenant_id: uuid.UUID) -> Optional[List[User]]:
+    if not _is_auth_cache_enabled():
+        return None
+    now = time.monotonic()
+    with _auth_cache_lock:
+        entry = _users_by_tenant_cache.get(tenant_id)
+        if entry is None:
+            return None
+        expires_at, cached = entry
+        if now >= expires_at:
+            _users_by_tenant_cache.pop(tenant_id, None)
+            return None
+        return [_clone_user(u) for u in cached]
+
+
+def cache_tenant_users(tenant_id: uuid.UUID, users: List[User]) -> List[User]:
+    detached = [_clone_user(u) for u in users]
+    if not _is_auth_cache_enabled():
+        return detached
+    expires_at = time.monotonic() + _AUTH_CACHE_TTL_SECONDS
+    with _auth_cache_lock:
+        if len(_users_by_tenant_cache) >= _AUTH_CACHE_MAX_SIZE:
+            _users_by_tenant_cache.clear()
+        _users_by_tenant_cache[tenant_id] = (expires_at, detached)
+    return [_clone_user(u) for u in detached]
+
+
 def invalidate_auth_cache(
     *,
     tenant_id: Optional[uuid.UUID] = None,
@@ -168,14 +196,17 @@ def invalidate_auth_cache(
             _tenant_by_slug_cache.clear()
             _tenant_by_id_cache.clear()
             _user_by_tenant_sub_cache.clear()
+            _users_by_tenant_cache.clear()
             return
 
         if slug is not None:
             popped = _tenant_by_slug_cache.pop(slug, None)
             if popped is not None:
                 _tenant_by_id_cache.pop(popped[1].id, None)
+                _users_by_tenant_cache.pop(popped[1].id, None)
 
         if tenant_id is not None:
+            _users_by_tenant_cache.pop(tenant_id, None)
             popped_id = _tenant_by_id_cache.pop(tenant_id, None)
             if popped_id is not None:
                 _tenant_by_slug_cache.pop(popped_id[1].slug, None)
@@ -186,6 +217,7 @@ def invalidate_auth_cache(
         if sub_str is not None and tenant_id is not None:
             _user_by_tenant_sub_cache.pop((tenant_id, sub_str), None)
         elif sub_str is not None:
+            _users_by_tenant_cache.clear()
             for k in list(_user_by_tenant_sub_cache.keys()):
                 if k[1] == sub_str:
                     _user_by_tenant_sub_cache.pop(k, None)

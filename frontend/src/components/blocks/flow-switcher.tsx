@@ -212,9 +212,14 @@ export function FlowSwitcher({ variant }: FlowSwitcherProps) {
             const option = FLOW_OPTIONS[flow];
             const isActive = flow === activeFlow;
             const requiresB2bRequest = flow === ServiceFlow.B2B && !canAccessB2B;
+            const targetHref =
+              !isActive && !requiresB2bRequest && canSwitchFlow
+                ? routeTo(flow === ServiceFlow.B2B ? "/b2b/dashboard" : "/dashboard")
+                : undefined;
             return (
               <DropdownMenuItem
                 key={flow}
+                data-nav-trigger={targetHref}
                 onSelect={() => handleSelect(flow)}
                 className={cn(
                   "cursor-pointer rounded-xl p-2.5 gap-3",

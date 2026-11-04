@@ -2,7 +2,6 @@
 "use client";
 
 import {
-  AddressesService,
   AddressRead,
   FreightPaymentMode,
   ServiceFlow,
@@ -33,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-banner";
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
 import { forwardShipmentSchema, ForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
@@ -82,8 +82,10 @@ export default function ForwardBookingSandbox() {
   const { capabilities } = useUser();
   const DRAFT_KEY = `shipment-draft-forward-${tenantSlug}`;
 
-  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
+  const [isLoading, setIsLoading] = useState(false);
   const [addShippingToCod, setAddShippingToCod] = useState(false);
   const hasRecoveredRef = useRef(false);
   const isSubmittedRef = useRef(false);
@@ -197,45 +199,57 @@ export default function ForwardBookingSandbox() {
 
   // Ingestion of saved address book and localStorage draft recovery
   useEffect(() => {
-    const loadInitialData = async () => {
+    const handoff = parseRateHandoff(window.location.search, B2C_PRODUCT_CATEGORIES);
+    const warmAddresses = getCachedAddresses(tenantSlug);
+    if (warmAddresses !== null) {
+      setSavedAddresses(warmAddresses);
+      if (handoff && !hasRecoveredRef.current) {
+        hasRecoveredRef.current = true;
+        applyRateHandoff(handoff, warmAddresses);
+      }
+    }
+
+    if (!handoff && !hasRecoveredRef.current) {
       try {
-        const addresses = await AddressesService.listSavedAddresses();
-        setSavedAddresses(addresses);
-
-        // A fresh "Book This Shipment" hand-off from the rate calculator wins over an old local draft.
-        const handoff = parseRateHandoff(window.location.search, B2C_PRODUCT_CATEGORIES);
-        if (handoff && !hasRecoveredRef.current) {
-          hasRecoveredRef.current = true;
-          applyRateHandoff(handoff, addresses);
-        }
-
         const savedDraft = localStorage.getItem(DRAFT_KEY);
-        if (savedDraft && !hasRecoveredRef.current) {
-          hasRecoveredRef.current = true; // Prevent subsequent dual recovery triggers
+        if (savedDraft) {
+          hasRecoveredRef.current = true;
           const parsed = JSON.parse(savedDraft);
           if (parsed.addShippingToCod !== undefined) {
             setAddShippingToCod(parsed.addShippingToCod);
           }
           if (parsed.values) {
-            // Sanitise enums strictly before restoration (Safety Net #1)
             const vals = parsed.values;
             if (!Object.values(ServiceType).includes(vals.service_type)) {
               vals.service_type = ServiceType.SURFACE_ROAD;
             }
-            // Old drafts may carry TO_PAY, which is off for the MVP (WP0).
             if (!BOOKABLE_FREIGHT_PAYMENT_MODES.includes(vals.payment_details?.freight_payment_mode)) {
               if (vals.payment_details) vals.payment_details.freight_payment_mode = FreightPaymentMode.PREPAID;
             }
-            // Old drafts may carry COMMERCIAL, a B2B-only category (A-02).
             if (!B2C_PRODUCT_CATEGORIES.includes(vals.product_category)) {
               vals.product_category = undefined;
             }
-            // Old drafts may still carry pickup date/slot; pickups are scheduled later.
             delete vals.requested_pickup_date;
             delete vals.pickup_time_slot;
             form.reset(vals);
           }
           toast.info("Recovered your unsaved booking draft.");
+        }
+      } catch (err) {
+        console.error("Draft recovery error:", err);
+      }
+    }
+
+    const loadInitialData = async () => {
+      try {
+        const addresses = await fetchAddressesCached(tenantSlug, {
+          force: warmAddresses !== null,
+        });
+        setSavedAddresses(addresses);
+
+        if (handoff && !hasRecoveredRef.current) {
+          hasRecoveredRef.current = true;
+          applyRateHandoff(handoff, addresses);
         }
       } catch (err) {
         console.error("Sandbox load error:", err);
@@ -244,7 +258,7 @@ export default function ForwardBookingSandbox() {
       }
     };
 
-    loadInitialData();
+    void loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantSlug]);
 

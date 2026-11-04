@@ -47,6 +47,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { downloadManifestRunsheetPdf } from "@/lib/api";
 import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
+import {
   CashBadgeTone,
   type DeliveryFilter,
   DeliveryFilterKey,
@@ -242,9 +248,25 @@ export default function OperationsControlTowerPage() {
     useState<OpsWorkspaceMode>("CONTROL_TOWER");
   const [activeTab, setActiveTab] = useState<string>("pickups");
 
-  const [manifests, setManifests] = useState<ManifestResponse[]>([]);
-  const [shipments, setShipments] = useState<PickupRead[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const opsCacheKey = buildQueryCacheKey(
+    tenantSlug,
+    "session",
+    "ops-workspace"
+  );
+  const cachedOps = getCachedQuery<{
+    manifests: ManifestResponse[];
+    shipments: PickupRead[];
+  }>(opsCacheKey);
+
+  const [manifests, setManifests] = useState<ManifestResponse[]>(
+    () => cachedOps?.manifests ?? []
+  );
+  const [shipments, setShipments] = useState<PickupRead[]>(
+    () => cachedOps?.shipments ?? []
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => !hasCachedQuery(opsCacheKey)
+  );
   const [busyActionId, setBusyActionId] = useState<string | null>(null);
 
   // Tab 1 filters, Dispatch checklist dialog, & Not-Picked dialog state
@@ -323,7 +345,17 @@ export default function OperationsControlTowerPage() {
    *   rider's typed inputs stay on screen.
    */
   const loadOpsData = useCallback(async (showSpinner: boolean) => {
-    if (showSpinner) setLoading(true);
+    const cached = getCachedQuery<{
+      manifests: ManifestResponse[];
+      shipments: PickupRead[];
+    }>(opsCacheKey);
+    if (cached !== null) {
+      setManifests(cached.manifests);
+      setShipments(cached.shipments);
+      setLoading(false);
+    } else if (showSpinner) {
+      setLoading(true);
+    }
     lastFetchAtRef.current = Date.now();
     try {
       const [manifestRows, activePage, deliveredPage] = await Promise.all([
@@ -353,18 +385,26 @@ export default function OperationsControlTowerPage() {
           tenantSlug
         ),
       ]);
-      setManifests(manifestRows || []);
-      setShipments(
-        (activePage?.items || []).concat(deliveredPage?.items || [])
+      const nextManifests = manifestRows || [];
+      const nextShipments = (activePage?.items || []).concat(
+        deliveredPage?.items || []
       );
+      setCachedQuery(opsCacheKey, {
+        manifests: nextManifests,
+        shipments: nextShipments,
+      });
+      setManifests(nextManifests);
+      setShipments(nextShipments);
     } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to load operations data.")
-      );
+      if (cached === null) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to load operations data.")
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug]);
+  }, [tenantSlug, opsCacheKey]);
 
   const fetchOpsData = useCallback(() => loadOpsData(true), [loadOpsData]);
 
@@ -1055,9 +1095,7 @@ export default function OperationsControlTowerPage() {
               disabled={loading}
               className="h-9 font-semibold"
             >
-              <RefreshCw
-                className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")}
-              />
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
               Refresh
             </Button>
           </div>
@@ -1231,9 +1269,17 @@ export default function OperationsControlTowerPage() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex h-48 items-center justify-center rounded-xl border border-border bg-card">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          {loading && manifests.length === 0 ? (
+            <div
+              data-testid="ops-pickups-loading-skeleton"
+              className="grid gap-4 grid-cols-1 lg:grid-cols-2"
+            >
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-48 rounded-xl border border-border bg-card p-5 animate-pulse"
+                />
+              ))}
             </div>
           ) : filteredManifests.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-10 text-center">
@@ -1557,9 +1603,14 @@ export default function OperationsControlTowerPage() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex h-48 items-center justify-center rounded-xl border border-border bg-card">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          {loading && shipments.length === 0 ? (
+            <div className="space-y-3">
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-44 rounded-xl border border-border bg-card p-5 animate-pulse"
+                />
+              ))}
             </div>
           ) : activeDeliveryShipments.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-10 text-center">
@@ -2150,9 +2201,14 @@ export default function OperationsControlTowerPage() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex h-48 items-center justify-center rounded-xl border border-border bg-card">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          {loading && shipments.length === 0 ? (
+            <div className="space-y-3">
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-32 rounded-xl border border-border bg-card p-4 animate-pulse"
+                />
+              ))}
             </div>
           ) : auditableShipments.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
@@ -2294,9 +2350,14 @@ export default function OperationsControlTowerPage() {
             </Button>
           </div>
 
-          {loading ? (
-            <div className="flex h-48 items-center justify-center rounded-xl border border-border bg-card">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          {loading && shipments.length === 0 ? (
+            <div className="space-y-3">
+              {[0, 1].map((idx) => (
+                <div
+                  key={idx}
+                  className="h-24 rounded-xl border border-border bg-card p-4 animate-pulse"
+                />
+              ))}
             </div>
           ) : doorCollectionShipments.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">

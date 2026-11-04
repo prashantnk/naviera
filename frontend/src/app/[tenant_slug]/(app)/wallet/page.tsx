@@ -957,10 +957,17 @@ export default function UnifiedWalletPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={canViewAllTxns ? 11 : 10} className="py-12 text-center">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" />
+                  {loading && spendsTxns.length === 0 ? (
+                    <tr data-testid="wallet-spends-loading-skeleton">
+                      <td colSpan={canViewAllTxns ? 11 : 10} className="py-8 px-4">
+                        <div className="space-y-2.5">
+                          {[0, 1, 2].map((idx) => (
+                            <div
+                              key={idx}
+                              className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                            />
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ) : spendsTxns.length === 0 ? (
@@ -1102,10 +1109,17 @@ export default function UnifiedWalletPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={canViewAllTxns ? 9 : 8} className="py-12 text-center">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" />
+                  {loading && rechargeTxns.length === 0 ? (
+                    <tr data-testid="wallet-recharges-loading-skeleton">
+                      <td colSpan={canViewAllTxns ? 9 : 8} className="py-8 px-4">
+                        <div className="space-y-2.5">
+                          {[0, 1, 2].map((idx) => (
+                            <div
+                              key={idx}
+                              className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                            />
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ) : rechargeTxns.length === 0 ? (

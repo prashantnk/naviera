@@ -11,6 +11,7 @@
  */
 import { useUser } from "@/components/auth/auth-guard";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { triggerNavigationProgress } from "@/components/ui/navigation-progress";
 import {
   FLOW_DASHBOARD_HREF,
   ServiceFlow,
@@ -102,7 +103,9 @@ export function WorkspaceFlowProvider({ children }: { children: React.ReactNode 
       if (!canSwitchFlow) return;
       setSavedFlow(flow);
       _persistFlow(tenantSlug, flow);
-      router.push(routeTo(FLOW_DASHBOARD_HREF[flow]));
+      const targetHref = routeTo(FLOW_DASHBOARD_HREF[flow]);
+      triggerNavigationProgress(targetHref);
+      router.push(targetHref);
     },
     [canSwitchFlow, tenantSlug, router, routeTo]
   );

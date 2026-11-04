@@ -2,7 +2,6 @@
 "use client";
 
 import {
-  AddressesService,
   AddressRead,
   FreightPaymentMode,
   ServiceFlow,
@@ -31,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-banner";
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
 import { toIstIsoString } from "@/lib/utils";
 import { b2bForwardBookingSchema, B2BForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -46,8 +46,10 @@ export default function B2BForwardBookingWizard() {
   const { routeTo, tenantSlug } = useTenant();
   const DRAFT_KEY = `shipment-draft-b2b-forward-${tenantSlug}`;
 
-  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
+  const [isLoading, setIsLoading] = useState(false);
   const hasRecoveredRef = useRef(false);
   const isSubmittedRef = useRef(false);
 
@@ -169,33 +171,30 @@ export default function B2BForwardBookingWizard() {
 
   // Ingestion of saved address book and localStorage draft recovery
   useEffect(() => {
-    const loadInitialData = async () => {
+    const handoff = parseRateHandoff(window.location.search, Object.values(ProductCategory));
+    const warmAddresses = getCachedAddresses(tenantSlug);
+    if (warmAddresses !== null) {
+      setSavedAddresses(warmAddresses);
+      if (handoff && !hasRecoveredRef.current) {
+        hasRecoveredRef.current = true;
+        applyRateHandoff(handoff, warmAddresses);
+      }
+    }
+
+    if (!handoff && !hasRecoveredRef.current) {
       try {
-        const addresses = await AddressesService.listSavedAddresses();
-        setSavedAddresses(addresses);
-
-        // A fresh "Book This Shipment" hand-off from the rate calculator wins over an old local draft.
-        const handoff = parseRateHandoff(window.location.search, Object.values(ProductCategory));
-        if (handoff && !hasRecoveredRef.current) {
-          hasRecoveredRef.current = true;
-          applyRateHandoff(handoff, addresses);
-        }
-
         const savedDraft = localStorage.getItem(DRAFT_KEY);
-        if (savedDraft && !hasRecoveredRef.current) {
+        if (savedDraft) {
           hasRecoveredRef.current = true;
           const parsed = JSON.parse(savedDraft);
           if (parsed.values) {
             const vals = parsed.values;
-            // Sanitise enums strictly before restoration
             if (vals.service_type && !Object.values(ServiceType).includes(vals.service_type)) {
               vals.service_type = ServiceType.SURFACE_ROAD;
             }
-            // Old drafts may carry TO_PAY, which is off for the MVP (WP0).
             if (vals.payment_details?.freight_payment_mode && !BOOKABLE_FREIGHT_PAYMENT_MODES.includes(vals.payment_details.freight_payment_mode)) {
               vals.payment_details.freight_payment_mode = FreightPaymentMode.PREPAID;
             }
-            // Old drafts may still carry pickup date/slot; pickups are scheduled later.
             delete vals.requested_pickup_date;
             delete vals.pickup_time_slot;
             if (vals.pickup_strategy && !Object.values(PickupStrategy).includes(vals.pickup_strategy)) {
@@ -206,13 +205,29 @@ export default function B2BForwardBookingWizard() {
           toast.info("Recovered your unsaved B2B booking draft.");
         }
       } catch (err) {
+        console.error("B2B draft recovery error:", err);
+      }
+    }
+
+    const loadInitialData = async () => {
+      try {
+        const addresses = await fetchAddressesCached(tenantSlug, {
+          force: warmAddresses !== null,
+        });
+        setSavedAddresses(addresses);
+
+        if (handoff && !hasRecoveredRef.current) {
+          hasRecoveredRef.current = true;
+          applyRateHandoff(handoff, addresses);
+        }
+      } catch (err) {
         console.error("B2B Wizard load error:", err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadInitialData();
+    void loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantSlug]);
 

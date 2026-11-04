@@ -56,6 +56,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeServiceIconKey } from "@/lib/icon-registry";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import {
   EscalationLevel,
@@ -77,6 +82,7 @@ import {
   History,
   IndianRupee,
   Loader2,
+  MapPin,
   Package2,
   Paintbrush,
   Plus,
@@ -382,17 +388,39 @@ export default function SettingsPage() {
   const { tenant, tenantSlug, routeTo } = useTenant();
   const { capabilities } = useUser();
   const isAdmin = capabilities.canManageSettings;
+  const settingsCacheKey = buildQueryCacheKey(
+    tenantSlug,
+    "session",
+    "tenant-settings-admin",
+  );
+  const cachedAdminSettings = getCachedQuery<{
+    mergedSettings: TenantSettings;
+    tenantName: string;
+  }>(settingsCacheKey);
 
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("company");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [invoicePrefix, setInvoicePrefix] = useState<string | null>(null);
-  const [settingsHydrated, setSettingsHydrated] = useState(false);
+  const [invoicePrefix, setInvoicePrefix] = useState<string | null>(() =>
+    cachedAdminSettings
+      ? storedInvoicePrefix(
+          cachedAdminSettings.mergedSettings as Record<string, unknown>,
+        )
+      : null,
+  );
+  const [settingsHydrated, setSettingsHydrated] = useState<boolean>(
+    () => cachedAdminSettings !== null,
+  );
   const [settingsHydrateError, setSettingsHydrateError] = useState(false);
 
   const [lastSavedValues, setLastSavedValues] = useState<SettingsValues>(() =>
-    buildValuesFromSettings(tenant?.settings, tenant?.name || "Naviera"),
+    cachedAdminSettings
+      ? buildValuesFromSettings(
+          cachedAdminSettings.mergedSettings,
+          cachedAdminSettings.tenantName,
+        )
+      : buildValuesFromSettings(tenant?.settings, tenant?.name || "Naviera"),
   );
 
   const form = useForm<SettingsValues>({
@@ -444,6 +472,10 @@ export default function SettingsPage() {
         mergedSettings,
         freshTenant.name,
       );
+      setCachedQuery(settingsCacheKey, {
+        mergedSettings,
+        tenantName: freshTenant.name,
+      });
       setInvoicePrefix(
         storedInvoicePrefix(mergedSettings as Record<string, unknown>),
       );
@@ -452,9 +484,11 @@ export default function SettingsPage() {
       setSettingsHydrated(true);
       setSettingsHydrateError(false);
     } catch {
-      setSettingsHydrateError(true);
+      if (!getCachedQuery(settingsCacheKey)) {
+        setSettingsHydrateError(true);
+      }
     }
-  }, [tenantSlug, isAdmin, form]);
+  }, [tenantSlug, isAdmin, form, settingsCacheKey]);
 
   useEffect(() => {
     refreshFromBackend();
@@ -643,6 +677,16 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <Button variant="outline" size="sm" asChild className="bg-white">
+            <Link
+              href={routeTo("/address-book")}
+              prefetch={true}
+              data-testid="settings.addresses-link"
+            >
+              <MapPin className="mr-2 h-4 w-4 text-primary" />
+              Saved Addresses
+            </Link>
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -654,7 +698,7 @@ export default function SettingsPage() {
             Version History
           </Button>
           <Button variant="outline" size="sm" asChild className="bg-white">
-            <Link href={routeTo("/")} target="_blank" rel="noopener noreferrer">
+            <Link href={routeTo("/")} prefetch={true} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />
               View Public Site
             </Link>
@@ -2103,7 +2147,7 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent>
                     <Button type="button" variant="outline" asChild className="bg-white">
-                      <Link href={routeTo("/settings/prime-lanes")} data-testid="pricing-policy.prime-lanes-link">
+                      <Link href={routeTo("/settings/prime-lanes")} prefetch={true} data-testid="pricing-policy.prime-lanes-link">
                         Open Prime lanes
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
@@ -2135,7 +2179,7 @@ export default function SettingsPage() {
                     data-testid="settings.hydrating"
                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 font-semibold text-slate-600"
                   >
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
                     Loading workspace settings…
                   </span>
                 )

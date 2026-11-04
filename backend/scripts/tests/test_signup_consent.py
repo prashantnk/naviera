@@ -20,16 +20,36 @@ from fastapi import HTTPException
 
 from app.core.dependencies import (
     cache_tenant,
+    cache_tenant_users,
     cache_user,
     clear_auth_cache,
     get_cached_tenant_by_id,
     get_cached_tenant_by_slug,
+    get_cached_tenant_users,
     get_cached_user,
     invalidate_auth_cache,
     set_auth_cache_enabled_for_tests,
 )
 from app.core.security import TokenPayload
+from app.models.manifests import ManifestStatus, ServiceFlow
+from app.models.pickups import Address, AddressCategory, AddressScope
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
+from app.repositories.addresses import (
+    cache_address_list,
+    clear_address_cache,
+    get_cached_address_by_id,
+    get_cached_address_list,
+    invalidate_address_cache,
+    set_address_cache_enabled_for_tests,
+)
+from app.repositories.manifests import (
+    cache_eligible_shipments,
+    cache_manifests_list,
+    clear_manifests_cache,
+    get_cached_eligible_shipments,
+    get_cached_manifests_list,
+    set_manifests_cache_enabled_for_tests,
+)
 from app.repositories.tenants import TenantRepository
 from app.schemas.v1.tenants import PasswordSignupRequest
 from app.services.tenants import (
@@ -332,4 +352,166 @@ def test_auth_and_tenant_context_cache_hits_and_invalidates_immediately() -> Non
         assert get_cached_tenant_by_id(tenant_id) is None
         assert get_cached_user(tenant_id, sub_id) is None
     finally:
+        set_auth_cache_enabled_for_tests(False)
+
+
+def test_perf7_address_and_manifest_caches_hit_and_invalidate() -> None:
+    """
+    Verifies the perf7 30s Address cache and 15s Manifest / Eligible-Shipments
+    caches return detached clones on hit and evict immediately on mutation.
+    """
+    set_address_cache_enabled_for_tests(True)
+    set_manifests_cache_enabled_for_tests(True)
+    set_auth_cache_enabled_for_tests(True)
+    try:
+        clear_address_cache()
+        clear_manifests_cache()
+        clear_auth_cache()
+
+        tenant_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        addr_id = uuid.uuid4()
+        addr = Address(
+            id=addr_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            category=AddressCategory.WAREHOUSE,
+            scope=AddressScope.TENANT,
+            is_saved=True,
+            name="Bhiwandi Hub",
+            phone="9876543210",
+            address_line1="Plot 12, MIDC",
+            city="Bhiwandi",
+            state="Maharashtra",
+            pincode="421302",
+            country="India",
+        )
+        object.__setattr__(addr, "_total_count", 1)
+
+        cache_address_list(
+            [addr],
+            1,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            is_saved=True,
+            address_type=AddressCategory.WAREHOUSE,
+            search=None,
+            skip=0,
+            limit=None,
+        )
+
+        hit = get_cached_address_list(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            is_saved=True,
+            address_type=AddressCategory.WAREHOUSE,
+            search=None,
+            skip=0,
+            limit=None,
+        )
+        assert hit is not None
+        items, total = hit
+        assert total == 1
+        assert len(items) == 1
+        assert items[0].name == "Bhiwandi Hub"
+        assert getattr(items[0], "_total_count", None) == 1
+
+        # Mutating returned clone never pollutes the cached copy
+        items[0].name = "Mutated Hub"
+        by_id_hit = get_cached_address_by_id(tenant_id, addr_id)
+        assert by_id_hit is not None
+        assert by_id_hit.name == "Bhiwandi Hub"
+
+        # Manifests & eligible shipments cache
+        manifest_payload = [{"id": str(uuid.uuid4()), "pickup_request_number": "123456789"}]
+        eligible_payload = [{"id": str(uuid.uuid4()), "tracking_id": "LS100001"}]
+        cache_manifests_list(
+            manifest_payload,
+            tenant_id=tenant_id,
+            user_scope_id=None,
+            service_flow=ServiceFlow.B2C,
+            status_filter=ManifestStatus.SCHEDULED,
+            scheduled_date=None,
+        )
+        cache_eligible_shipments(
+            eligible_payload,
+            tenant_id=tenant_id,
+            user_scope_id=None,
+            service_flow=ServiceFlow.B2C,
+            pickup_address_id=addr_id,
+        )
+        assert (
+            get_cached_manifests_list(
+                tenant_id=tenant_id,
+                user_scope_id=None,
+                service_flow=ServiceFlow.B2C,
+                status_filter=ManifestStatus.SCHEDULED,
+                scheduled_date=None,
+            )
+            == manifest_payload
+        )
+        assert (
+            get_cached_eligible_shipments(
+                tenant_id=tenant_id,
+                user_scope_id=None,
+                service_flow=ServiceFlow.B2C,
+                pickup_address_id=addr_id,
+            )
+            == eligible_payload
+        )
+
+        # Invalidating address cache also invalidates manifests + eligible shipments
+        invalidate_address_cache(tenant_id)
+        assert (
+            get_cached_address_list(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                is_saved=True,
+                address_type=AddressCategory.WAREHOUSE,
+                search=None,
+                skip=0,
+                limit=None,
+            )
+            is None
+        )
+        assert get_cached_address_by_id(tenant_id, addr_id) is None
+        assert (
+            get_cached_manifests_list(
+                tenant_id=tenant_id,
+                user_scope_id=None,
+                service_flow=ServiceFlow.B2C,
+                status_filter=ManifestStatus.SCHEDULED,
+                scheduled_date=None,
+            )
+            is None
+        )
+        assert (
+            get_cached_eligible_shipments(
+                tenant_id=tenant_id,
+                user_scope_id=None,
+                service_flow=ServiceFlow.B2C,
+                pickup_address_id=addr_id,
+            )
+            is None
+        )
+
+        # Tenant users list cache
+        user = User(
+            id=user_id,
+            supabase_user_id=str(uuid.uuid4()),
+            email="team@logismart.in",
+            full_name="Team Member",
+            is_active=True,
+            role=UserRole.admin,
+            service_scope=ServiceScope.BOTH,
+            tenant_id=tenant_id,
+        )
+        cache_tenant_users(tenant_id, [user])
+        cached_users = get_cached_tenant_users(tenant_id)
+        assert cached_users is not None and len(cached_users) == 1
+        invalidate_auth_cache(tenant_id=tenant_id)
+        assert get_cached_tenant_users(tenant_id) is None
+    finally:
+        set_address_cache_enabled_for_tests(False)
+        set_manifests_cache_enabled_for_tests(False)
         set_auth_cache_enabled_for_tests(False)

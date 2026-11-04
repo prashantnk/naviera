@@ -53,6 +53,7 @@ from app.repositories.exceptions import (
     ExceptionShipment,
     ExceptionsRepository,
 )
+from app.repositories.manifests import invalidate_manifests_cache
 from app.repositories.shipments import ShipmentRepository
 from app.repositories.wallet import WalletRepository
 from app.schemas.v1.exceptions import (
@@ -705,6 +706,7 @@ class ExceptionsService:
             await self.shipment_service.refund_prepaid_freight(
                 updated, context.tenant.id, actor=context.actor
             )
+        invalidate_manifests_cache(context.tenant.id)
         return updated
 
     # --------------------------------------------------------- handler helpers

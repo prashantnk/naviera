@@ -81,7 +81,6 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
-  Loader2,
   MoreVertical,
   Plus,
   Search,
@@ -606,14 +605,14 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem asChild>
-                  <Link href={routeTo(copy.createForwardHref)}>
+                  <Link href={routeTo(copy.createForwardHref)} prefetch={true}>
                     <ArrowUpRight className="mr-2 h-4 w-4 text-slate-500" />
                     {copy.createForwardLabel}
                   </Link>
                 </DropdownMenuItem>
                 {copy.createReverseHref && (
                   <DropdownMenuItem asChild>
-                    <Link href={routeTo(copy.createReverseHref)}>
+                    <Link href={routeTo(copy.createReverseHref)} prefetch={true}>
                       <ArrowDownLeft className="mr-2 h-4 w-4 text-slate-500" />
                       {copy.createReverseLabel}
                     </Link>
@@ -635,13 +634,13 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem asChild>
-                <Link href={routeTo(PICKUP_FLOW_CONFIG[flow].listHref)}>
+                <Link href={routeTo(PICKUP_FLOW_CONFIG[flow].listHref)} prefetch={true}>
                   <Truck className="mr-2 h-4 w-4 text-slate-500" />
                   Pickup Requests
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={routeTo(copy.rateCalculatorHref)}>
+                <Link href={routeTo(copy.rateCalculatorHref)} prefetch={true}>
                   <Calculator className="mr-2 h-4 w-4 text-slate-500" />
                   Rate calculator
                 </Link>
@@ -880,29 +879,43 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
 
           {/* Desktop grid */}
           <div className="relative hidden min-h-[360px] md:block">
-            {loading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/60">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            {loading && data.length === 0 ? (
+              <div
+                data-testid="orders-loading-skeleton"
+                className="space-y-2.5 rounded-xl border border-slate-200 bg-white p-4"
+              >
+                {[0, 1, 2, 3, 4].map((idx) => (
+                  <div
+                    key={idx}
+                    className="h-11 w-full rounded-lg bg-slate-100 animate-pulse"
+                  />
+                ))}
               </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                data={filteredData}
+                onRowClick={(row) => router.push(detailHref(row))}
+                pageCount={pageCount}
+                pageIndex={pageIndex}
+                onNextPage={handleNextPage}
+                onPreviousPage={handlePreviousPage}
+                canNextPage={canNextPage}
+                canPreviousPage={canPreviousPage}
+              />
             )}
-            <DataTable
-              columns={columns}
-              data={filteredData}
-              onRowClick={(row) => router.push(detailHref(row))}
-              pageCount={pageCount}
-              pageIndex={pageIndex}
-              onNextPage={handleNextPage}
-              onPreviousPage={handlePreviousPage}
-              canNextPage={canNextPage}
-              canPreviousPage={canPreviousPage}
-            />
           </div>
 
           {/* Mobile card list */}
           <div className="space-y-3 md:hidden">
-            {loading && (
-              <div className="flex justify-center py-10">
-                <Loader2 className="h-7 w-7 animate-spin text-primary" />
+            {loading && data.length === 0 && (
+              <div className="space-y-2.5 py-2">
+                {[0, 1, 2].map((idx) => (
+                  <div
+                    key={idx}
+                    className="h-28 w-full rounded-xl bg-slate-100 animate-pulse"
+                  />
+                ))}
               </div>
             )}
             {!loading && filteredData.length === 0 && (

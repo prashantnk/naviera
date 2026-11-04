@@ -15,6 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import { NoticeBanner, NoticeTone } from "./notice-banner";
@@ -43,9 +48,14 @@ interface PrimeLanesEditorProps {
  * @param props - See `PrimeLanesEditorProps`.
  */
 export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps) {
-  const [lanes, setLanes] = useState<PrimeLaneRead[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeOnly, setActiveOnly] = useState(true);
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "prime-lanes", {
+    activeOnly,
+  });
+  const [lanes, setLanes] = useState<PrimeLaneRead[] | null>(() =>
+    getCachedQuery<PrimeLaneRead[]>(cacheKey)
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -55,20 +65,28 @@ export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps)
   useEffect(() => {
     if (!tenantSlug) return;
     let cancelled = false;
+    const cached = getCachedQuery<PrimeLaneRead[]>(cacheKey);
+    if (cached !== null && reloadKey === 0) {
+      setLanes(cached);
+      setLoadError(null);
+    }
     fetchPrimeLanes(activeOnly, tenantSlug).then(
       (fresh) => {
+        setCachedQuery(cacheKey, fresh);
         if (cancelled) return;
         setLanes(fresh);
         setLoadError(null);
       },
       (err: unknown) => {
-        if (!cancelled) setLoadError(extractApiErrorMessage(err, LOAD_ERROR_TEXT));
+        if (!cancelled && cached === null) {
+          setLoadError(extractApiErrorMessage(err, LOAD_ERROR_TEXT));
+        }
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [tenantSlug, activeOnly, reloadKey]);
+  }, [tenantSlug, activeOnly, cacheKey, reloadKey]);
 
   /** Re-fetches the lanes (after an import, an Active switch, or "Try again"). */
   const load = useCallback(() => setReloadKey((key) => key + 1), []);
@@ -76,7 +94,12 @@ export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps)
   const visible = useMemo(() => (lanes ? filterLanes(lanes, query) : []), [lanes, query]);
 
   const replaceLane = (updated: PrimeLaneRead) => {
-    setLanes((current) => (current ? current.map((l) => (l.id === updated.id ? updated : l)) : current));
+    setLanes((current) => {
+      if (!current) return current;
+      const next = current.map((l) => (l.id === updated.id ? updated : l));
+      setCachedQuery(cacheKey, next);
+      return next;
+    });
   };
 
   const download = async () => {
@@ -197,9 +220,11 @@ export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps)
             </Button>
           </div>
         ) : lanes === null ? (
-          <div data-testid={`${TEST_ID}.loading`} className="flex items-center gap-2 py-8 text-sm text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading lanes…
+          <div data-testid={`${TEST_ID}.loading`} className="space-y-2.5 py-6 text-sm text-slate-500">
+            <span className="sr-only">Loading lanes…</span>
+            <div className="h-10 w-full rounded-lg bg-slate-100 animate-pulse" />
+            <div className="h-10 w-full rounded-lg bg-slate-100 animate-pulse" />
+            <div className="h-10 w-full rounded-lg bg-slate-100 animate-pulse" />
           </div>
         ) : lanes.length === 0 ? (
           <NoticeBanner

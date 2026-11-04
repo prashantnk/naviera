@@ -134,7 +134,7 @@ export function QuickActionsMenu() {
         </DropdownMenuLabel>
         {actions.map((action) => (
           <DropdownMenuItem key={action.href} asChild className="cursor-pointer rounded-xl p-2.5 gap-3">
-            <Link href={routeTo(action.href)} className="flex items-center">
+            <Link href={routeTo(action.href)} prefetch={true} className="flex items-center">
               <span className="h-9 w-9 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0">
                 <action.icon className="h-4 w-4" />
               </span>

@@ -2,13 +2,23 @@
 "use client";
 
 import {
+  AppointmentsService,
+  AppointmentTab,
   DashboardService,
+  DisputesService,
+  ExceptionCategory,
+  ExceptionsService,
+  InvoicesService,
+  ManifestsService,
+  RemittancesService,
   ServiceFlow,
   ShipmentsService,
+  SupportTicketsService,
   WalletService,
   type WalletOverviewResponse,
 } from "@/api_client";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached } from "@/hooks/use-addresses";
 import {
   buildQueryCacheKey,
   getCachedQuery,
@@ -92,40 +102,223 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(WALLET_UPDATED_EVENT, handleUpdated);
   }, [refresh, tenantSlug]);
 
-  // Background cache warming for primary Dashboard & Orders screens so the
-  // very first click between Dashboard <-> Orders renders in 0ms without a spinner.
+  // Two-stage staggered background cache pre-warming so navigating to any
+  // B2C or B2B workspace screen (Dashboard, Orders, Pickup Requests, Create
+  // Pickup Request, Saved Addresses, Exceptions, Invoices, Remittances,
+  // Weight Mismatch, Support, Appointments) renders in < 50ms with 0 spinners.
   useEffect(() => {
     if (!tenantSlug || typeof window === "undefined" || Boolean(process.env?.VITEST)) {
       return;
     }
-    const timer = window.setTimeout(() => {
-      const summary30Key = buildQueryCacheKey(tenantSlug, "session", "dashboard-summary", {
-        flow: ServiceFlow.B2C,
-        days: 30,
-      });
-      if (!hasCachedQuery(summary30Key)) {
-        DashboardService.getDashboardSummary(ServiceFlow.B2C, 30, tenantSlug)
-          .then((res) => setCachedQuery(summary30Key, res))
-          .catch(() => undefined);
+
+    // Stage 1 (immediate +50ms): Dashboard, Orders/LRs, Pickup Requests (Manifests),
+    // and Saved Addresses + Eligible Shipments for Create Pickup Request.
+    const stage1Timer = window.setTimeout(() => {
+      for (const flow of [ServiceFlow.B2C, ServiceFlow.B2B]) {
+        const summary30Key = buildQueryCacheKey(tenantSlug, "session", "dashboard-summary", {
+          flow,
+          days: 30,
+        });
+        if (!hasCachedQuery(summary30Key)) {
+          DashboardService.getDashboardSummary(flow, 30, tenantSlug)
+            .then((res) => setCachedQuery(summary30Key, res))
+            .catch(() => undefined);
+        }
+
+        const manifestsKey = buildQueryCacheKey(tenantSlug, "session", "manifests-list", {
+          serviceFlow: flow,
+          status: "ALL",
+        });
+        if (!hasCachedQuery(manifestsKey)) {
+          ManifestsService.listManifests(flow, null, null, tenantSlug)
+            .then((rows) => setCachedQuery(manifestsKey, rows || []))
+            .catch(() => undefined);
+        }
       }
-      const shipmentsKey = buildQueryCacheKey(tenantSlug, "session", "shipments-list", {
-        isB2B: false,
-        page: 1,
-        size: 50,
-        direction: "ALL",
-      });
-      if (!hasCachedQuery(shipmentsKey)) {
-        ShipmentsService.listShipments(1, 50, false, undefined, undefined)
-          .then((res) =>
-            setCachedQuery(shipmentsKey, {
-              items: res.items ?? [],
-              total: res.total ?? 0,
-            })
+
+      for (const isB2B of [false, true]) {
+        const shipmentsKey = buildQueryCacheKey(tenantSlug, "session", "shipments-list", {
+          isB2B,
+          page: 1,
+          size: 50,
+          direction: "ALL",
+        });
+        if (!hasCachedQuery(shipmentsKey)) {
+          ShipmentsService.listShipments(1, 50, isB2B, undefined, undefined)
+            .then((res) =>
+              setCachedQuery(shipmentsKey, {
+                items: res.items ?? [],
+                total: res.total ?? 0,
+              })
+            )
+            .catch(() => undefined);
+        }
+      }
+
+      fetchAddressesCached(tenantSlug)
+        .then((addrs) => {
+          const firstWarehouse = addrs[0];
+          if (!firstWarehouse) return;
+          for (const flow of [ServiceFlow.B2C, ServiceFlow.B2B]) {
+            const eligibleKey = buildQueryCacheKey(
+              tenantSlug,
+              "session",
+              "eligible-shipments",
+              { serviceFlow: flow, locationId: firstWarehouse.id }
+            );
+            if (!hasCachedQuery(eligibleKey)) {
+              ManifestsService.listEligibleShipments(
+                flow,
+                firstWarehouse.id,
+                tenantSlug
+              )
+                .then((rows) => setCachedQuery(eligibleKey, rows || []))
+                .catch(() => undefined);
+            }
+          }
+        })
+        .catch(() => undefined);
+    }, 50);
+
+    // Stage 2 (+350ms idle): Exceptions, Invoices, Remittances, Weight Mismatch,
+    // Support Tickets, and B2B Appointments.
+    const stage2Timer = window.setTimeout(() => {
+      const b2cExceptionsKey = buildQueryCacheKey(
+        tenantSlug,
+        "session",
+        "exceptions-workspace",
+        {
+          serviceFlow: ServiceFlow.B2C,
+          category: ExceptionCategory.SHIPMENT_EXCEPTIONS,
+          actionable: false,
+          search: "",
+          page: 1,
+        }
+      );
+      if (!hasCachedQuery(b2cExceptionsKey)) {
+        Promise.all([
+          ExceptionsService.getExceptionsSummary(ServiceFlow.B2C, tenantSlug),
+          ExceptionsService.listExceptions(
+            ServiceFlow.B2C,
+            ExceptionCategory.SHIPMENT_EXCEPTIONS,
+            false,
+            null,
+            1,
+            20,
+            tenantSlug
+          ),
+        ])
+          .then(([summary, list]) =>
+            setCachedQuery(b2cExceptionsKey, { summary, list })
           )
           .catch(() => undefined);
       }
-    }, 150);
-    return () => window.clearTimeout(timer);
+
+      const invoicesStaffKey = buildQueryCacheKey(tenantSlug, "staff", "invoices", {
+        tab: "INVOICE",
+        search: "",
+      });
+      const invoicesCustKey = buildQueryCacheKey(tenantSlug, "customer", "invoices", {
+        tab: "INVOICE",
+        search: "",
+      });
+      if (!hasCachedQuery(invoicesStaffKey) && !hasCachedQuery(invoicesCustKey)) {
+        InvoicesService.listBillingInvoices("INVOICE", null, tenantSlug)
+          .then((rows) => {
+            const list = rows || [];
+            setCachedQuery(invoicesStaffKey, list);
+            setCachedQuery(invoicesCustKey, list);
+          })
+          .catch(() => undefined);
+      }
+
+      const remitStaffKey = buildQueryCacheKey(tenantSlug, "staff", "remittances", {
+        search: "",
+        date: "",
+      });
+      const remitCustKey = buildQueryCacheKey(tenantSlug, "customer", "remittances", {
+        search: "",
+        date: "",
+      });
+      if (!hasCachedQuery(remitStaffKey) && !hasCachedQuery(remitCustKey)) {
+        RemittancesService.listRemittances(null, null, tenantSlug)
+          .then((rows) => {
+            const list = rows || [];
+            setCachedQuery(remitStaffKey, list);
+            setCachedQuery(remitCustKey, list);
+          })
+          .catch(() => undefined);
+      }
+
+      const mismatchStaffKey = buildQueryCacheKey(tenantSlug, "staff", "weight-mismatch", {
+        search: "",
+      });
+      const mismatchCustKey = buildQueryCacheKey(tenantSlug, "customer", "weight-mismatch", {
+        search: "",
+      });
+      if (!hasCachedQuery(mismatchStaffKey) && !hasCachedQuery(mismatchCustKey)) {
+        DisputesService.listWeightMismatchDisputes(null, null, tenantSlug)
+          .then((rows) => {
+            const list = rows || [];
+            setCachedQuery(mismatchStaffKey, list);
+            setCachedQuery(mismatchCustKey, list);
+          })
+          .catch(() => undefined);
+      }
+
+      const supportStaffKey = buildQueryCacheKey("workspace", "staff", "support-tickets", {
+        tab: "OPEN",
+        search: "",
+      });
+      const supportCustKey = buildQueryCacheKey("workspace", "customer", "support-tickets", {
+        tab: "OPEN",
+        search: "",
+      });
+      if (!hasCachedQuery(supportStaffKey) && !hasCachedQuery(supportCustKey)) {
+        SupportTicketsService.listSupportTickets("OPEN", null)
+          .then((rows) => {
+            const list = rows || [];
+            setCachedQuery(supportStaffKey, list);
+            setCachedQuery(supportCustKey, list);
+          })
+          .catch(() => undefined);
+      }
+
+      const appointmentsKey = buildQueryCacheKey(tenantSlug, "session", "b2b-appointments", {
+        tab: AppointmentTab.PENDING,
+        search: "",
+        consignee: "",
+        city: "",
+        status: "ALL",
+        pddFrom: "",
+        pddTo: "",
+        expiredOnly: false,
+        page: 1,
+        size: 10,
+      });
+      if (!hasCachedQuery(appointmentsKey)) {
+        AppointmentsService.listAppointments(
+          AppointmentTab.PENDING,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          false,
+          1,
+          10,
+          tenantSlug
+        )
+          .then((res) => setCachedQuery(appointmentsKey, res))
+          .catch(() => undefined);
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(stage1Timer);
+      window.clearTimeout(stage2Timer);
+    };
   }, [tenantSlug]);
 
   const value = useMemo<WalletContextValue>(

@@ -42,8 +42,9 @@ from app.models.pickups import (
 )
 from app.models.repricing import ChargeAdjustmentReason, MeasurementSource
 from app.models.tenants import Tenant, User, UserRole
+from app.repositories.addresses import invalidate_address_cache
 from app.repositories.delhivery_modules import DelhiveryModulesRepository
-from app.repositories.manifests import ManifestRepository
+from app.repositories.manifests import ManifestRepository, invalidate_manifests_cache
 from app.repositories.shipments import ShipmentRepository
 from app.repositories.wallet import WalletRepository
 from app.schemas.v1.pickups import (
@@ -754,6 +755,11 @@ class ShipmentService:
             )
 
         await self.shipment_repo.session.commit()
+        if (new_pickup_addr_model and new_pickup_addr_model.is_saved) or (
+            new_delivery_addr_model and new_delivery_addr_model.is_saved
+        ):
+            invalidate_address_cache(tenant.id)
+        invalidate_manifests_cache(tenant.id)
         return created_shipment
 
     # --- 2. The Diff Engine (Helper) ---
@@ -1477,6 +1483,11 @@ class ShipmentService:
                 updated_shipment, tenant_id, actor=user, reason=ChargeAdjustmentReason.LOST
             )
         await self.shipment_repo.session.commit()
+        if (new_pickup_addr and new_pickup_addr.is_saved) or (
+            new_delivery_addr and new_delivery_addr.is_saved
+        ):
+            invalidate_address_cache(tenant_id)
+        invalidate_manifests_cache(tenant_id)
         if is_raising_exception:
             creator = await self.shipment_repo.session.get(
                 User, updated_shipment.created_by_user_id
@@ -1684,6 +1695,7 @@ class ShipmentService:
                 for s in remaining
             )
         self.shipment_repo.session.add(manifest)
+        invalidate_manifests_cache(tenant_id)
 
     @staticmethod
     def _validate_exception_raise(
@@ -2137,6 +2149,7 @@ class ShipmentService:
         await self.refund_prepaid_freight(updated_shipment, tenant_id, actor=user)
 
         await self.shipment_repo.session.commit()
+        invalidate_manifests_cache(tenant_id)
         return updated_shipment
 
     async def _cancel_after_pickup_as_rto(
@@ -2179,6 +2192,7 @@ class ShipmentService:
             documents_to_delete=[],
         )
         await self.shipment_repo.session.commit()
+        invalidate_manifests_cache(tenant_id)
         return updated
 
     async def update_appointment(

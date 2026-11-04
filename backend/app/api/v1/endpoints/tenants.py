@@ -52,7 +52,7 @@ async def get_current_tenant_settings(
 ):
     """Full tenant settings for the Settings editor. Admin/Owner only (403 otherwise)."""
     return await tenant_service.get_admin_tenant_settings(
-        current_tenant.id, current_user
+        current_tenant.id, current_user, tenant=current_tenant
     )
 
 

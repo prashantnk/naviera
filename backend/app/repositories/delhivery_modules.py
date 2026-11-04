@@ -139,7 +139,21 @@ class DelhiveryModulesRepository:
         Lists remittance batches. `merchant_user_id=None` means tenant-wide (staff);
         otherwise strictly that merchant's rows (an empty list if they have none).
         """
-        stmt = select(CodRemittance).where(CodRemittance.tenant_id == tenant_id)
+        stmt = (
+            select(
+                CodRemittance,
+                User.email,
+                func.count().over().label("_total_count"),
+            )
+            .outerjoin(
+                User,
+                and_(
+                    col(User.id) == col(CodRemittance.merchant_user_id),
+                    User.tenant_id == tenant_id,
+                ),
+            )
+            .where(CodRemittance.tenant_id == tenant_id)
+        )
         if merchant_user_id is not None:
             stmt = stmt.where(CodRemittance.merchant_user_id == merchant_user_id)
 
@@ -158,8 +172,21 @@ class DelhiveryModulesRepository:
             desc(col(CodRemittance.processed_date)),
             desc(col(CodRemittance.created_at)),
         )
-        result = await self.session.exec(stmt)
-        return list(result.all())
+        raw_rows = (await self.session.exec(stmt)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, CodRemittance):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[2] or 0)
+        remittances: List[CodRemittance] = []
+        for row in raw_rows:
+            remit_obj: CodRemittance = row[0]
+            object.__setattr__(remit_obj, "merchant_email", row[1])
+            object.__setattr__(remit_obj, "_merchant_email_resolved", True)
+            object.__setattr__(remit_obj, "_total_count", total)
+            remittances.append(remit_obj)
+        return remittances
 
     async def get_remittance_by_identifier(
         self, tenant_id: uuid.UUID, identifier: str
@@ -283,7 +310,21 @@ class DelhiveryModulesRepository:
         Lists GST documents. `merchant_user_id=None` means tenant-wide (staff);
         otherwise strictly that merchant's rows (an empty list if they have none).
         """
-        stmt = select(BillingInvoice).where(BillingInvoice.tenant_id == tenant_id)
+        stmt = (
+            select(
+                BillingInvoice,
+                User.email,
+                func.count().over().label("_total_count"),
+            )
+            .outerjoin(
+                User,
+                and_(
+                    col(User.id) == col(BillingInvoice.merchant_user_id),
+                    User.tenant_id == tenant_id,
+                ),
+            )
+            .where(BillingInvoice.tenant_id == tenant_id)
+        )
         if merchant_user_id is not None:
             stmt = stmt.where(BillingInvoice.merchant_user_id == merchant_user_id)
 
@@ -303,8 +344,21 @@ class DelhiveryModulesRepository:
             desc(col(BillingInvoice.invoice_date)),
             desc(col(BillingInvoice.created_at)),
         )
-        result = await self.session.exec(stmt)
-        return list(result.all())
+        raw_rows = (await self.session.exec(stmt)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, BillingInvoice):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[2] or 0)
+        invoices: List[BillingInvoice] = []
+        for row in raw_rows:
+            inv_obj: BillingInvoice = row[0]
+            object.__setattr__(inv_obj, "merchant_email", row[1])
+            object.__setattr__(inv_obj, "_merchant_email_resolved", True)
+            object.__setattr__(inv_obj, "_total_count", total)
+            invoices.append(inv_obj)
+        return invoices
 
     async def get_invoice_by_identifier(
         self, tenant_id: uuid.UUID, identifier: str
@@ -539,7 +593,10 @@ class DelhiveryModulesRepository:
         status: Optional[str] = None,
         search: Optional[str] = None,
     ) -> List[SupportTicket]:
-        stmt = select(SupportTicket).where(SupportTicket.tenant_id == tenant_id)
+        stmt = select(
+            SupportTicket,
+            func.count().over().label("_total_count"),
+        ).where(SupportTicket.tenant_id == tenant_id)
         if user_id is not None:
             stmt = stmt.where(SupportTicket.user_id == user_id)
 
@@ -561,8 +618,19 @@ class DelhiveryModulesRepository:
             desc(col(SupportTicket.updated_at)),
             desc(col(SupportTicket.created_at)),
         )
-        result = await self.session.exec(stmt)
-        return list(result.all())
+        raw_rows = (await self.session.exec(stmt)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, SupportTicket):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[1] or 0)
+        tickets: List[SupportTicket] = []
+        for row in raw_rows:
+            tkt_obj: SupportTicket = row[0]
+            object.__setattr__(tkt_obj, "_total_count", total)
+            tickets.append(tkt_obj)
+        return tickets
 
     async def get_ticket_by_identifier(
         self, tenant_id: uuid.UUID, identifier: str
@@ -650,7 +718,29 @@ class DelhiveryModulesRepository:
         Lists weight disputes. `merchant_user_id=None` means tenant-wide (staff);
         otherwise strictly that merchant's rows (an empty list if they have none).
         """
-        stmt = select(WeightDispute).where(WeightDispute.tenant_id == tenant_id)
+        stmt = (
+            select(
+                WeightDispute,
+                User.email,
+                PickupRequest.status,
+                func.count().over().label("_total_count"),
+            )
+            .outerjoin(
+                User,
+                and_(
+                    col(User.id) == col(WeightDispute.merchant_user_id),
+                    User.tenant_id == tenant_id,
+                ),
+            )
+            .outerjoin(
+                PickupRequest,
+                and_(
+                    col(PickupRequest.id) == col(WeightDispute.shipment_id),
+                    PickupRequest.tenant_id == tenant_id,
+                ),
+            )
+            .where(WeightDispute.tenant_id == tenant_id)
+        )
         if merchant_user_id is not None:
             stmt = stmt.where(WeightDispute.merchant_user_id == merchant_user_id)
 
@@ -670,8 +760,23 @@ class DelhiveryModulesRepository:
             desc(col(WeightDispute.updated_at)),
             desc(col(WeightDispute.raised_at)),
         )
-        result = await self.session.exec(stmt)
-        return list(result.all())
+        raw_rows = (await self.session.exec(stmt)).all()
+        if not raw_rows:
+            return []
+        first = raw_rows[0]
+        if isinstance(first, WeightDispute):
+            return list(raw_rows)  # type: ignore[arg-type]
+        total = int(first[3] or 0)
+        disputes: List[WeightDispute] = []
+        for row in raw_rows:
+            disp_obj: WeightDispute = row[0]
+            object.__setattr__(disp_obj, "merchant_email", row[1])
+            object.__setattr__(disp_obj, "_merchant_email_resolved", True)
+            object.__setattr__(disp_obj, "_joined_shipment_status", row[2])
+            object.__setattr__(disp_obj, "_shipment_status_resolved", True)
+            object.__setattr__(disp_obj, "_total_count", total)
+            disputes.append(disp_obj)
+        return disputes
 
     async def get_weight_dispute_by_id(
         self, tenant_id: uuid.UUID, dispute_id: uuid.UUID, for_update: bool = False

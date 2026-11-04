@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildQueryCacheKey,
   enableQueryCacheForTests,
+  fetchWithCache,
   getCachedQuery,
   hasCachedQuery,
   invalidateQueryCache,
@@ -75,5 +76,20 @@ describe("query-cache (SWR client memory cache)", () => {
 
     window.dispatchEvent(new Event("wallet-updated"));
     expect(hasCachedQuery(key)).toBe(false);
+  });
+
+  it("deduplicates concurrent in-flight requests via fetchWithCache", async () => {
+    const key = buildQueryCacheKey("logismart-test", "session", "manifests");
+    const fetcher = vi.fn().mockResolvedValue(["pur-1", "pur-2"]);
+
+    const [r1, r2] = await Promise.all([
+      fetchWithCache(key, fetcher),
+      fetchWithCache(key, fetcher),
+    ]);
+
+    expect(r1).toEqual(["pur-1", "pur-2"]);
+    expect(r2).toEqual(["pur-1", "pur-2"]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(getCachedQuery(key)).toEqual(["pur-1", "pur-2"]);
   });
 });

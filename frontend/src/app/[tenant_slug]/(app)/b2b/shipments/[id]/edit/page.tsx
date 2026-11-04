@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AddressesService,
   AddressCreate,
   AddressRead,
   ShipmentsService,
@@ -23,6 +22,7 @@ import { RequiredMark } from "@/components/ui/form-extras";
 import { DatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
 import {
   b2bForwardShipmentSchema,
   b2bReverseShipmentSchema,
@@ -208,7 +208,9 @@ export default function B2BForwardEditPage() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const [shipment, setShipment] = useState<PickupRead | null>(null);
-  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
+    () => getCachedAddresses(tenantSlug) ?? []
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [addShippingToCod, setAddShippingToCod] = useState(false);
 
@@ -247,7 +249,7 @@ export default function B2BForwardEditPage() {
     async function init() {
       try {
         const [addresses, shipData] = await Promise.all([
-          AddressesService.listSavedAddresses(null, tenantSlug),
+          fetchAddressesCached(tenantSlug),
           ShipmentsService.getShipmentDetails(shipmentId, tenantSlug),
         ]);
         setSavedAddresses(addresses);

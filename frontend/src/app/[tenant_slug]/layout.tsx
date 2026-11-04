@@ -4,6 +4,7 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TenantProvider } from "@/components/providers/tenant-provider";
 import { ThemeProvider } from "@/components/theme-provider";
+import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { headers } from "next/headers";
 
 export async function generateMetadata({
@@ -72,6 +73,7 @@ export default async function TenantRootLayout({
         primaryColor={primaryColor}
         secondaryColor={secondaryColor}
       />
+      <NavigationProgress />
       {children}
     </TenantProvider>
   );

@@ -9,6 +9,7 @@ import {
   UserUpdate,
 } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
+import { useTenant } from "@/components/providers/tenant-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,12 @@ import {
   sortUsersForTable,
 } from "@/components/team/user-edit-policy";
 import { getInitials } from "@/lib/initials";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { extractApiErrorMessage, formatIstDate } from "@/lib/utils";
 import {
   Building2,
@@ -209,9 +216,15 @@ function _renderScopePill(scope: ServiceScope | undefined) {
 }
 
 export default function TeamManagementPage() {
+  const { tenantSlug } = useTenant();
   const { canManageTeam, user: currentUser } = useUser();
-  const [users, setUsers] = useState<UserRead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "tenant-users");
+  const [users, setUsers] = useState<UserRead[]>(
+    () => getCachedQuery<UserRead[]>(cacheKey) ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => !hasCachedQuery(cacheKey)
+  );
   const [rolesHelpOpen, setRolesHelpOpen] = useState(false);
 
   // Filter Bar State
@@ -237,15 +250,23 @@ export default function TeamManagementPage() {
   const [reviewingUserId, setReviewingUserId] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
+    const cached = getCachedQuery<UserRead[]>(cacheKey);
+    if (cached !== null) {
+      setUsers(cached);
+      setLoading(false);
+    }
     try {
       const data = await UsersService.listUsersInTenant();
+      setCachedQuery(cacheKey, data);
       setUsers(data);
     } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Failed to load users"));
+      if (cached === null) {
+        toast.error(extractApiErrorMessage(error, "Failed to load users"));
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cacheKey]);
 
   useEffect(() => {
     if (canManageTeam) {
@@ -608,12 +629,16 @@ export default function TeamManagementPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="py-16 text-center">
-                    <div className="inline-flex items-center gap-2 text-slate-500">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <span>Loading workspace users</span>
+              {loading && users.length === 0 ? (
+                <tr data-testid="team-users-loading-skeleton">
+                  <td colSpan={5} className="py-10 px-4">
+                    <div className="space-y-2.5">
+                      {[0, 1, 2, 3].map((idx) => (
+                        <div
+                          key={idx}
+                          className="h-10 w-full rounded-lg bg-slate-100 animate-pulse"
+                        />
+                      ))}
                     </div>
                   </td>
                 </tr>

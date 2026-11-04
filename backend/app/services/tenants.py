@@ -588,7 +588,9 @@ class TenantService:
         tenant = await self.get_tenant_by_slug(slug)
         return self.to_public_tenant(tenant) if tenant else None
 
-    async def list_tenants(self, user: User) -> list[Tenant]:
+    async def list_tenants(
+        self, user: User, tenant: Optional[Tenant] = None
+    ) -> list[Tenant]:
         """
         Workspaces visible to the caller: only their OWN tenant (Admin/Owner).
         Customers get 403; nobody can enumerate other tenants' settings.
@@ -597,7 +599,8 @@ class TenantService:
             raise HTTPException(
                 status_code=403, detail="Only Admins or Owners can view workspace details."
             )
-        tenant = get_cached_tenant_by_id(user.tenant_id)
+        if tenant is None or tenant.id != user.tenant_id:
+            tenant = get_cached_tenant_by_id(user.tenant_id)
         if tenant is None:
             tenant = await self.tenant_repo.get_tenant_by_id(user.tenant_id)
             if tenant is not None:
@@ -605,7 +608,10 @@ class TenantService:
         return [tenant] if tenant else []
 
     async def list_users_for_tenant(
-        self, tenant_id: uuid.UUID, current_user: Optional[User] = None
+        self,
+        tenant_id: uuid.UUID,
+        current_user: Optional[User] = None,
+        tenant: Optional[Tenant] = None,
     ) -> list[User]:
         """
         Retrieves all users for a tenant (both `TENANT_STAFF` and `CUSTOMER` accounts).
@@ -617,7 +623,8 @@ class TenantService:
                 detail="Only Tenant Admins or Owners can list workspace users.",
             )
 
-        tenant = get_cached_tenant_by_id(tenant_id)
+        if tenant is None or tenant.id != tenant_id:
+            tenant = get_cached_tenant_by_id(tenant_id)
         if tenant is None:
             tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
             if tenant is not None:
@@ -787,7 +794,10 @@ class TenantService:
         return saved
 
     async def get_admin_tenant_settings(
-        self, tenant_id: uuid.UUID, user: User
+        self,
+        tenant_id: uuid.UUID,
+        user: User,
+        tenant: Optional[Tenant] = None,
     ) -> Tenant:
         """
         Full (unfiltered) tenant settings for the Settings page editor.
@@ -795,7 +805,8 @@ class TenantService:
         `to_public_tenant` instead.
         """
         self._assert_settings_admin(user, tenant_id, action="view")
-        tenant = get_cached_tenant_by_id(tenant_id)
+        if tenant is None or tenant.id != tenant_id:
+            tenant = get_cached_tenant_by_id(tenant_id)
         if tenant is None:
             tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
             if tenant is not None:
