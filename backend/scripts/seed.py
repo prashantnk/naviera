@@ -43,7 +43,10 @@ TENANTS = [
                             "badge": "Naviera Platform",
                             "layoutVariant": "saas",
                             "images": [
-                                "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop"
+                                "/images/showcase/b2c-express.svg",
+                                "/images/showcase/b2b-cargo-fleet.svg",
+                                "/images/showcase/hub-sortation.svg",
+                                "/images/showcase/wallet-gst-billing.svg",
                             ],
                         },
                     }
@@ -95,9 +98,10 @@ TENANTS = [
                             ],
                             "layoutVariant": "logistics_bento",
                             "images": [
-                                "https://images.unsplash.com/photo-1542296332-2e4473faf563?q=80&w=2070&auto=format&fit=crop",
-                                "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070&auto=format&fit=crop",
-                                "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop",
+                                "/images/showcase/b2c-express.svg",
+                                "/images/showcase/b2b-cargo-fleet.svg",
+                                "/images/showcase/hub-sortation.svg",
+                                "/images/showcase/wallet-gst-billing.svg",
                             ],
                         },
                     },

@@ -214,7 +214,7 @@ const PAGE_COPY: Readonly<Record<ServiceFlow, OrdersPageCopy>> = {
     createForwardHref: "/shipments/new/forward",
     createReverseLabel: "Reverse",
     createReverseHref: "/shipments/new/reverse",
-    searchPlaceholder: "Search AWB or Order ID",
+    searchPlaceholder: "Search AWB, Order ID, consignee, phone, city, PIN...",
     csvSuccess: "Orders CSV exported.",
     rowNoun: "shipment",
     rateCalculatorHref: "/rate-calculator",
@@ -225,7 +225,7 @@ const PAGE_COPY: Readonly<Record<ServiceFlow, OrdersPageCopy>> = {
     createForwardHref: "/b2b/shipments/new/forward",
     createReverseLabel: "Reverse",
     createReverseHref: B2B_REVERSE_BOOKING_ENABLED ? "/b2b/shipments/new/reverse" : null,
-    searchPlaceholder: "Search LRN or Order ID",
+    searchPlaceholder: "Search LRN, Order ID, PO, consignee, city, PIN...",
     csvSuccess: "B2B orders CSV exported.",
     rowNoun: "LR",
     rateCalculatorHref: "/b2b/rate-calculator",
@@ -283,24 +283,70 @@ function _matchesTransport(shipment: PickupRead, filter: TransportFilter): boole
   return filter === TransportFilter.EXPRESS ? isExpress : !isExpress;
 }
 
+/** Extended shipment shape allowing top-level e-way bill convenience fields in search tests. */
+export type SearchableOrder = PickupRead & {
+  eway_bill_numbers?: readonly string[] | null;
+  eway_bill_number?: string | null;
+};
+
 /**
- * Whether a row matches the AWB / order id search (comma or space separated, up to 100).
- *
- * @param shipment - Row data.
- * @param terms - Lower-cased search terms.
- * @returns True when any term matches the AWB, order id, PO or invoice numbers.
- */
-function _matchesSearch(shipment: PickupRead, terms: readonly string[]): boolean {
-  if (terms.length === 0) return true;
+* Whether a row matches the generic omni-search bar (comma or space separated, up to 100 terms).
+*
+* Searches across AWB/LRN, Order ID, PO number, carrier AWB, invoice & E-Way Bill numbers,
+* consignee (delivery) & origin (pickup) name/company/phone/city/state/pincode/address,
+* status, service type/option, and transporter.
+*
+* @param shipment - Row data.
+* @param terms - Search terms (case-insensitive).
+* @returns True when any term matches the shipment haystack.
+*/
+export function matchesOrderSearch(
+  shipment: SearchableOrder,
+  terms: readonly string[]
+): boolean {
+  const cleanTerms = terms.map((term) => term.trim().toLowerCase()).filter(Boolean);
+  if (cleanTerms.length === 0) return true;
+  const delivery = shipment.delivery_address;
+  const pickup = shipment.pickup_address;
+  const payment = shipment.payment_details;
   const haystack = [
-    shipment.tracking_id || "",
-    shipment.order_reference_id || "",
-    shipment.po_number || "",
-    (shipment.payment_details?.invoice_numbers || []).join(" "),
+    shipment.tracking_id,
+    shipment.order_reference_id,
+    shipment.po_number,
+    shipment.carrier_awb,
+    shipment.carrier_name,
+    ...(payment?.invoice_numbers ?? []),
+    payment?.invoice_number,
+    ...(payment?.eway_bill_numbers ?? []),
+    payment?.eway_bill_number,
+    ...(shipment.eway_bill_numbers ?? []),
+    shipment.eway_bill_number,
+    delivery?.name,
+    delivery?.company_name,
+    delivery?.phone,
+    delivery?.alternate_phone,
+    delivery?.email,
+    delivery?.city,
+    delivery?.state,
+    delivery?.pincode,
+    delivery?.address_line1,
+    delivery?.address_line2,
+    pickup?.name,
+    pickup?.company_name,
+    pickup?.phone,
+    pickup?.city,
+    pickup?.state,
+    pickup?.pincode,
+    pickup?.address_line1,
+    shipment.status,
+    shipment.service_type,
+    shipment.service_option,
+    shipment.transporter_name,
   ]
+    .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  return terms.some((term) => haystack.includes(term));
+  return cleanTerms.some((term) => haystack.includes(term));
 }
 
 /** Max AWBs accepted by the search box (Delhivery: "Search upto 100 AWBs"). */
@@ -458,7 +504,7 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
           const isCod = Boolean(shipment.payment_details?.is_cod);
           if ((paymentFilter === PaymentFilter.COD) !== isCod) return false;
         }
-        return _matchesSearch(shipment, searchTerms);
+        return matchesOrderSearch(shipment, searchTerms);
       }),
     [data, statuses, transportFilter, manifestedRange, directionFilter, paymentFilter, searchTerms]
   );

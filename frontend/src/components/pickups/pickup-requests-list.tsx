@@ -149,6 +149,54 @@ function _isWithinRange(scheduledDate: string, range: DateRange | undefined): bo
   return scheduledDate >= from && scheduledDate <= to;
 }
 
+/** Extended manifest shape supporting optional city, pincode, transporter & vehicle search fields. */
+export type SearchableManifest = ManifestResponse & {
+  pickup_city?: string | null;
+  pickup_pincode?: string | null;
+  transporter_name?: string | null;
+  vehicle_number?: string | null;
+};
+
+/**
+ * Whether a Pickup Request matches the generic omni-search query.
+ *
+ * Matches against the display Pickup ID, UUID, pickup request number, warehouse location name,
+ * formatted address, city, pincode, status, time slot, transporter, vehicle number, and
+ * any linked shipment AWB/LRN or Order ID.
+ *
+ * @param manifest - Pickup Request row.
+ * @param rawQuery - Raw search input.
+ * @returns True when the query is empty or matches the manifest haystack.
+ */
+export function matchesManifestSearch(manifest: SearchableManifest, rawQuery: string): boolean {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return true;
+  const shipmentTokens = (manifest.shipments ?? []).flatMap((item) => [
+    item.tracking_id,
+    item.order_reference_id,
+  ]);
+  const haystack = [
+    getPickupDisplayId(manifest),
+    manifest.id,
+    manifest.pickup_request_number,
+    manifest.pickup_location_name,
+    manifest.pickup_location_address,
+    manifest.pickup_city,
+    manifest.pickup_pincode,
+    manifest.status,
+    manifest.time_slot,
+    manifest.transporter_name,
+    manifest.vehicle_number,
+    ...shipmentTokens,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (haystack.includes(query)) return true;
+  const terms = query.split(/[\s,]+/).filter(Boolean);
+  return terms.length > 0 && terms.every((term) => haystack.includes(term));
+}
+
 /** Label of the date range filter trigger. */
 function _rangeLabel(range: DateRange | undefined): string {
   if (!range?.from) return "Pickup date range";
@@ -216,9 +264,8 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
   }, [manifests]);
 
   const visibleManifests = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
     return manifests.filter((m) => {
-      if (query && !getPickupDisplayId(m).toLowerCase().includes(query)) return false;
+      if (!matchesManifestSearch(m, searchTerm)) return false;
       if (locationFilter !== ALL_VALUE && m.pickup_location_name !== locationFilter) return false;
       return _isWithinRange(m.scheduled_date, dateRange);
     });
@@ -437,7 +484,8 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search Pickup ID"
+            placeholder="Search Pickup ID, location, city, PIN..."
+            aria-label="Search Pickup ID, location, city, PIN..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             className="h-10 bg-card pl-9 shadow-sm"
