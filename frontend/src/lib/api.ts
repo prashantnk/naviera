@@ -7,6 +7,29 @@ import { saveBlobAsFile } from "./download-blob";
 /** How long the tenant-config request may take before the page shows an error. */
 const TENANT_CONFIG_TIMEOUT_MS = 10000;
 
+/** Server-side in-memory TTL for tenant public config so RSC layout transitions resolve in <1ms. */
+export const TENANT_MEM_CACHE_TTL_MS = 300_000;
+
+interface CachedTenantEntry {
+  tenant: Tenant | null;
+  expiresAt: number;
+}
+
+const tenantMemoryCache = new Map<string, CachedTenantEntry>();
+const tenantInFlight = new Map<string, Promise<Tenant | null>>();
+
+/**
+ * Purges the in-memory tenant config cache for one tenant or all tenants.
+ * Called by `/api/revalidate` when tenant settings are updated.
+ */
+export function invalidateTenantMemoryCache(slug?: string): void {
+  if (slug && slug.trim()) {
+    tenantMemoryCache.delete(slug.trim().toLowerCase());
+  } else {
+    tenantMemoryCache.clear();
+  }
+}
+
 /**
  * Valid tenant slugs consist strictly of ASCII letters, digits, and internal hyphens
  * (e.g. `logismart`, `logismart-test`, `naviera`). Any top-level path segment containing
@@ -55,42 +78,70 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   }
   const normalizedSlug = slug.trim().toLowerCase();
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TENANT_CONFIG_TIMEOUT_MS);
-
-    const res = await fetch(
-      `${getBackendUrl()}/api/v1/tenants/${encodeURIComponent(normalizedSlug)}/public`,
-      {
-        next: { revalidate: 3600, tags: [`tenant-${normalizedSlug}`] },
-        signal: controller.signal,
-      }
-    );
-
-    clearTimeout(timeoutId);
-
-    // 1. Valid 404 (Workspace doesn't exist)
-    if (res.status === 404) return null;
-
-    // 2. The server is AWAKE, but broken (e.g. 500 DB Error). THROW IT!
-    if (!res.ok) {
-      throw new Error(`Server Error: ${res.status}`);
-    }
-
-    const tenant: Tenant = await res.json();
-    return tenant;
-  } catch (error: unknown) {
-    // 3. Slow / unreachable backend: log it and let the error boundary show a
-    //    neutral retry page. Never substitute another tenant's branding.
-    if (_isBackendUnreachable(error)) {
-      console.error(`[tenant-config] backend unreachable for slug "${slug}"`, error);
-      throw new TenantUnavailableError(slug, error);
-    }
-
-    // 4. If it failed for any other reason, LET IT THROW so the Error Boundary catches it!
-    console.error(`[tenant-config] failed to load slug "${slug}"`, error);
-    throw error;
+  const now = Date.now();
+  const cached = tenantMemoryCache.get(normalizedSlug);
+  if (cached && cached.expiresAt > now) {
+    return cached.tenant;
   }
+
+  const existingInFlight = tenantInFlight.get(normalizedSlug);
+  if (existingInFlight) {
+    return existingInFlight;
+  }
+
+  const requestPromise = (async (): Promise<Tenant | null> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TENANT_CONFIG_TIMEOUT_MS);
+
+      const res = await fetch(
+        `${getBackendUrl()}/api/v1/tenants/${encodeURIComponent(normalizedSlug)}/public`,
+        {
+          next: { revalidate: 300, tags: [`tenant-${normalizedSlug}`] },
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      // 1. Valid 404 (Workspace doesn't exist)
+      if (res.status === 404) {
+        tenantMemoryCache.set(normalizedSlug, {
+          tenant: null,
+          expiresAt: Date.now() + 30_000,
+        });
+        return null;
+      }
+
+      // 2. The server is AWAKE, but broken (e.g. 500 DB Error). THROW IT!
+      if (!res.ok) {
+        throw new Error(`Server Error: ${res.status}`);
+      }
+
+      const tenant: Tenant = await res.json();
+      tenantMemoryCache.set(normalizedSlug, {
+        tenant,
+        expiresAt: Date.now() + TENANT_MEM_CACHE_TTL_MS,
+      });
+      return tenant;
+    } catch (error: unknown) {
+      // 3. Slow / unreachable backend: log it and let the error boundary show a
+      //    neutral retry page. Never substitute another tenant's branding.
+      if (_isBackendUnreachable(error)) {
+        console.error(`[tenant-config] backend unreachable for slug "${slug}"`, error);
+        throw new TenantUnavailableError(slug, error);
+      }
+
+      // 4. If it failed for any other reason, LET IT THROW so the Error Boundary catches it!
+      console.error(`[tenant-config] failed to load slug "${slug}"`, error);
+      throw error;
+    } finally {
+      tenantInFlight.delete(normalizedSlug);
+    }
+  })();
+
+  tenantInFlight.set(normalizedSlug, requestPromise);
+  return requestPromise;
 }
 
 export async function downloadShippingLabel(

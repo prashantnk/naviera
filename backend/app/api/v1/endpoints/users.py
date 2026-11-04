@@ -112,13 +112,16 @@ async def list_users_in_tenant(
 @router.get("/me", response_model=UserRead)
 async def get_my_profile(
     current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
     tenant_service: TenantService = Depends(get_tenant_service),
 ):
     """
     Returns the currently authenticated user's profile (including their role,
     account_type, merchant_org_id, and B2B access request status).
     """
-    return await tenant_service.enrich_user_profile(current_user)
+    return await tenant_service.enrich_user_profile(
+        current_user, tenant=current_tenant
+    )
 
 
 @router.patch("/me", response_model=UserRead)

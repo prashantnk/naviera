@@ -93,6 +93,7 @@ export function DashboardWalletCard({ flow }: DashboardWalletCardProps) {
             </div>
             <Link
               href={routeTo("/wallet")}
+              prefetch={true}
               className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
               History

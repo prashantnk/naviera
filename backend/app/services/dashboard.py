@@ -211,7 +211,14 @@ class DashboardService:
         scope = self._build_scope(tenant_id, service_flow, since, current_user)
 
         series_statuses = [s for group in DAILY_SERIES_STATUSES.values() for s in group]
-        aggregates = await self.repo.load_summary_aggregates(scope, series_statuses)
+        appt_window: Optional[Tuple[datetime, datetime]] = (
+            (now, now + APPOINTMENT_AT_RISK_WINDOW)
+            if service_flow == ServiceFlow.B2B
+            else None
+        )
+        aggregates = await self.repo.load_summary_aggregates(
+            scope, series_statuses, appointment_window=appt_window
+        )
         counts, timestamps, transitions = (
             aggregates.counts,
             aggregates.timestamps,
@@ -229,7 +236,7 @@ class DashboardService:
 
         appointments: Optional[DashboardAppointments] = None
         if service_flow == ServiceFlow.B2B:
-            appt = await self.repo.appointment_counts(
+            appt = aggregates.appointments or await self.repo.appointment_counts(
                 scope, now=now, at_risk_until=now + APPOINTMENT_AT_RISK_WINDOW
             )
             appointments = DashboardAppointments(

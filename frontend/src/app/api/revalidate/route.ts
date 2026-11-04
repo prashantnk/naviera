@@ -1,5 +1,6 @@
 // frontend/src/app/api/revalidate/route.ts
 
+import { invalidateTenantMemoryCache } from "@/lib/api";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -90,9 +91,11 @@ export async function POST(request: NextRequest) {
   try {
     if (_hasValidServerSecret(request)) {
       if (key) {
+        invalidateTenantMemoryCache(key);
         revalidateTag(_tenantTag(key), "default");
         return NextResponse.json({ revalidated: true, scope: _tenantTag(key) });
       }
+      invalidateTenantMemoryCache();
       revalidatePath("/", "layout");
       return NextResponse.json({ revalidated: true, scope: "all" });
     }
@@ -106,6 +109,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Not authorised to revalidate this tenant" }, { status: 403 });
     }
 
+    invalidateTenantMemoryCache(key);
     revalidateTag(_tenantTag(key), "default");
     return NextResponse.json({ revalidated: true, scope: _tenantTag(key) });
   } catch (err) {

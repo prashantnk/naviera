@@ -28,9 +28,10 @@ function ResourceLink({ href, label, icon: Icon, isExternal = false }: ResourceL
   return (
     <Link
       href={href}
+      prefetch={isExternal ? false : true}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noopener noreferrer" : undefined}
-      className="group flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring"
+      className="group flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-primary/5 active:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary/10">
         <Icon className="h-4 w-4 text-secondary" aria-hidden />

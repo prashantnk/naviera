@@ -1,6 +1,7 @@
 // src/lib/api-config.ts
 import { OpenAPI } from "@/api_client";
 import axios, { type AxiosError } from "axios";
+import { invalidateQueryCache } from "./query-cache";
 import { clearStoredSession, getSupabaseClient } from "./supabase";
 
 /**
@@ -134,10 +135,23 @@ export function notifyTenantAccessCheck(status: number | undefined, url: string 
  * so every caller still receives its usual `ApiError`: a 403 asks `AuthGuard`
  * to re-check access, and a 401 on an authenticated call redirects to login.
  */
+const MUTATION_METHODS: ReadonlySet<string> = new Set([
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
+
 function registerForbiddenInterceptor(): void {
   if (typeof window === "undefined" || forbiddenInterceptorId !== null) return;
   forbiddenInterceptorId = axios.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      const method = response.config?.method?.toUpperCase();
+      if (method && MUTATION_METHODS.has(method)) {
+        invalidateQueryCache();
+      }
+      return response;
+    },
     (error: AxiosError) => {
       notifyTenantAccessCheck(error.response?.status, error.config?.url);
       redirectToLoginOnUnauthorized(

@@ -25,11 +25,18 @@ import {
   ShieldCheck,
   Truck,
   UserCircle2,
-   type LucideIcon,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  B2B_CARGO_FLEET_DATA_URI,
+  B2C_EXPRESS_DATA_URI,
+  HUB_SORTATION_DATA_URI,
+  SHOWCASE_SVG_DATA_URIS,
+  WALLET_GST_BILLING_DATA_URI,
+} from "./showcase-svgs";
 
 export interface HeroSectionProps {
   title: string;
@@ -75,7 +82,7 @@ const LEGACY_BENTO_IMAGE_PREFIXES: ReadonlyArray<string> = [
   "https://images.unsplash.com/photo-1553413077-190dd305871c",
 ];
 
-/** Default 4-slide showcase definition (Delhivery One parity pillars). */
+/** Default 4-slide showcase definition (Delhivery One parity pillars, inline zero-network SVGs). */
 export const DEFAULT_SHOWCASE_SLIDES: ReadonlyArray<Omit<ShowcaseSlide, "imageSrc">> = [
   {
     id: "b2c-express",
@@ -88,7 +95,7 @@ export const DEFAULT_SHOWCASE_SLIDES: ReadonlyArray<Omit<ShowcaseSlide, "imageSr
     metricLabel: "First-Attempt SLA",
     metricValue: "99.8% On-Time",
     highlights: ["Doorstep OTP POD", "Prepaid & COD", "29,000+ PIN Codes"],
-    fallbackSrc: "/images/showcase/b2c-express.svg",
+    fallbackSrc: B2C_EXPRESS_DATA_URI,
     Icon: PackageCheck,
   },
   {
@@ -102,7 +109,7 @@ export const DEFAULT_SHOWCASE_SLIDES: ReadonlyArray<Omit<ShowcaseSlide, "imageSr
     metricLabel: "Cargo Network",
     metricValue: "PTL & FTL Pan-India",
     highlights: ["Multi-Box LRs", "ROV / FOV Cover", "Appointment Delivery"],
-    fallbackSrc: "/images/showcase/b2b-cargo-fleet.svg",
+    fallbackSrc: B2B_CARGO_FLEET_DATA_URI,
     Icon: Truck,
   },
   {
@@ -116,7 +123,7 @@ export const DEFAULT_SHOWCASE_SLIDES: ReadonlyArray<Omit<ShowcaseSlide, "imageSr
     metricLabel: "Weight & NDR Audit",
     metricValue: "100% Photo Verified",
     highlights: ["Laser Dim-Scan", "NDR Re-Attempt Queue", "72h E-Way Watchdog"],
-    fallbackSrc: "/images/showcase/hub-sortation.svg",
+    fallbackSrc: HUB_SORTATION_DATA_URI,
     Icon: ScanLine,
   },
   {
@@ -130,24 +137,32 @@ export const DEFAULT_SHOWCASE_SLIDES: ReadonlyArray<Omit<ShowcaseSlide, "imageSr
     metricLabel: "Compliance Engine",
     metricValue: "SAC 996812 / 996511",
     highlights: ["Instant UPI Credit", "T+2 COD Remittance", "18% GST Split"],
-    fallbackSrc: "/images/showcase/wallet-gst-billing.svg",
+    fallbackSrc: WALLET_GST_BILLING_DATA_URI,
     Icon: ReceiptText,
   },
 ];
 
-function isLegacyBentoImage(url: string): boolean {
-  const trimmed = url.trim();
-  return LEGACY_BENTO_IMAGE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+export function isLegacyBentoImage(url: string): boolean {
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.includes("images.unsplash.com") ||
+    LEGACY_BENTO_IMAGE_PREFIXES.some((prefix) =>
+      trimmed.startsWith(prefix.toLowerCase())
+    )
+  );
 }
 
 /**
- * Resolves the 4 showcase slides, combining curated local visuals with any
- * custom non-legacy tenant `landing_page` image overrides.
+ * Resolves the 4 showcase slides, combining curated zero-network inline SVG visuals
+ * with any custom non-legacy tenant `landing_page` image overrides.
  */
 export function resolveShowcaseSlides(images?: string[]): ShowcaseSlide[] {
   const validCustom = (images || [])
     .map((img) => (typeof img === "string" ? img.trim() : ""))
-    .filter((img) => Boolean(img) && !isLegacyBentoImage(img));
+    .filter(
+      (img) =>
+        Boolean(img) && !isLegacyBentoImage(img) && !SHOWCASE_SVG_DATA_URIS[img]
+    );
 
   return DEFAULT_SHOWCASE_SLIDES.map((slide, index) => ({
     ...slide,
@@ -215,6 +230,18 @@ export function HeroSection({
     }, SHOWCASE_ROTATION_MS);
     return () => clearInterval(timer);
   }, [isPaused, slideCount]);
+
+  // Pre-warm any custom non-data-URI slide images once on mount so slide rotation
+  // never triggers network fetches.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    for (const slide of slides) {
+      if (slide.imageSrc && !slide.imageSrc.startsWith("data:")) {
+        const preloader = new window.Image();
+        preloader.src = slide.imageSrc;
+      }
+    }
+  }, [slides]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -495,17 +522,18 @@ export function HeroSection({
                   </div>
                 </div>
 
-                {/* Single-Frame Image Viewport (Strictly ONE <img> rendered, zero stacked/overlapping images) */}
+                {/* Single-Frame Image Viewport (Strictly ONE persistent <img> rendered, zero stacked/overlapping images, zero remounts) */}
                 <div
                   data-testid="hero-showcase-viewport"
                   className="relative w-full aspect-[16/10] bg-slate-950 overflow-hidden flex items-center justify-center"
                 >
                   <img
-                    key={activeSlide.id}
                     data-testid="hero-showcase-image"
                     data-slide-index={activeIndex}
                     src={activeImgSrc}
                     alt={activeSlide.title}
+                    decoding="sync"
+                    loading="eager"
                     onError={() => {
                       if (!failedImages[activeSlide.id]) {
                         setFailedImages((prev) => ({

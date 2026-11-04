@@ -6,6 +6,7 @@ from sqlalchemy import delete, desc, text
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.dependencies import cache_tenant, cache_user, invalidate_auth_cache
 from app.models.tenants import Tenant, TenantSettingsHistory, User
 
 DEFAULT_SUPABASE_INSTANCE_ID = "00000000-0000-0000-0000-000000000000"
@@ -84,6 +85,10 @@ class TenantRepository:
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
+        invalidate_auth_cache(
+            tenant_id=user.tenant_id, supabase_user_id=user.supabase_user_id
+        )
+        cache_user(user)
         return user
 
     async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
@@ -178,12 +183,15 @@ class TenantRepository:
         """Stages tenant changes without committing (caller owns the transaction)."""
         self.session.add(tenant)
         await self.session.flush()
+        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
         return tenant
 
     async def commit_and_refresh(self, tenant: Tenant) -> Tenant:
         """Commits the unit of work and reloads the tenant."""
         await self.session.commit()
         await self.session.refresh(tenant)
+        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
+        cache_tenant(tenant)
         return tenant
 
     async def get_auth_user_by_email(self, email: str) -> Optional[dict]:

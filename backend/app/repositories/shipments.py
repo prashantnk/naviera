@@ -380,12 +380,12 @@ class ShipmentRepository:
                 PickupRequest.tenant_id == tenant_id,
             )
             .options(
-                selectinload(PickupRequest.packages),
-                selectinload(PickupRequest.pickup_address),
-                selectinload(PickupRequest.delivery_address),
-                selectinload(PickupRequest.documents),
-                selectinload(PickupRequest.payment_details),
-                selectinload(PickupRequest.activities),
+                selectinload(PickupRequest.packages),  # type: ignore
+                joinedload(PickupRequest.pickup_address),  # type: ignore
+                joinedload(PickupRequest.delivery_address),  # type: ignore
+                selectinload(PickupRequest.documents),  # type: ignore
+                joinedload(PickupRequest.payment_details),  # type: ignore
+                selectinload(PickupRequest.activities),  # type: ignore
             )
         )
         result = await self.session.exec(statement)

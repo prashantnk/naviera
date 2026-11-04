@@ -13,7 +13,19 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    return [
+      {
+        source: "/images/:path*",
+        headers: [
+          ...SECURITY_HEADERS,
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      { source: "/:path*", headers: SECURITY_HEADERS },
+    ];
   },
   // Dev-only: hosts allowed to load /_next dev resources (GitHub Codespaces port
   // forwarding + local). Add your own remote dev host here if you use one.

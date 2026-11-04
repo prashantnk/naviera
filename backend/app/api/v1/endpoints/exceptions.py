@@ -73,6 +73,7 @@ async def list_exceptions(
         search=search,
         page=page,
         size=size,
+        tenant=current_tenant,
     )
 
 

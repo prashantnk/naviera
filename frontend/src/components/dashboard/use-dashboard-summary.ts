@@ -3,6 +3,12 @@
 
 import { DashboardService, type DashboardSummaryResponse } from "@/api_client";
 import { useTenant } from "@/components/providers/tenant-provider";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import { useCallback, useEffect, useState } from "react";
 
@@ -36,15 +42,31 @@ export function useDashboardSummary(
   days: DashboardWindowDays | null
 ): DashboardSummaryState {
   const { tenantSlug } = useTenant();
-  const [data, setData] = useState<DashboardSummaryResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(days !== null);
+  const cacheKey =
+    days !== null
+      ? buildQueryCacheKey(tenantSlug, "session", "dashboard-summary", {
+          flow: API_SERVICE_FLOW[flow],
+          days,
+        })
+      : "";
+  const [data, setData] = useState<DashboardSummaryResponse | null>(() =>
+    cacheKey ? getCachedQuery<DashboardSummaryResponse>(cacheKey) : null
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => days !== null && (!cacheKey || !hasCachedQuery(cacheKey))
+  );
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<number>(0);
 
   useEffect(() => {
     if (days === null) return;
     let isCurrent = true;
-    setIsLoading(true);
+    const cached = getCachedQuery<DashboardSummaryResponse>(cacheKey);
+    if (cached !== null) {
+      setData(cached);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     const request = DashboardService.getDashboardSummary(
       API_SERVICE_FLOW[flow],
@@ -53,12 +75,15 @@ export function useDashboardSummary(
     );
     request
       .then((response) => {
+        setCachedQuery(cacheKey, response);
         if (isCurrent) setData(response);
       })
       .catch((requestError: unknown) => {
         if (!isCurrent) return;
         console.error("Failed to load dashboard summary", requestError);
-        setError(SUMMARY_ERROR_MESSAGE);
+        if (cached === null) {
+          setError(SUMMARY_ERROR_MESSAGE);
+        }
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);
@@ -67,7 +92,7 @@ export function useDashboardSummary(
       isCurrent = false;
       request.cancel();
     };
-  }, [flow, days, tenantSlug, attempt]);
+  }, [flow, days, tenantSlug, attempt, cacheKey]);
 
   const retry = useCallback(() => setAttempt((previous) => previous + 1), []);
 

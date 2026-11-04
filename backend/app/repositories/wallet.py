@@ -235,21 +235,29 @@ class WalletRepository:
                 )
             )
 
-        count_query = select(func.count()).select_from(WalletTransaction).where(*filters)
-        total_res = await self.session.exec(count_query)
-        total = int(total_res.one() or 0)
-
         offset = (max(page, 1) - 1) * size
         data_query = (
-            select(WalletTransaction, User.email)
+            select(
+                WalletTransaction,
+                User.email,
+                func.count().over().label("total_count"),
+            )
             .outerjoin(User, WalletTransaction.user_id == User.id)
             .where(*filters)
             .order_by(WalletTransaction.created_at.desc())
             .offset(offset)
             .limit(size)
         )
-        rows = await self.session.exec(data_query)
-        return self._attach_user_emails(rows.all()), total
+        raw_rows = (await self.session.exec(data_query)).all()
+        if raw_rows:
+            total = int(raw_rows[0][2] or 0)
+            return self._attach_user_emails([(r[0], r[1]) for r in raw_rows]), total
+
+        if page <= 1:
+            return [], 0
+        count_query = select(func.count()).select_from(WalletTransaction).where(*filters)
+        total_res = await self.session.exec(count_query)
+        return [], int(total_res.one() or 0)
 
     @staticmethod
     def _visible_recharge_clause() -> ColumnElement[bool]:
@@ -351,6 +359,15 @@ class WalletRepository:
             )
             .scalar_subquery()
         )
+        wallet_balance = (
+            select(func.coalesce(col(UserWallet.balance), 0.0))
+            .where(
+                UserWallet.tenant_id == tenant_id,
+                UserWallet.user_id == user_id,
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
         statement = select(
             _sum_where(and_(is_completed, txn_type == WalletTxnType.RECHARGE.value)),
             _sum_where(and_(is_completed, txn_type.in_(WALLET_DEBIT_TXN_TYPES))),
@@ -363,12 +380,16 @@ class WalletRepository:
                 )
             ),
             collectible_cod,
+            func.coalesce(wallet_balance, 0.0),
         ).where(
             WalletTransaction.tenant_id == tenant_id,
             WalletTransaction.user_id == user_id,
         )
-        recharged, spent, refunded, pending, cod = (await self.session.exec(statement)).one()
+        recharged, spent, refunded, pending, cod, bal = (
+            await self.session.exec(statement)
+        ).one()
         return {
+            "balance": round(float(bal or 0.0), 2),
             "total_recharged": round(float(recharged or 0.0), 2),
             "pending_recharge": round(float(pending or 0.0), 2),
             "total_spent": round(float(spent or 0.0), 2),

@@ -22,7 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import { Check, ChevronDown, Package, Truck, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface FlowOption {
@@ -121,10 +122,18 @@ function FlowTriggerText({
 }
 
 export function FlowSwitcher({ variant }: FlowSwitcherProps) {
-  const { tenant, tenantSlug } = useTenant();
+  const { tenant, tenantSlug, routeTo } = useTenant();
   const { activeFlow, canSwitchFlow, switchFlow } = useWorkspaceFlow();
   const { user, canAccessB2B } = useUser();
+  const router = useRouter();
   const [requestB2bOpen, setRequestB2bOpen] = useState(false);
+
+  useEffect(() => {
+    router.prefetch(routeTo("/dashboard"));
+    if (canAccessB2B) {
+      router.prefetch(routeTo("/b2b/dashboard"));
+    }
+  }, [router, routeTo, canAccessB2B]);
 
   const activeOption = FLOW_OPTIONS[activeFlow];
   const isDrawer = variant === "drawer";
