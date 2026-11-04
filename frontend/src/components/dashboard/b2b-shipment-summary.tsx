@@ -168,6 +168,7 @@ export function AppointmentManagement({ appointments, isLoading, error, onRetry 
               footer={
                 <Link
                   href={viewAllHref}
+                  prefetch={true}
                   className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-[11px] font-medium text-foreground/80 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`View all ${tile.label.toLowerCase()}`}
                 >

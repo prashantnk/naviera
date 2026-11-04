@@ -34,6 +34,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WalletRechargeDialog } from "@/components/wallet/wallet-header-pill";
 import { downloadWalletLedgerCsv, downloadWalletReceiptPdf } from "@/lib/api";
 import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
+import {
   cn,
   extractApiErrorMessage,
   safeFormatDate,
@@ -130,17 +135,38 @@ export default function UnifiedWalletPage() {
     canManageFinance && txn.user_id !== user?.id;
   // Balance + summary come from the shared WalletProvider (same request as the header pill).
   const { wallet: overview } = useWallet();
-  const [spendsTxns, setSpendsTxns] = useState<WalletTransactionRead[]>([]);
-  const [rechargeTxns, setRechargeTxns] = useState<WalletTransactionRead[]>([]);
-  const [spendsTotal, setSpendsTotal] = useState<number>(0);
-  const [rechargesTotal, setRechargesTotal] = useState<number>(0);
+  const cacheScope = user?.id || (capabilities.isStaff ? "staff" : "customer");
+  const ledgerCacheKey = buildQueryCacheKey(tenantSlug, cacheScope, "wallet-ledger", {
+    userFilter: ledgerUserFilter,
+  });
+  const initialCachedLedger = getCachedQuery<{
+    spendItems: WalletTransactionRead[];
+    rechargeItems: WalletTransactionRead[];
+    spendsCount: number;
+    rechargesCount: number;
+    pendingItems: WalletTransactionRead[];
+  }>(ledgerCacheKey);
+  const [spendsTxns, setSpendsTxns] = useState<WalletTransactionRead[]>(
+    () => initialCachedLedger?.spendItems ?? []
+  );
+  const [rechargeTxns, setRechargeTxns] = useState<WalletTransactionRead[]>(
+    () => initialCachedLedger?.rechargeItems ?? []
+  );
+  const [spendsTotal, setSpendsTotal] = useState<number>(
+    () => initialCachedLedger?.spendsCount ?? 0
+  );
+  const [rechargesTotal, setRechargesTotal] = useState<number>(
+    () => initialCachedLedger?.rechargesCount ?? 0
+  );
   const [pendingApprovals, setPendingApprovals] = useState<
     WalletTransactionRead[]
-  >([]);
+  >(() => initialCachedLedger?.pendingItems ?? []);
   const [auditReport, setAuditReport] =
     useState<WalletIntegrityAuditResponse | null>(null);
   const [runningAudit, setRunningAudit] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(
+    () => initialCachedLedger === null
+  );
   const [activeTab, setActiveTab] = useState<string>("spends");
   const [rechargeOpen, setRechargeOpen] = useState<boolean>(false);
   const [settlingRemittance, setSettlingRemittance] = useState<boolean>(false);
@@ -168,7 +194,24 @@ export default function UnifiedWalletPage() {
 
   const fetchWalletData = useCallback(async () => {
     if (!tenantSlug) return;
-    setLoading(true);
+    const cached = getCachedQuery<{
+      spendItems: WalletTransactionRead[];
+      rechargeItems: WalletTransactionRead[];
+      spendsCount: number;
+      rechargesCount: number;
+      pendingItems: WalletTransactionRead[];
+    }>(ledgerCacheKey);
+    if (cached !== null) {
+      setSpendsTxns(cached.spendItems);
+      setRechargeTxns(cached.rechargeItems);
+      setSpendsTotal(cached.spendsCount);
+      setRechargesTotal(cached.rechargesCount);
+      if (canManageFinance) {
+        setPendingApprovals(cached.pendingItems);
+      }
+    } else {
+      setLoading(true);
+    }
     const userIdFilter =
       canViewAllTxns && ledgerUserFilter !== ALL_USERS_FILTER
         ? ledgerUserFilter
@@ -192,32 +235,45 @@ export default function UnifiedWalletPage() {
       ]);
       const spendItems = spendsRes.items || [];
       const rechargeItems = rechargesRes.items || [];
+      const spendsCount = spendsRes.total ?? spendItems.length;
+      const rechargesCount = rechargesRes.total ?? rechargeItems.length;
       setSpendsTxns(spendItems);
       setRechargeTxns(rechargeItems);
-      setSpendsTotal(spendsRes.total ?? spendItems.length);
-      setRechargesTotal(rechargesRes.total ?? rechargeItems.length);
+      setSpendsTotal(spendsCount);
+      setRechargesTotal(rechargesCount);
       if (canViewAllTxns && userIdFilter === null) {
         setLedgerUsers(_collectLedgerUsers(spendItems.concat(rechargeItems)));
       }
 
+      let pendingItems: WalletTransactionRead[] = [];
       if (canManageFinance) {
         try {
           const pendingRes = await WalletService.listTenantPendingRecharges(
             tenantSlug
           );
-          setPendingApprovals(pendingRes || []);
+          pendingItems = pendingRes || [];
+          setPendingApprovals(pendingItems);
         } catch {
           setPendingApprovals([]);
         }
       }
+      setCachedQuery(ledgerCacheKey, {
+        spendItems,
+        rechargeItems,
+        spendsCount,
+        rechargesCount,
+        pendingItems,
+      });
     } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Unable to load Unified Wallet data.")
-      );
+      if (cached === null) {
+        toast.error(
+          extractApiErrorMessage(err, "Unable to load Unified Wallet data.")
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug, canManageFinance, canViewAllTxns, ledgerUserFilter]);
+  }, [tenantSlug, canManageFinance, canViewAllTxns, ledgerUserFilter, ledgerCacheKey]);
 
   const handleRunIntegrityAudit = async () => {
     if (!tenantSlug) return;

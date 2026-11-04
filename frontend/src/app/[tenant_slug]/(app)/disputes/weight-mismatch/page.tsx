@@ -45,6 +45,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useSignedDocumentUrl } from "@/lib/document-storage";
 import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
+import {
   cn,
   extractApiErrorMessage,
   safeFormatDate,
@@ -233,9 +238,19 @@ export default function WeightMismatchDisputesPage() {
     );
 
   const [viewMode, setViewMode] = useState<DisputePageMode>("list");
-  const [disputes, setDisputes] = useState<WeightDisputeRead[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const cacheKey = buildQueryCacheKey(
+    tenantSlug,
+    viewerIsStaff ? "staff" : "customer",
+    "weight-mismatch",
+    { search: searchQuery.trim() }
+  );
+  const [disputes, setDisputes] = useState<WeightDisputeRead[]>(
+    () => getCachedQuery<WeightDisputeRead[]>(cacheKey) ?? []
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => getCachedQuery<WeightDisputeRead[]>(cacheKey) === null
+  );
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [downloadingCsv, setDownloadingCsv] = useState<boolean>(false);
 
@@ -259,7 +274,12 @@ export default function WeightMismatchDisputesPage() {
 
   const fetchDisputes = useCallback(async () => {
     if (!tenantSlug) return;
-    setLoading(true);
+    const cached = getCachedQuery<WeightDisputeRead[]>(cacheKey);
+    if (cached !== null) {
+      setDisputes(cached);
+    } else {
+      setLoading(true);
+    }
     try {
       const searchParam = searchQuery.trim() ? searchQuery.trim() : null;
       const rows = await DisputesService.listWeightMismatchDisputes(
@@ -267,15 +287,19 @@ export default function WeightMismatchDisputesPage() {
         null,
         tenantSlug
       );
-      setDisputes(rows || []);
+      const list = rows || [];
+      setCachedQuery(cacheKey, list);
+      setDisputes(list);
     } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to load mismatch disputes.")
-      );
+      if (cached === null) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to load mismatch disputes.")
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug, searchQuery]);
+  }, [tenantSlug, searchQuery, cacheKey]);
 
   useEffect(() => {
     fetchDisputes();

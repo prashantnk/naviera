@@ -52,7 +52,8 @@ export function StageTile({ label, count, href, hint, footer }: StageTileProps) 
     <div className="overflow-hidden rounded-md border bg-card shadow-xs">
       <Link
         href={href}
-        className="group block px-3 py-2.5 outline-none transition-colors hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        prefetch={true}
+        className="group block px-3 py-2.5 outline-none transition-colors hover:bg-primary/5 active:bg-primary/10 focus-visible:bg-primary/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         aria-label={`${label}: ${count}`}
       >
         <span className="flex items-center justify-between gap-2">
@@ -92,6 +93,7 @@ export function StageQuickLink({ href, label, count, className }: StageQuickLink
   return (
     <Link
       href={href}
+      prefetch={true}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-sm text-[11px] font-medium text-foreground/80 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring",
         className

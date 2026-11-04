@@ -56,6 +56,11 @@ import {
   NDR_REASON_OPTIONS,
   getOptionMeta,
 } from "@/lib/form-options";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage, safeFormatDate } from "@/lib/utils";
 import {
   ExceptionActionDialog,
@@ -154,9 +159,37 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
   const [page, setPage] = useState<number>(1);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
-  const [summary, setSummary] = useState<ExceptionSummaryResponse | null>(null);
-  const [listData, setListData] = useState<ExceptionListResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const effectiveActionable =
+    activeCategory === ExceptionCategory.NON_ACTIONABLE ? false : actionableOnly;
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "exceptions-workspace", {
+    serviceFlow,
+    category: activeCategory,
+    actionable: effectiveActionable,
+    search: debouncedSearch,
+    page,
+  });
+
+  const [summary, setSummary] = useState<ExceptionSummaryResponse | null>(
+    () =>
+      getCachedQuery<{
+        summary: ExceptionSummaryResponse;
+        list: ExceptionListResponse;
+      }>(cacheKey)?.summary ?? null
+  );
+  const [listData, setListData] = useState<ExceptionListResponse | null>(
+    () =>
+      getCachedQuery<{
+        summary: ExceptionSummaryResponse;
+        list: ExceptionListResponse;
+      }>(cacheKey)?.list ?? null
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () =>
+      getCachedQuery<{
+        summary: ExceptionSummaryResponse;
+        list: ExceptionListResponse;
+      }>(cacheKey) === null
+  );
   const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -181,10 +214,16 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
 
   useEffect(() => {
     let ignore = false;
-    setLoading(true);
-
-    const effectiveActionable =
-      activeCategory === ExceptionCategory.NON_ACTIONABLE ? false : actionableOnly;
+    const cached = getCachedQuery<{
+      summary: ExceptionSummaryResponse;
+      list: ExceptionListResponse;
+    }>(cacheKey);
+    if (cached !== null) {
+      setSummary(cached.summary);
+      setListData(cached.list);
+    } else {
+      setLoading(true);
+    }
 
     Promise.all([
       ExceptionsService.getExceptionsSummary(serviceFlow, tenantSlug),
@@ -199,6 +238,7 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
       ),
     ])
       .then(([summaryRes, listRes]) => {
+        setCachedQuery(cacheKey, { summary: summaryRes, list: listRes });
         if (ignore) return;
         setSummary(summaryRes);
         setListData(listRes);
@@ -206,9 +246,11 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
       })
       .catch((err: unknown) => {
         if (ignore) return;
-        setError(
-          extractApiErrorMessage(err, "Failed to load delivery exceptions."),
-        );
+        if (cached === null) {
+          setError(
+            extractApiErrorMessage(err, "Failed to load delivery exceptions."),
+          );
+        }
       })
       .finally(() => {
         if (!ignore) setLoading(false);
@@ -220,11 +262,12 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
   }, [
     serviceFlow,
     activeCategory,
-    actionableOnly,
+    effectiveActionable,
     debouncedSearch,
     page,
     tenantSlug,
     refreshKey,
+    cacheKey,
   ]);
 
   // The URL `?category=` is the source of truth (sidebar sub-menu links set it).

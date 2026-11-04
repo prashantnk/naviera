@@ -1,4 +1,5 @@
 // frontend/src/lib/supabase.ts
+import { invalidateQueryCache } from "@/lib/query-cache";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -86,6 +87,7 @@ export function clearStoredSession(tenantSlug: string): void {
   keys.forEach((key) => {
     if (key) window.localStorage.removeItem(key);
   });
+  invalidateQueryCache();
   resetSupabaseClient(tenantSlug);
 }
 

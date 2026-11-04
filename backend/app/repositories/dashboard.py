@@ -62,11 +62,12 @@ class AppointmentCounts(NamedTuple):
 
 
 class DashboardAggregates(NamedTuple):
-    """The three aggregate result sets loaded in one round trip."""
+    """The three (or four for B2B) aggregate result sets loaded in one round trip."""
 
     counts: Dict[Tuple[PickupStatus, Optional[NdrExceptionReason]], int]
     timestamps: List[TransitionTimestamps]
     transitions: Dict[Tuple[date, str], int]
+    appointments: Optional[AppointmentCounts] = None
 
 
 class DashboardRepository:
@@ -103,21 +104,38 @@ class DashboardRepository:
         return func.json_agg(func.json_build_array(*columns), type_=sa.JSON)
 
     async def load_summary_aggregates(
-        self, scope: ShipmentScope, statuses: List[PickupStatus]
+        self,
+        scope: ShipmentScope,
+        statuses: List[PickupStatus],
+        appointment_window: Optional[Tuple[datetime, datetime]] = None,
     ) -> DashboardAggregates:
         """
-        Status/reason counts, per-shipment first-transition timestamps and the
-        per-day transition series in ONE round trip.
+        Status/reason counts, per-shipment first-transition timestamps, the
+        per-day transition series, and (when `appointment_window` is provided)
+        B2B appointment counts in ONE round trip.
 
         CTEs: `scoped` (shipments in scope) -> `status_counts`; `acts` (their
         activity ledger) -> `firsts` and `daily`. Each CTE is folded into a
-        `json_agg` scalar so the three result sets travel in a single row.
+        `json_agg` scalar so the result sets travel in a single row.
         """
-        scoped = (
-            select(PickupRequest.id, PickupRequest.status, PickupRequest.ndr_reason)
-            .where(*self._scope_filters(scope))
-            .cte("scoped")
-        )
+        if appointment_window is not None:
+            scoped = (
+                select(
+                    PickupRequest.id,
+                    PickupRequest.status,
+                    PickupRequest.ndr_reason,
+                    PickupRequest.appointment_id,
+                    PickupRequest.appointment_start,
+                )
+                .where(*self._scope_filters(scope))
+                .cte("scoped")
+            )
+        else:
+            scoped = (
+                select(PickupRequest.id, PickupRequest.status, PickupRequest.ndr_reason)
+                .where(*self._scope_filters(scope))
+                .cte("scoped")
+            )
         status_counts = (
             select(scoped.c.status, scoped.c.ndr_reason, func.count().label("n"))
             .group_by(scoped.c.status, scoped.c.ndr_reason)
@@ -165,23 +183,69 @@ class DashboardRepository:
             .group_by(day, acts.c.new_status)
             .cte("daily")
         )
-        statement = select(
-            select(
-                self._json_rows(status_counts.c.status, status_counts.c.ndr_reason, status_counts.c.n)
-            ).scalar_subquery(),
-            select(
-                self._json_rows(
-                    firsts.c.pickup_id,
-                    firsts.c.status,
-                    firsts.c.first_in_transit,
-                    firsts.c.first_attempt,
-                    firsts.c.first_exception,
-                    firsts.c.first_completed,
+        counts_subq = select(
+            self._json_rows(status_counts.c.status, status_counts.c.ndr_reason, status_counts.c.n)
+        ).scalar_subquery()
+        firsts_subq = select(
+            self._json_rows(
+                firsts.c.pickup_id,
+                firsts.c.status,
+                firsts.c.first_in_transit,
+                firsts.c.first_attempt,
+                firsts.c.first_exception,
+                firsts.c.first_completed,
+            )
+        ).scalar_subquery()
+        daily_subq = select(
+            self._json_rows(daily.c.day, daily.c.new_status, daily.c.n)
+        ).scalar_subquery()
+
+        appointments_result: Optional[AppointmentCounts] = None
+        if appointment_window is not None:
+            now_ts, at_risk_until = appointment_window
+            is_active = scoped.c.status.in_(ACTIVE_APPOINTMENT_STATUSES)
+            start = scoped.c.appointment_start
+            has_appointment_id = and_(
+                scoped.c.appointment_id.is_not(None),
+                scoped.c.appointment_id != "",
+            )
+            needed = or_(
+                and_(
+                    scoped.c.status == PickupStatus.EXCEPTION,
+                    scoped.c.ndr_reason == NdrExceptionReason.APPOINTMENT_NEEDED,
+                ),
+                and_(has_appointment_id, start.is_(None), is_active),
+            )
+            at_risk = and_(is_active, start >= now_ts, start <= at_risk_until)
+            booked = and_(is_active, start >= now_ts)
+            appt_subq = (
+                select(
+                    func.json_build_array(
+                        func.count().filter(needed),
+                        func.count().filter(at_risk),
+                        func.count().filter(booked),
+                        type_=sa.JSON,
+                    )
                 )
-            ).scalar_subquery(),
-            select(self._json_rows(daily.c.day, daily.c.new_status, daily.c.n)).scalar_subquery(),
-        )
-        counts_json, firsts_json, daily_json = (await self.session.exec(statement)).one()
+                .select_from(scoped)
+                .scalar_subquery()
+            )
+            statement = select(counts_subq, firsts_subq, daily_subq, appt_subq)
+            counts_json, firsts_json, daily_json, appt_json = (
+                await self.session.exec(statement)
+            ).one()
+            if appt_json and len(appt_json) >= 3:
+                appointments_result = AppointmentCounts(
+                    int(appt_json[0] or 0),
+                    int(appt_json[1] or 0),
+                    int(appt_json[2] or 0),
+                )
+            else:
+                appointments_result = AppointmentCounts(0, 0, 0)
+        else:
+            statement = select(counts_subq, firsts_subq, daily_subq)
+            counts_json, firsts_json, daily_json = (await self.session.exec(statement)).one()
+
         return DashboardAggregates(
             counts={
                 (PickupStatus(s), NdrExceptionReason(r) if r else None): int(n)
@@ -198,6 +262,7 @@ class DashboardRepository:
             transitions={
                 (date.fromisoformat(d), new_status): int(n) for d, new_status, n in daily_json or []
             },
+            appointments=appointments_result,
         )
 
     async def appointment_counts(

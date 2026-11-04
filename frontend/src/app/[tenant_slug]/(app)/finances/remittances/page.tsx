@@ -44,6 +44,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
+import {
   cn,
   extractApiErrorMessage,
   safeFormatDate,
@@ -106,11 +111,21 @@ export default function RemittancesListPage() {
   /** Staff see every merchant's batches, so each row names its merchant. */
   const showMerchant = capabilities.isStaff;
 
-  const [remittances, setRemittances] = useState<CodRemittanceRead[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [processedDate, setProcessedDate] = useState<string>("");
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+  const cacheKey = buildQueryCacheKey(
+    tenantSlug,
+    showMerchant ? "staff" : "customer",
+    "remittances",
+    { search: searchQuery.trim(), date: processedDate }
+  );
+  const [remittances, setRemittances] = useState<CodRemittanceRead[]>(
+    () => getCachedQuery<CodRemittanceRead[]>(cacheKey) ?? []
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => getCachedQuery<CodRemittanceRead[]>(cacheKey) === null
+  );
 
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -179,7 +194,12 @@ export default function RemittancesListPage() {
 
   const fetchRemittances = useCallback(async () => {
     if (!tenantSlug) return;
-    setLoading(true);
+    const cached = getCachedQuery<CodRemittanceRead[]>(cacheKey);
+    if (cached !== null) {
+      setRemittances(cached);
+    } else {
+      setLoading(true);
+    }
     try {
       const searchParam = searchQuery.trim() ? searchQuery.trim() : null;
       const dateParam = processedDate ? processedDate : null;
@@ -188,15 +208,19 @@ export default function RemittancesListPage() {
         dateParam,
         tenantSlug
       );
-      setRemittances(rows || []);
+      const list = rows || [];
+      setCachedQuery(cacheKey, list);
+      setRemittances(list);
     } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to load remittances list.")
-      );
+      if (cached === null) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to load remittances list.")
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug, searchQuery, processedDate]);
+  }, [tenantSlug, searchQuery, processedDate, cacheKey]);
 
   useEffect(() => {
     fetchRemittances();

@@ -212,10 +212,16 @@ describe("HeroSection 4-slide auto-rotating showcase (no stacked images)", () =>
     expect(screen.getByTestId("hero-showcase-image")).toHaveAttribute("data-slide-index", "2");
   });
 
-  it("upgrades legacy bento seed URLs to local showcase SVGs while supporting custom tenant overrides", () => {
+  it("upgrades legacy bento seed URLs and /images/showcase/*.svg paths to inline data-URI SVGs while supporting custom tenant overrides", () => {
+    for (const slide of DEFAULT_SHOWCASE_SLIDES) {
+      expect(slide.fallbackSrc.startsWith("data:image/svg+xml;utf8,")).toBe(true);
+    }
+
     const legacy = resolveShowcaseSlides([
       "https://images.unsplash.com/photo-1542296332-2e4473faf563?q=80&w=2070",
       "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?q=80&w=2070",
+      "https://images.unsplash.com/photo-9999999999-any-unsplash-url",
+      "/images/showcase/wallet-gst-billing.svg",
     ]);
     expect(legacy.map((s) => s.imageSrc)).toEqual(
       DEFAULT_SHOWCASE_SLIDES.map((s) => s.fallbackSrc),
@@ -224,5 +230,24 @@ describe("HeroSection 4-slide auto-rotating showcase (no stacked images)", () =>
     const custom = resolveShowcaseSlides(["/custom-slide-1.svg"]);
     expect(custom[0].imageSrc).toBe("/custom-slide-1.svg");
     expect(custom[1].imageSrc).toBe(DEFAULT_SHOWCASE_SLIDES[1].fallbackSrc);
+  });
+
+  it("reuses the single persistent <img> DOM node across slide rotations (zero unmount/remount)", () => {
+    render(
+      <HeroSection
+        title="International & Domestic Courier & Cargo Services"
+        subtitle="Air, Cargo, Train & Transport."
+        ctaText="Book Your Shipment"
+        ctaLink="/shipments/new"
+      />,
+    );
+
+    const imgBefore = screen.getByTestId("hero-showcase-image");
+    fireEvent.click(screen.getByTestId("hero-showcase-tab-1"));
+    fireEvent.click(screen.getByTestId("hero-showcase-tab-2"));
+    fireEvent.click(screen.getByTestId("hero-showcase-tab-3"));
+    fireEvent.click(screen.getByTestId("hero-showcase-tab-0"));
+    const imgAfter = screen.getByTestId("hero-showcase-image");
+    expect(imgAfter).toBe(imgBefore);
   });
 });

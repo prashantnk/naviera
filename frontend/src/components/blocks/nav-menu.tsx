@@ -19,10 +19,10 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { useWorkspaceFlow } from "@/components/providers/workspace-flow-provider";
 import { cn } from "@/lib/utils";
 import { toTenantRelativePath } from "@/lib/workspace-flow";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 /** Shared row classes for top-level entries. */
 const ROW_BASE_CLASS =
@@ -38,8 +38,17 @@ interface NavMenuProps {
   onNavigate?: () => void;
 }
 
+function _splitNavTarget(href: string): { path: string; category: string | null } {
+  const [path, query] = href.split("?");
+  const category = query
+    ? new URLSearchParams(query).get(EXCEPTION_CATEGORY_QUERY_PARAM)
+    : null;
+  return { path: path || "/", category };
+}
+
 function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
   const { routeTo, tenantSlug } = useTenant();
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { capabilities } = useUser();
@@ -48,16 +57,62 @@ function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
   // Explicit open/closed choice per group; groups without a choice follow the route.
   const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
 
-  const relativePath = toTenantRelativePath(pathname || "/", tenantSlug);
-  const currentCategory = searchParams.get(EXCEPTION_CATEGORY_QUERY_PARAM);
+  const actualRelativePath = toTenantRelativePath(pathname || "/", tenantSlug);
+  const actualCategory = searchParams.get(EXCEPTION_CATEGORY_QUERY_PARAM);
+  const locationKey = `${actualRelativePath}?${actualCategory || ""}`;
+
+  // Optimistic navigation state: highlights the clicked nav item in <16ms while
+  // Next.js transitions to the new route, and auto-clears once locationKey updates.
+  const [optimisticNav, setOptimisticNav] = useState<{
+    href: string;
+    fromKey: string;
+  } | null>(null);
+
+  const pendingHref =
+    optimisticNav && optimisticNav.fromKey === locationKey
+      ? optimisticNav.href
+      : null;
+  const pendingTarget = pendingHref ? _splitNavTarget(pendingHref) : null;
+  const relativePath = pendingTarget ? pendingTarget.path : actualRelativePath;
+  const currentCategory = pendingTarget ? pendingTarget.category : actualCategory;
+
   const items = getNavItems(activeFlow, capabilities);
+
+  // Eagerly prefetch all visible sidebar routes so clicking any menu item is instant.
+  useEffect(() => {
+    if (typeof router?.prefetch !== "function") return;
+    const timer = setTimeout(() => {
+      for (const item of items) {
+        if (item.href) {
+          router.prefetch(routeTo(item.href));
+        }
+        for (const child of item.children ?? []) {
+          router.prefetch(routeTo(child.href));
+        }
+      }
+    }, 30);
+    return () => clearTimeout(timer);
+  }, [items, routeTo, router]);
+
+  const handleLinkClick = (targetHref: string) => {
+    const target = _splitNavTarget(targetHref);
+    if (
+      target.path !== actualRelativePath ||
+      (target.category ?? null) !== (actualCategory ?? null)
+    ) {
+      setOptimisticNav({ href: targetHref, fromKey: locationKey });
+    }
+    onNavigate?.();
+  };
 
   const toggleGroup = (name: string, isOpen: boolean) => {
     setGroupOverrides((prev) => Object.assign({}, prev, { [name]: !isOpen }));
   };
 
   const renderLeaf = (item: NavItem) => {
+    const targetHref = item.href || "/";
     const isActive = isNavItemActive(item, relativePath, currentCategory);
+    const isPending = pendingHref === targetHref;
     return (
       <div key={item.name}>
         {isExpanded && item.sectionHeader && (
@@ -69,18 +124,29 @@ function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
           </div>
         )}
         <Link
-          href={routeTo(item.href || "/")}
-          onClick={onNavigate}
+          href={routeTo(targetHref)}
+          prefetch={true}
+          onClick={() => handleLinkClick(targetHref)}
           title={!isExpanded ? item.name : undefined}
           aria-current={isActive ? "page" : undefined}
+          data-pending={isPending ? "true" : undefined}
           className={cn(
             ROW_BASE_CLASS,
             isExpanded ? "gap-3 px-3 py-2 text-sm" : "justify-center h-9 w-9 mx-auto",
             isActive ? ROW_ACTIVE_LINK_CLASS : ROW_IDLE_CLASS
           )}
         >
-          <item.icon className="h-4 w-4 shrink-0" />
-          {isExpanded && <span className="truncate whitespace-normal leading-tight">{item.name}</span>}
+          {isPending && !isExpanded ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <item.icon className="h-4 w-4 shrink-0" />
+          )}
+          {isExpanded && (
+            <>
+              <span className="flex-1 truncate whitespace-normal leading-tight">{item.name}</span>
+              {isPending && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin opacity-80" />}
+            </>
+          )}
         </Link>
       </div>
     );
@@ -127,6 +193,7 @@ function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
                 currentCategory,
                 index === 0
               );
+              const isChildPending = pendingHref === child.href;
               const showPlatformSetupHeader =
                 firstPlatformSetupIndex > 0 && index === firstPlatformSetupIndex;
               return (
@@ -141,16 +208,21 @@ function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
                   )}
                   <Link
                     href={routeTo(child.href)}
-                    onClick={onNavigate}
+                    prefetch={true}
+                    onClick={() => handleLinkClick(child.href)}
                     aria-current={childActive ? "page" : undefined}
+                    data-pending={isChildPending ? "true" : undefined}
                     className={cn(
-                      "block rounded-lg py-1.5 pl-10 pr-3 text-[13px] transition-colors truncate",
+                      "flex items-center justify-between gap-2 rounded-lg py-1.5 pl-10 pr-3 text-[13px] transition-colors truncate",
                       childActive
                         ? "bg-primary text-primary-foreground font-semibold shadow-sm"
                         : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
                     )}
                   >
-                    {child.name}
+                    <span className="truncate">{child.name}</span>
+                    {isChildPending && (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin opacity-80" />
+                    )}
                   </Link>
                 </div>
               );

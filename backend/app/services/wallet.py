@@ -205,17 +205,23 @@ class WalletService:
         self, user: User, tenant: Tenant
     ) -> WalletOverviewResponse:
         """
-        Balance + passbook totals. Read-only: a user without a wallet row yet
-        sees ₹0.00; the row is created on the first write (recharge / debit).
+        Balance + passbook totals in a single SQL round trip. Read-only: a user
+        without a wallet row yet sees ₹0.00; the row is created on the first
+        write (recharge / debit).
         """
-        wallet = await self.wallet_repo.get_wallet(
-            user_id=user.id, tenant_id=tenant.id, for_update=False
+        summary_dict = dict(
+            await self.wallet_repo.get_wallet_summary(
+                user_id=user.id, tenant_id=tenant.id
+            )
         )
-        summary_dict = await self.wallet_repo.get_wallet_summary(
-            user_id=user.id, tenant_id=tenant.id
-        )
+        balance_val = summary_dict.pop("balance", None)
+        if balance_val is None:
+            wallet = await self.wallet_repo.get_wallet(
+                user_id=user.id, tenant_id=tenant.id, for_update=False
+            )
+            balance_val = round(float(wallet.balance), 2) if wallet else 0.0
         return WalletOverviewResponse(
-            balance=round(float(wallet.balance), 2) if wallet else 0.0,
+            balance=round(float(balance_val), 2),
             currency="INR",
             wallet_config=self.resolve_wallet_config(tenant),
             summary=WalletSummary(**summary_dict),

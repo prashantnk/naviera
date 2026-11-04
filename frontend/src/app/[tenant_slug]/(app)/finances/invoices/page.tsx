@@ -34,6 +34,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
+import {
   cn,
   extractApiErrorMessage,
   safeFormatDate,
@@ -190,9 +195,19 @@ export default function InvoicesListPage() {
   const showMerchant = capabilities.isStaff;
 
   const [activeTab, setActiveTab] = useState<NoteTabType>("INVOICE");
-  const [invoices, setInvoices] = useState<BillingInvoiceRead[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const cacheKey = buildQueryCacheKey(
+    tenantSlug,
+    showMerchant ? "staff" : "customer",
+    "invoices",
+    { tab: activeTab, search: searchQuery.trim() }
+  );
+  const [invoices, setInvoices] = useState<BillingInvoiceRead[]>(
+    () => getCachedQuery<BillingInvoiceRead[]>(cacheKey) ?? []
+  );
+  const [loading, setLoading] = useState<boolean>(
+    () => getCachedQuery<BillingInvoiceRead[]>(cacheKey) === null
+  );
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -201,7 +216,12 @@ export default function InvoicesListPage() {
 
   const fetchInvoices = useCallback(async () => {
     if (!tenantSlug) return;
-    setLoading(true);
+    const cached = getCachedQuery<BillingInvoiceRead[]>(cacheKey);
+    if (cached !== null) {
+      setInvoices(cached);
+    } else {
+      setLoading(true);
+    }
     try {
       const searchParam = searchQuery.trim() ? searchQuery.trim() : null;
       const rows = await InvoicesService.listBillingInvoices(
@@ -209,15 +229,19 @@ export default function InvoicesListPage() {
         searchParam,
         tenantSlug
       );
-      setInvoices(rows || []);
+      const list = rows || [];
+      setCachedQuery(cacheKey, list);
+      setInvoices(list);
     } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to load billing invoices.")
-      );
+      if (cached === null) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to load billing invoices.")
+        );
+      }
     } finally {
       setLoading(false);
     }
-  }, [tenantSlug, activeTab, searchQuery]);
+  }, [tenantSlug, activeTab, searchQuery, cacheKey]);
 
   useEffect(() => {
     fetchInvoices();

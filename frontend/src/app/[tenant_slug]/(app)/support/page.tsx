@@ -29,6 +29,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { extractApiErrorMessage, formatIstDateTime } from "@/lib/utils";
 import {
   CheckCircle2,
@@ -162,8 +167,17 @@ export default function SupportTicketsPage() {
 
   const [activeTab, setActiveTab] = useState<TicketStatusTab>("OPEN");
   const [searchQuery, setSearchQuery] = useState("");
-  const [tickets, setTickets] = useState<SupportTicketRead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheScope = currentUser?.id || (capabilities.isStaff ? "staff" : "customer");
+  const cacheKey = buildQueryCacheKey("workspace", cacheScope, "support-tickets", {
+    tab: activeTab,
+    search: searchQuery.trim(),
+  });
+  const [tickets, setTickets] = useState<SupportTicketRead[]>(
+    () => getCachedQuery<SupportTicketRead[]>(cacheKey) ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => getCachedQuery<SupportTicketRead[]>(cacheKey) === null
+  );
 
   // Raise Ticket Modal State
   const [isRaiseOpen, setIsRaiseOpen] = useState(false);
@@ -204,19 +218,27 @@ export default function SupportTicketsPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const fetchTickets = useCallback(async () => {
-    setLoading(true);
+    const cached = getCachedQuery<SupportTicketRead[]>(cacheKey);
+    if (cached !== null) {
+      setTickets(cached);
+    } else {
+      setLoading(true);
+    }
     try {
       const rows = await SupportTicketsService.listSupportTickets(
         activeTab,
         searchQuery.trim() || null
       );
+      setCachedQuery(cacheKey, rows);
       setTickets(rows);
     } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Failed to load support tickets"));
+      if (cached === null) {
+        toast.error(extractApiErrorMessage(error, "Failed to load support tickets"));
+      }
     } finally {
       setLoading(false);
     }
-  }, [activeTab, searchQuery]);
+  }, [activeTab, searchQuery, cacheKey]);
 
   useEffect(() => {
     fetchTickets();

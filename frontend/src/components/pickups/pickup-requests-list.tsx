@@ -29,6 +29,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ALL_FILTER_VALUE } from "@/lib/form-options";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { format } from "date-fns";
 import { CalendarRange, ChevronDown, Loader2, Plus, Printer, Search, Truck, X } from "lucide-react";
@@ -215,15 +221,25 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
   const { capabilities } = useUser();
   const flowConfig = PICKUP_FLOW_CONFIG[serviceFlow];
 
-  const [manifests, setManifests] = useState<ManifestResponse[]>([]);
-  const [loadedRequestKey, setLoadedRequestKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL_VALUE);
   const [locationFilter, setLocationFilter] = useState<string>(ALL_VALUE);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+
+  const [refreshKey, setRefreshKey] = useState(0);
+  const requestKey = `${serviceFlow}|${statusFilter}|${tenantSlug}|${refreshKey}`;
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "manifests-list", {
+    serviceFlow,
+    status: statusFilter,
+  });
+
+  const [manifests, setManifests] = useState<ManifestResponse[]>(
+    () => getCachedQuery<ManifestResponse[]>(cacheKey) ?? []
+  );
+  const [loadedRequestKey, setLoadedRequestKey] = useState<string | null>(() =>
+    hasCachedQuery(cacheKey) ? requestKey : null
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -234,21 +250,28 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
-  // Loading is derived: the list is loading until the current request key has completed.
-  const requestKey = `${serviceFlow}|${statusFilter}|${tenantSlug}|${refreshKey}`;
-  const loading = loadedRequestKey !== requestKey;
+  // Loading is derived: the list is loading until the current request key has completed
+  // (or when a fresh cache entry already exists for the current filter).
+  const loading = loadedRequestKey !== requestKey && !hasCachedQuery(cacheKey);
 
   useEffect(() => {
     let ignore = false;
+    const cached = getCachedQuery<ManifestResponse[]>(cacheKey);
+    if (cached !== null) {
+      setManifests(cached);
+    }
     const status = statusFilter === ALL_VALUE ? null : (statusFilter as ManifestStatus);
     ManifestsService.listManifests(serviceFlow, status, null, tenantSlug)
       .then((rows) => {
+        setCachedQuery(cacheKey, rows);
         if (ignore) return;
         setManifests(rows);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(extractApiErrorMessage(err, "Failed to load pickup requests."));
+        if (!ignore && cached === null) {
+          setError(extractApiErrorMessage(err, "Failed to load pickup requests."));
+        }
       })
       .finally(() => {
         if (!ignore) setLoadedRequestKey(requestKey);
@@ -256,7 +279,7 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
     return () => {
       ignore = true;
     };
-  }, [serviceFlow, statusFilter, tenantSlug, requestKey]);
+  }, [serviceFlow, statusFilter, tenantSlug, requestKey, cacheKey]);
 
   const locationNames = useMemo(() => {
     const names = new Set(manifests.map((m) => m.pickup_location_name).filter(Boolean));

@@ -61,6 +61,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { downloadShipmentsCsv } from "@/lib/api";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { cn, parseUtcDate } from "@/lib/utils";
 import { B2B_REVERSE_BOOKING_ENABLED } from "@/lib/mvp-scope";
 import { directionTabsFor } from "./order-direction";
@@ -372,7 +377,7 @@ interface OrdersWorkspaceProps {
 
 export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
   const router = useRouter();
-  const { routeTo } = useTenant();
+  const { tenantSlug, routeTo } = useTenant();
   const { capabilities } = useUser();
   const copy = PAGE_COPY[flow];
   const gridCopy = ORDERS_FLOW_COPY[flow];
@@ -380,18 +385,30 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
   const directionTabs = directionTabsFor(flow);
   const canBook = capabilities.canBook;
 
-  const [data, setData] = useState<PickupRead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [itemCount, setItemCount] = useState(0);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [manifestedRange, setManifestedRange] = useState<ManifestedRange>(ManifestedRange.ALL);
   const [transportFilter, setTransportFilter] = useState<TransportFilter>(TransportFilter.ALL);
   const [directionFilter, setDirectionFilter] = useState<string>(ALL);
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>(PaymentFilter.ALL);
   const { statusFilter, statuses, isMultiStatus, setStatusFilter } = useShipmentStatusQuery();
+
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "shipments-list", {
+    isB2B,
+    page: pageIndex + 1,
+    size: PAGE_SIZE,
+    direction: directionFilter,
+  });
+  const [data, setData] = useState<PickupRead[]>(
+    () => getCachedQuery<{ items: PickupRead[]; total: number }>(cacheKey)?.items ?? []
+  );
+  const [itemCount, setItemCount] = useState(
+    () => getCachedQuery<{ items: PickupRead[]; total: number }>(cacheKey)?.total ?? 0
+  );
+  const [loading, setLoading] = useState(
+    () => getCachedQuery<{ items: PickupRead[]; total: number }>(cacheKey) === null
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
@@ -400,8 +417,14 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
 
   useEffect(() => {
     let ignore = false;
+    const cached = getCachedQuery<{ items: PickupRead[]; total: number }>(cacheKey);
     const fetchShipments = async () => {
-      setLoading(true);
+      if (cached !== null) {
+        setData(cached.items);
+        setItemCount(cached.total);
+      } else {
+        setLoading(true);
+      }
       try {
         const shipmentTypeParam =
           directionFilter === ALL ? undefined : (directionFilter as ShipmentType);
@@ -412,14 +435,17 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
           undefined,
           shipmentTypeParam
         );
+        setCachedQuery(cacheKey, { items: response.items, total: response.total });
         if (ignore) return;
         setData(response.items);
         setItemCount(response.total);
         setError(null);
       } catch (err: unknown) {
         if (ignore) return;
-        const errorObj = err as { message?: string };
-        setError(errorObj.message || "Failed to fetch orders.");
+        if (cached === null) {
+          const errorObj = err as { message?: string };
+          setError(errorObj.message || "Failed to fetch orders.");
+        }
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -428,7 +454,7 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
     return () => {
       ignore = true;
     };
-  }, [pageIndex, refreshKey, isB2B, directionFilter]);
+  }, [pageIndex, refreshKey, isB2B, directionFilter, cacheKey]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {

@@ -23,6 +23,7 @@ from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
+from app.core.dependencies import cache_tenant, get_cached_tenant_by_id
 from app.core.money import ZERO_MONEY, money_to_float, to_money
 from app.core.permissions import (
     assert_can_accept_shipment_charges,
@@ -270,6 +271,7 @@ class ExceptionsService:
         search: Optional[str],
         page: int,
         size: int,
+        tenant: Optional[Tenant] = None,
     ) -> ExceptionListResponse:
         """
         Paginated on-hold shipments with server-computed actions, attempts and aging.
@@ -289,8 +291,11 @@ class ExceptionsService:
             reasons=reasons,
         )
         now = _utc_now_naive()
-        gst_rate = await self._tenant_gst_fraction(tenant_id)
-        rows = [self._build_row(record, now, gst_rate) for record in records]
+        if records:
+            gst_rate = await self._tenant_gst_fraction(tenant_id, tenant=tenant)
+            rows = [self._build_row(record, now, gst_rate) for record in records]
+        else:
+            rows = []
         if category is not None:
             rows = [row for row in rows if row.category == category]
         if actionable_only:
@@ -328,9 +333,16 @@ class ExceptionsService:
             return int(shipment.estimated_box_count or 0)
         return sum(int(pkg.box_count or 0) for pkg in shipment.packages or [])
 
-    async def _tenant_gst_fraction(self, tenant_id: uuid.UUID) -> Decimal:
+    async def _tenant_gst_fraction(
+        self, tenant_id: uuid.UUID, tenant: Optional[Tenant] = None
+    ) -> Decimal:
         """The tenant's GST rate as a Decimal fraction (one lookup per list/action)."""
-        tenant = await self.session.get(Tenant, tenant_id)
+        if tenant is None:
+            tenant = get_cached_tenant_by_id(tenant_id)
+        if tenant is None:
+            tenant = await self.session.get(Tenant, tenant_id)
+            if tenant is not None:
+                cache_tenant(tenant)
         return Decimal(str(tenant_gst_rate(tenant)))
 
     @staticmethod

@@ -4,6 +4,12 @@
 import { SupportTicketsService, type SupportTicketSummary } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { useTenant } from "@/components/providers/tenant-provider";
+import {
+  buildQueryCacheKey,
+  getCachedQuery,
+  hasCachedQuery,
+  setCachedQuery,
+} from "@/lib/query-cache";
 import { ChevronRight, Headset } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -40,6 +46,7 @@ function SupportTile({ label, count, linkLabel, href, needsAction = false }: Sup
       </div>
       <Link
         href={href}
+        prefetch={true}
         className="mt-2 inline-flex items-center justify-end gap-0.5 self-end rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         {linkLabel}
@@ -59,21 +66,35 @@ function SupportTile({ label, count, linkLabel, href, needsAction = false }: Sup
 export function DashboardSupportCard() {
   const { routeTo, tenantSlug } = useTenant();
   const { capabilities } = useUser();
-  const [summary, setSummary] = useState<SupportTicketSummary | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const cacheKey = buildQueryCacheKey(tenantSlug, "session", "support-summary");
+  const [summary, setSummary] = useState<SupportTicketSummary | null>(() =>
+    getCachedQuery<SupportTicketSummary>(cacheKey)
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !hasCachedQuery(cacheKey)
+  );
   const [hasError, setHasError] = useState<boolean>(false);
 
   const loadSummary = useCallback(async () => {
-    setIsLoading(true);
+    const cached = getCachedQuery<SupportTicketSummary>(cacheKey);
+    if (cached !== null) {
+      setSummary(cached);
+    } else {
+      setIsLoading(true);
+    }
     try {
-      setSummary(await SupportTicketsService.getSupportTicketSummary(tenantSlug));
+      const fresh = await SupportTicketsService.getSupportTicketSummary(tenantSlug);
+      setCachedQuery(cacheKey, fresh);
+      setSummary(fresh);
       setHasError(false);
     } catch {
-      setHasError(true);
+      if (cached === null) {
+        setHasError(true);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [tenantSlug]);
+  }, [tenantSlug, cacheKey]);
 
   useEffect(() => {
     void loadSummary();
@@ -91,6 +112,7 @@ export function DashboardSupportCard() {
         </h2>
         <Link
           href={routeTo(SUPPORT_HREF)}
+          prefetch={true}
           className="rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           All tickets
