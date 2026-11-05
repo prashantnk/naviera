@@ -9,7 +9,7 @@ export const NAVIERA_NAVIGATE_START_EVENT = "naviera:navigate-start";
 /**
  * Imperatively triggers the global top navigation progress bar (e.g., before programmatic `router.push`).
  *
- * @param href - Optional target path for same-route deduplication.
+ * @param href - Optional target path; a target equal to the current URL only flashes the bar.
  */
 export function triggerNavigationProgress(href?: string): void {
   if (typeof window === "undefined") return;
@@ -21,10 +21,16 @@ export function triggerNavigationProgress(href?: string): void {
 }
 
 /** Minimum time (ms) the non-blocking top bar stays visible so clicks always feel acknowledged. */
-const MIN_VISIBLE_MS = 180;
+export const MIN_VISIBLE_MS = 180;
 
-/** Safety auto-clear timeout (ms) in case a navigation is cancelled or intercepted. */
-const SAFETY_TIMEOUT_MS = 3500;
+/**
+ * Safety auto-clear (ms) for navigations that never change the URL (a link
+ * whose click handler cancels it, a redirect back to the current page).
+ */
+export const SAFETY_TIMEOUT_MS = 8000;
+
+/** Same-origin paths that answer with a file download instead of a page. */
+const NON_PAGE_PATH_PATTERN = /^\/(?:api|supabase-proxy)\/|\.[a-z0-9]{2,5}$/i;
 
 /**
  * Clears `data-nav-pending="true"` from any previously clicked navigation elements.
@@ -37,34 +43,48 @@ function clearPendingNavElements(): void {
   });
 }
 
-/**
- * Determines whether a clicked `<a>` element is an internal same-origin route navigation.
- *
- * @param anchor - Anchor element in the click path.
- * @returns Target `pathname + search` if internal navigation, or `null` otherwise.
- */
-function resolveInternalAnchorTarget(anchor: HTMLAnchorElement): string | null {
-  const rawHref = anchor.getAttribute("href");
-  if (!rawHref) return null;
-  if (
-    rawHref.startsWith("#") ||
-    rawHref.startsWith("mailto:") ||
-    rawHref.startsWith("tel:") ||
-    rawHref.startsWith("javascript:")
-  ) {
-    return null;
-  }
-  if (anchor.hasAttribute("download")) return null;
-  const targetAttr = anchor.getAttribute("target");
-  if (targetAttr && targetAttr !== "_self") return null;
+/** `pathname + search` of the address bar. */
+function currentLocationKey(): string {
+  return `${window.location.pathname}${window.location.search}`;
+}
 
+/**
+ * Resolves a navigation target to the `pathname + search` it would render.
+ *
+ * @param rawHref - Absolute or relative URL.
+ * @returns The route key, or `null` for cross-origin / malformed URLs.
+ */
+function resolveRouteKey(rawHref: string): string | null {
   try {
-    const url = new URL(rawHref, window.location.origin);
+    const url = new URL(rawHref, window.location.href);
     if (url.origin !== window.location.origin) return null;
     return `${url.pathname}${url.search}`;
   } catch {
     return null;
   }
+}
+
+/**
+ * Determines whether a clicked `<a>` element is an internal same-origin page navigation.
+ *
+ * @param anchor - Anchor element in the click path.
+ * @returns Target `pathname + search` if internal navigation, or `null` otherwise.
+ */
+export function resolveInternalAnchorTarget(anchor: HTMLAnchorElement): string | null {
+  const rawHref = anchor.getAttribute("href");
+  if (!rawHref) return null;
+  if (/^(#|mailto:|tel:|sms:|javascript:|blob:|data:)/i.test(rawHref)) {
+    return null;
+  }
+  if (anchor.hasAttribute("download")) return null;
+  const targetAttr = anchor.getAttribute("target");
+  if (targetAttr && targetAttr !== "_self") return null;
+  if ((anchor.getAttribute("rel") ?? "").split(/\s+/).includes("external")) return null;
+
+  const routeKey = resolveRouteKey(rawHref);
+  if (!routeKey) return null;
+  const pathname = routeKey.split("?")[0];
+  return NON_PAGE_PATH_PATTERN.test(pathname) ? null : routeKey;
 }
 
 function NavigationProgressInner() {
@@ -97,31 +117,33 @@ function NavigationProgressInner() {
     }
   }, []);
 
+  const resetBar = useCallback(() => {
+    clearPendingNavElements();
+    setIsActive(false);
+    setProgress(0);
+  }, []);
+
   const stopNavigation = useCallback(
     (immediate = false) => {
       clearTimers();
       if (immediate) {
-        clearPendingNavElements();
-        setIsActive(false);
-        setProgress(0);
+        resetBar();
         return;
       }
-
       const elapsed = Date.now() - startedAtRef.current;
       const remaining = Math.max(0, MIN_VISIBLE_MS - elapsed);
       setProgress(100);
-
-      finishTimerRef.current = setTimeout(() => {
-        clearPendingNavElements();
-        setIsActive(false);
-        setProgress(0);
-      }, remaining);
+      finishTimerRef.current = setTimeout(resetBar, remaining);
     },
-    [clearTimers]
+    [clearTimers, resetBar]
   );
 
+  /**
+   * Shows the bar for a navigation to `routeKey` (when known). A target equal
+   * to the current URL cannot change the route, so it only flashes briefly.
+   */
   const startNavigation = useCallback(
-    (targetElement?: Element | null) => {
+    (targetElement: Element | null, routeKey: string | null) => {
       clearTimers();
       clearPendingNavElements();
       if (targetElement) {
@@ -131,20 +153,17 @@ function NavigationProgressInner() {
       setIsActive(true);
       setProgress(38);
 
-      trickleTimerRef.current = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 88) return prev;
-          return prev + 10;
-        });
-      }, 120);
+      if (routeKey !== null && routeKey === currentLocationKey()) {
+        stopNavigation(false);
+        return;
+      }
 
-      safetyTimerRef.current = setTimeout(() => {
-        clearPendingNavElements();
-        setIsActive(false);
-        setProgress(0);
-      }, SAFETY_TIMEOUT_MS);
+      trickleTimerRef.current = setInterval(() => {
+        setProgress((prev) => (prev >= 88 ? prev : prev + 10));
+      }, 120);
+      safetyTimerRef.current = setTimeout(resetBar, SAFETY_TIMEOUT_MS);
     },
-    [clearTimers]
+    [clearTimers, resetBar, stopNavigation]
   );
 
   // Settle progress bar when pathname + searchParams update.
@@ -167,58 +186,42 @@ function NavigationProgressInner() {
       const anchor = target.closest("a[href]") as HTMLAnchorElement | null;
       if (anchor) {
         const destination = resolveInternalAnchorTarget(anchor);
-        if (!destination) return;
-        const currentUrl = `${window.location.pathname}${window.location.search}`;
-        startNavigation(anchor);
-        if (destination === currentUrl) {
-          // Clicking a link to the current route still gives brief tactile feedback.
-          stopNavigation(false);
-        }
+        if (destination !== null) startNavigation(anchor, destination);
         return;
       }
 
       const navTrigger = target.closest("[data-nav-trigger]");
       if (navTrigger) {
-        startNavigation(navTrigger);
+        const href = navTrigger.getAttribute("data-nav-trigger");
+        startNavigation(navTrigger, href ? resolveRouteKey(href) : null);
       }
     };
 
-    const handleCustomStart = () => {
-      startNavigation(null);
+    const handleCustomStart = (event: Event) => {
+      const href = (event as CustomEvent<{ href?: string } | undefined>).detail?.href;
+      startNavigation(null, href ? resolveRouteKey(href) : null);
     };
 
-    const originalPushState = window.history.pushState;
-    window.history.pushState = function patchedPushState(
-      data: unknown,
-      unused: string,
-      url?: string | URL | null
-    ) {
-      if (url) {
-        try {
-          const parsed = new URL(String(url), window.location.origin);
-          const nextKey = `${parsed.pathname}${parsed.search}`;
-          const currentKey = `${window.location.pathname}${window.location.search}`;
-          if (parsed.origin === window.location.origin && nextKey !== currentKey) {
-            queueMicrotask(() => startNavigation(null));
-          }
-        } catch {
-          // Ignore malformed URLs in history state.
-        }
+    // Back/forward: the address bar already shows the target; show the bar
+    // only if the rendered route still has to catch up.
+    const handlePopState = () => {
+      if (currentLocationKey() !== lastRouteKeyRef.current) {
+        startNavigation(null, null);
       }
-      return originalPushState.call(window.history, data, unused, url);
     };
 
     document.addEventListener("click", handleDocumentClick, true);
     window.addEventListener(NAVIERA_NAVIGATE_START_EVENT, handleCustomStart);
+    window.addEventListener("popstate", handlePopState);
 
     return () => {
       document.removeEventListener("click", handleDocumentClick, true);
       window.removeEventListener(NAVIERA_NAVIGATE_START_EVENT, handleCustomStart);
-      window.history.pushState = originalPushState;
+      window.removeEventListener("popstate", handlePopState);
       clearTimers();
       clearPendingNavElements();
     };
-  }, [clearTimers, startNavigation, stopNavigation]);
+  }, [clearTimers, startNavigation]);
 
   return (
     <div
@@ -262,7 +265,10 @@ function NavigationProgressInner() {
  * Listens in the DOM capture phase for any internal `<a href="...">` or
  * `[data-nav-trigger]` click, immediately marks the clicked element with
  * `data-nav-pending="true"`, and renders a sleek top progress bar until
- * Next.js App Router settles the new route.
+ * Next.js App Router settles the new route. Programmatic `router.push` calls
+ * announce themselves with `triggerNavigationProgress(href)`; `history` is
+ * deliberately not patched (Next.js calls `pushState` only after the new route
+ * has committed, which would restart the bar after the navigation finished).
  */
 export function NavigationProgress() {
   return (

@@ -30,7 +30,6 @@ from app.schemas.v1.pickups import PickupCreate
 from app.services.pricing.delhivery import PriceFreshness
 from app.services.pricing.policy import COD_DISABLED_DETAIL, policy_of
 from app.services.pricing.quote_service import (
-    B2B_COD_REASON,
     PRIME_COD_REASON,
     PricedOption,
     QuoteService,
@@ -173,13 +172,11 @@ def _cod_goods(payload: PickupCreate) -> Decimal:
 
 
 def _assert_cod_allowed(payload: PickupCreate, option: ServiceOption, cod_enabled: bool) -> None:
-    """Q9: COD needs the admin's COD fee and is never offered on B2B cargo (Prime, Delhivery B2B)."""
+    """Q9: COD needs the admin's COD fee and is never offered on Logismart Prime."""
     if not payload.payment_details.is_cod:
         return
     if option == ServiceOption.PRIME_SURFACE:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, PRIME_COD_REASON)
-    if option == ServiceOption.DELHIVERY_B2B_SURFACE:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, B2B_COD_REASON)
     if not cod_enabled:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, COD_DISABLED_DETAIL)
 

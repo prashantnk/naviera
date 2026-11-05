@@ -26,6 +26,7 @@ def setup_logging():
             service_name=settings.PROJECT_NAME,
             environment=settings.ENVIRONMENT,
             console=settings.CONSOLE_LOG,
+            scrubbing=logfire.ScrubbingOptions(extra_patterns=["otp"]),
         )
 
         # 🔥 FIX: Target specific business logic modules instead of the whole "app" folder.

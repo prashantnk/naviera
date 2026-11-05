@@ -143,7 +143,6 @@ class DelhiveryModulesRepository:
             select(
                 CodRemittance,
                 User.email,
-                func.count().over().label("_total_count"),
             )
             .outerjoin(
                 User,
@@ -178,13 +177,11 @@ class DelhiveryModulesRepository:
         first = raw_rows[0]
         if isinstance(first, CodRemittance):
             return list(raw_rows)  # type: ignore[arg-type]
-        total = int(first[2] or 0)
         remittances: List[CodRemittance] = []
         for row in raw_rows:
             remit_obj: CodRemittance = row[0]
             object.__setattr__(remit_obj, "merchant_email", row[1])
             object.__setattr__(remit_obj, "_merchant_email_resolved", True)
-            object.__setattr__(remit_obj, "_total_count", total)
             remittances.append(remit_obj)
         return remittances
 
@@ -314,7 +311,6 @@ class DelhiveryModulesRepository:
             select(
                 BillingInvoice,
                 User.email,
-                func.count().over().label("_total_count"),
             )
             .outerjoin(
                 User,
@@ -350,13 +346,11 @@ class DelhiveryModulesRepository:
         first = raw_rows[0]
         if isinstance(first, BillingInvoice):
             return list(raw_rows)  # type: ignore[arg-type]
-        total = int(first[2] or 0)
         invoices: List[BillingInvoice] = []
         for row in raw_rows:
             inv_obj: BillingInvoice = row[0]
             object.__setattr__(inv_obj, "merchant_email", row[1])
             object.__setattr__(inv_obj, "_merchant_email_resolved", True)
-            object.__setattr__(inv_obj, "_total_count", total)
             invoices.append(inv_obj)
         return invoices
 
@@ -593,10 +587,7 @@ class DelhiveryModulesRepository:
         status: Optional[str] = None,
         search: Optional[str] = None,
     ) -> List[SupportTicket]:
-        stmt = select(
-            SupportTicket,
-            func.count().over().label("_total_count"),
-        ).where(SupportTicket.tenant_id == tenant_id)
+        stmt = select(SupportTicket).where(SupportTicket.tenant_id == tenant_id)
         if user_id is not None:
             stmt = stmt.where(SupportTicket.user_id == user_id)
 
@@ -618,19 +609,8 @@ class DelhiveryModulesRepository:
             desc(col(SupportTicket.updated_at)),
             desc(col(SupportTicket.created_at)),
         )
-        raw_rows = (await self.session.exec(stmt)).all()
-        if not raw_rows:
-            return []
-        first = raw_rows[0]
-        if isinstance(first, SupportTicket):
-            return list(raw_rows)  # type: ignore[arg-type]
-        total = int(first[1] or 0)
-        tickets: List[SupportTicket] = []
-        for row in raw_rows:
-            tkt_obj: SupportTicket = row[0]
-            object.__setattr__(tkt_obj, "_total_count", total)
-            tickets.append(tkt_obj)
-        return tickets
+        result = await self.session.exec(stmt)
+        return list(result.all())
 
     async def get_ticket_by_identifier(
         self, tenant_id: uuid.UUID, identifier: str
@@ -723,7 +703,6 @@ class DelhiveryModulesRepository:
                 WeightDispute,
                 User.email,
                 PickupRequest.status,
-                func.count().over().label("_total_count"),
             )
             .outerjoin(
                 User,
@@ -766,7 +745,6 @@ class DelhiveryModulesRepository:
         first = raw_rows[0]
         if isinstance(first, WeightDispute):
             return list(raw_rows)  # type: ignore[arg-type]
-        total = int(first[3] or 0)
         disputes: List[WeightDispute] = []
         for row in raw_rows:
             disp_obj: WeightDispute = row[0]
@@ -774,7 +752,6 @@ class DelhiveryModulesRepository:
             object.__setattr__(disp_obj, "_merchant_email_resolved", True)
             object.__setattr__(disp_obj, "_joined_shipment_status", row[2])
             object.__setattr__(disp_obj, "_shipment_status_resolved", True)
-            object.__setattr__(disp_obj, "_total_count", total)
             disputes.append(disp_obj)
         return disputes
 

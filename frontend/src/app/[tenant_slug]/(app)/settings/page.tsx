@@ -70,6 +70,7 @@ import {
   ServiceItem,
   TenantSettings,
 } from "@/types/tenant";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertTriangle,
@@ -400,7 +401,7 @@ export default function SettingsPage() {
 
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("company");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { pending: isSubmitting, run: runSave } = useSingleFlight();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [invoicePrefix, setInvoicePrefix] = useState<string | null>(() =>
     cachedAdminSettings
@@ -519,131 +520,130 @@ export default function SettingsPage() {
       toast.error("Please wait for current settings to finish loading before saving.");
       return;
     }
-    setIsSubmitting(true);
-    try {
-      const existingBlocks = tenant?.settings?.landing_page?.blocks || [];
-      const updatedBlocks = existingBlocks.slice();
+    await runSave(async () => {
+      try {
+        const existingBlocks = tenant?.settings?.landing_page?.blocks || [];
+        const updatedBlocks = existingBlocks.slice();
 
-      const heroIdx = updatedBlocks.findIndex((b) => b.type === "HERO");
-      if (heroIdx > -1) {
-        updatedBlocks[heroIdx] = Object.assign({}, updatedBlocks[heroIdx], {
-          content: Object.assign(
-            {},
-            updatedBlocks[heroIdx].content,
-            data.hero_block,
-          ),
-        });
-      } else {
-        updatedBlocks.push({ type: "HERO", content: data.hero_block });
-      }
+        const heroIdx = updatedBlocks.findIndex((b) => b.type === "HERO");
+        if (heroIdx > -1) {
+          updatedBlocks[heroIdx] = Object.assign({}, updatedBlocks[heroIdx], {
+            content: Object.assign(
+              {},
+              updatedBlocks[heroIdx].content,
+              data.hero_block,
+            ),
+          });
+        } else {
+          updatedBlocks.push({ type: "HERO", content: data.hero_block });
+        }
 
-      const featIdx = updatedBlocks.findIndex((b) => b.type === "FEATURES");
-      if (featIdx > -1) {
-        updatedBlocks[featIdx] = Object.assign({}, updatedBlocks[featIdx], {
-          content: Object.assign(
-            {},
-            updatedBlocks[featIdx].content,
-            data.features_block,
-          ),
-        });
-      } else {
-        updatedBlocks.push({
-          type: "FEATURES",
-          content: data.features_block,
-        });
-      }
+        const featIdx = updatedBlocks.findIndex((b) => b.type === "FEATURES");
+        if (featIdx > -1) {
+          updatedBlocks[featIdx] = Object.assign({}, updatedBlocks[featIdx], {
+            content: Object.assign(
+              {},
+              updatedBlocks[featIdx].content,
+              data.features_block,
+            ),
+          });
+        } else {
+          updatedBlocks.push({
+            type: "FEATURES",
+            content: data.features_block,
+          });
+        }
 
-      const companyPatch = companyPatchFromValues(data.company);
-      // Legacy GSTIN copies stay equal to company.gstin so every backend fallback agrees.
-      const cleanGstin = companyPatch.gstin;
+        const companyPatch = companyPatchFromValues(data.company);
+        // Legacy GSTIN copies stay equal to company.gstin so every backend fallback agrees.
+        const cleanGstin = companyPatch.gstin;
 
-      const settingsPayload = {
-        brand: {
-          primary_color: data.brand.primary_color,
-          secondary_color: data.brand.secondary_color,
-        },
-        announcement_bar: {
-          is_active: data.announcement_bar.is_active,
-          text: data.announcement_bar.text || "",
-        },
-        company: companyPatch,
-        contact: {
-          toll_free: data.contact.toll_free?.trim() || null,
-          whatsapp: data.contact.whatsapp?.trim() || null,
-          address: data.contact.address?.trim() || null,
-          phones: data.contact.phones.map((p) => p.trim()).filter(Boolean),
-          emails: data.contact.emails.map((m) => m.trim()).filter(Boolean),
-          gstin: cleanGstin,
-          socials: {
-            facebook: data.socials.facebook?.trim() || null,
-            instagram: data.socials.instagram?.trim() || null,
-            linkedin: data.socials.linkedin?.trim() || null,
-            youtube: data.socials.youtube?.trim() || null,
+        const settingsPayload = {
+          brand: {
+            primary_color: data.brand.primary_color,
+            secondary_color: data.brand.secondary_color,
           },
-        },
-        support: {
-          help_center_url: data.support.help_center_url?.trim() || null,
-        },
-        landing_page: { blocks: updatedBlocks },
-        about_page: {
-          headline: data.about_page.headline || "",
-          paragraphs: data.about_page.paragraphs
-            .map((p) => p.trim())
-            .filter(Boolean),
-          offersHeadline: data.about_page.offersHeadline || "",
-          offers: data.about_page.offers,
-        },
-        services_page: {
-          headline: data.services_page.headline || "",
-          description: data.services_page.description || "",
-          valueAddHeadline: data.services_page.valueAddHeadline || "",
-          valueAddDescription: data.services_page.valueAddDescription || "",
-          valueAdds: data.services_page.valueAdds
-            .map((v) => v.trim())
-            .filter(Boolean),
-          services: data.services_page.services.map((s) => ({
-            title: s.title,
-            description: s.description,
-            icon: normalizeServiceIconKey(s.icon) || "truck",
+          announcement_bar: {
+            is_active: data.announcement_bar.is_active,
+            text: data.announcement_bar.text || "",
+          },
+          company: companyPatch,
+          contact: {
+            toll_free: data.contact.toll_free?.trim() || null,
+            whatsapp: data.contact.whatsapp?.trim() || null,
+            address: data.contact.address?.trim() || null,
+            phones: data.contact.phones.map((p) => p.trim()).filter(Boolean),
+            emails: data.contact.emails.map((m) => m.trim()).filter(Boolean),
+            gstin: cleanGstin,
+            socials: {
+              facebook: data.socials.facebook?.trim() || null,
+              instagram: data.socials.instagram?.trim() || null,
+              linkedin: data.socials.linkedin?.trim() || null,
+              youtube: data.socials.youtube?.trim() || null,
+            },
+          },
+          support: {
+            help_center_url: data.support.help_center_url?.trim() || null,
+          },
+          landing_page: { blocks: updatedBlocks },
+          about_page: {
+            headline: data.about_page.headline || "",
+            paragraphs: data.about_page.paragraphs
+              .map((p) => p.trim())
+              .filter(Boolean),
+            offersHeadline: data.about_page.offersHeadline || "",
+            offers: data.about_page.offers,
+          },
+          services_page: {
+            headline: data.services_page.headline || "",
+            description: data.services_page.description || "",
+            valueAddHeadline: data.services_page.valueAddHeadline || "",
+            valueAddDescription: data.services_page.valueAddDescription || "",
+            valueAdds: data.services_page.valueAdds
+              .map((v) => v.trim())
+              .filter(Boolean),
+            services: data.services_page.services.map((s) => ({
+              title: s.title,
+              description: s.description,
+              icon: normalizeServiceIconKey(s.icon) || "truck",
+            })),
+          },
+          escalation_matrix: data.escalation_matrix.map((row) => ({
+            level: row.level,
+            email: row.email.trim(),
+            phone: row.phone?.trim() || null,
           })),
-        },
-        escalation_matrix: data.escalation_matrix.map((row) => ({
-          level: row.level,
-          email: row.email.trim(),
-          phone: row.phone?.trim() || null,
-        })),
-        wallet_config: {
-          // Blank clears the UPI ID: wallet recharge then shows "UPI not configured".
-          merchant_vpa: data.wallet_config.merchant_vpa.trim() || null,
-          merchant_name: data.wallet_config.merchant_name.trim(),
-          min_wallet_balance_b2c: data.wallet_config.min_wallet_balance_b2c,
-          min_wallet_balance_b2b: data.wallet_config.min_wallet_balance_b2b,
-          strict_finlock: data.wallet_config.strict_finlock,
+          wallet_config: {
+            // Blank clears the UPI ID: wallet recharge then shows "UPI not configured".
+            merchant_vpa: data.wallet_config.merchant_vpa.trim() || null,
+            merchant_name: data.wallet_config.merchant_name.trim(),
+            min_wallet_balance_b2c: data.wallet_config.min_wallet_balance_b2c,
+            min_wallet_balance_b2b: data.wallet_config.min_wallet_balance_b2b,
+            strict_finlock: data.wallet_config.strict_finlock,
+            gstin: cleanGstin,
+          },
           gstin: cleanGstin,
-        },
-        gstin: cleanGstin,
-      };
+        };
 
-      await TenantsService.updateCurrentTenantSettings(
-        settingsPayload,
-        tenantSlug,
-      );
+        await TenantsService.updateCurrentTenantSettings(
+          settingsPayload,
+          tenantSlug,
+        );
 
-      await revalidateTenantSettingsCache(tenantSlug);
+        await revalidateTenantSettingsCache(tenantSlug);
 
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      setLastSavedValues(data);
-      form.reset(data);
-      toast.success(
-        "Platform settings saved and backed up to version history.",
-      );
-    } catch (err) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to save platform settings."),
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        setLastSavedValues(data);
+        form.reset(data);
+        toast.success(
+          "Platform settings saved and backed up to version history.",
+        );
+      } catch (err) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to save platform settings."),
+        );
+      }
+    });
   };
 
   if (!isAdmin) {
@@ -698,7 +698,7 @@ export default function SettingsPage() {
             Version History
           </Button>
           <Button variant="outline" size="sm" asChild className="bg-white">
-            <Link href={routeTo("/")} prefetch={true} target="_blank" rel="noopener noreferrer">
+            <Link href={routeTo("/")} prefetch={false} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />
               View Public Site
             </Link>

@@ -518,7 +518,7 @@ async def test_j07_rate_calculator_unserviceable_pincode_and_volumetric_divisors
         # 2. B2B Prime lane (122001 -> 400001 serviceable vs 122001 -> 560001 NO_PRIME_LANE)
         b2b_ok = await client.post(
             "/api/v1/quotes",
-            headers=_headers(accounts, CUSTOMER_B2C_EMAIL),
+            headers=_headers(accounts, CUSTOMER_B2B_EMAIL),
             json={
                 "service_flow": "B2B",
                 "pickup_pincode": "122001",
@@ -537,6 +537,7 @@ async def test_j07_rate_calculator_unserviceable_pincode_and_volumetric_divisors
             },
         )
         assert b2b_ok.status_code == 200, b2b_ok.text
+        assert b2b_ok.json()["cod_available"] is True
         b2b_opts = {o["service_option"]: o for o in b2b_ok.json()["options"]}
         assert set(b2b_opts.keys()) == {
             ServiceOption.DELHIVERY_B2B_SURFACE.value,
@@ -550,7 +551,7 @@ async def test_j07_rate_calculator_unserviceable_pincode_and_volumetric_divisors
 
         b2b_no_lane = await client.post(
             "/api/v1/quotes",
-            headers=_headers(accounts, CUSTOMER_B2C_EMAIL),
+            headers=_headers(accounts, CUSTOMER_B2B_EMAIL),
             json={
                 "service_flow": "B2B",
                 "pickup_pincode": "122001",

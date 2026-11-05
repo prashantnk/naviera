@@ -84,6 +84,18 @@ interface UserContextType {
 }
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+/**
+ * Keeps the previous profile object when a re-fetch returned identical data,
+ * so a focus/403 access re-check does not re-render every `useUser()` consumer.
+ *
+ * @param previous - Profile currently in state.
+ * @param next - Freshly fetched profile.
+ * @returns `previous` when unchanged, otherwise `next`.
+ */
+function _keepIfUnchanged(previous: UserRead | null, next: UserRead): UserRead {
+  return previous && JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserRead | null>(null);
   const [isChecking, setIsChecking] = useState(true);
@@ -101,7 +113,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const refreshUser = React.useCallback(async () => {
     try {
       const profile = await UsersService.getMyProfile();
-      setUser(profile);
+      setUser((previous) => _keepIfUnchanged(previous, profile));
     } catch {
       // Ignore transient refresh errors
     }
@@ -144,7 +156,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       recheckInFlightRef.current = true;
       void (async () => {
         try {
-          setUser(await UsersService.getMyProfile());
+          const profile = await UsersService.getMyProfile();
+          setUser((previous) => _keepIfUnchanged(previous, profile));
         } catch (error) {
           const accessMessage = resolveAccessDeniedMessage(error);
           if (accessMessage) setAccessDenied(accessMessage);
@@ -239,6 +252,25 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [serverUnreachable, retryProfile]);
 
+  const contextValue = React.useMemo<UserContextType>(() => {
+    const capabilities = resolveCapabilities(user?.role);
+    // `isAdmin` keeps its historical meaning: any staff member (staff-wide read visibility).
+    const isAdmin = capabilities.isStaff;
+    const serviceScope = user?.service_scope || ServiceScope.B2C;
+    return {
+      user,
+      isAdmin,
+      canManageTeam: capabilities.canManageTeam,
+      capabilities,
+      serviceScope,
+      canAccessB2C:
+        isAdmin || serviceScope === ServiceScope.B2C || serviceScope === ServiceScope.BOTH,
+      canAccessB2B:
+        isAdmin || serviceScope === ServiceScope.B2B || serviceScope === ServiceScope.BOTH,
+      refreshUser,
+    };
+  }, [user, refreshUser]);
+
   if (isChecking) {
     return (
       <div className="flex min-h-screen w-full flex-1 items-center justify-center bg-slate-50">
@@ -303,34 +335,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const capabilities = resolveCapabilities(user?.role);
-  // `isAdmin` keeps its historical meaning: any staff member (staff-wide read visibility).
-  const isAdmin = capabilities.isStaff;
-  const serviceScope = user?.service_scope || ServiceScope.B2C;
-  const canAccessB2C =
-    isAdmin ||
-    serviceScope === ServiceScope.B2C ||
-    serviceScope === ServiceScope.BOTH;
-  const canAccessB2B =
-    isAdmin ||
-    serviceScope === ServiceScope.B2B ||
-    serviceScope === ServiceScope.BOTH;
-  const canManageTeam = capabilities.canManageTeam;
-
+  // Keyed by user id: if another tab signs in as someone else, the focus re-check
+  // swaps the profile and the whole shell remounts, dropping the previous user's
+  // in-memory state (wallet pill, lists, forms) instead of showing it to them.
   return (
-    <UserContext.Provider
-      value={{
-        user,
-        isAdmin,
-        canManageTeam,
-        capabilities,
-        serviceScope,
-        canAccessB2C,
-        canAccessB2B,
-        refreshUser,
-      }}
-    >
-      {children}
+    <UserContext.Provider value={contextValue}>
+      <React.Fragment key={user?.id ?? "anonymous"}>{children}</React.Fragment>
     </UserContext.Provider>
   );
 }

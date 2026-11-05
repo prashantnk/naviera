@@ -48,6 +48,7 @@ import { ReverseShipmentFormValues } from "@/lib/validations/shipment";
 import { useShipmentValuation } from "@/components/booking/use-shipment-valuation";
 import {
   FileText,
+  Loader2,
   Trash2,
   ClipboardList,
   Truck,
@@ -462,6 +463,15 @@ export function ReverseFormStep({
                     handleFileUpload(e, type);
                   }}
                 />
+                {isUploading && (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    Uploading…
+                  </span>
+                )}
               </div>
             </div>
           </div>

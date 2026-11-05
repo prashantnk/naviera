@@ -280,6 +280,40 @@ def test_cod_fee_minimum_and_off_switch() -> None:
     assert cod_fee_for(Decimal("1000"), off) == Decimal("0.00")
 
 
+async def test_standard_cod_fee_min_vs_percent_branch_and_gst() -> None:
+    default_policy = PricingPolicy()
+    assert default_policy.cod_enabled is True
+    assert default_policy.cod_fee_percent == 2.0 and default_policy.cod_fee_min == 20.0
+
+    # Min branch: 2% of ₹500 = ₹10.00 < ₹20.00 minimum -> ₹20.00 COD fee
+    min_branch = await _priced(
+        default_policy,
+        SellInputs(is_cod=True, cod_goods=Decimal("500"), add_shipping_to_cod=False),
+        _box(2),
+    )
+    assert min_branch.sell.forward_freight == Decimal("135.00")
+    assert min_branch.sell.cod_fee == Decimal("20.00")
+    assert min_branch.sell.gst == Decimal("27.90")  # 18% of (135 + 20)
+    assert min_branch.sell.total == Decimal("182.90")
+    assert min_branch.door_collectible == Decimal("500.00")
+    assert min_branch.cod_remittance == Decimal("500.00")
+    line_codes = {line.code: line.amount for line in min_branch.sell.lines}
+    assert line_codes["COD_FEE"] == Decimal("20.00")
+
+    # Percentage branch: 2% of ₹2,500 = ₹50.00 > ₹20.00 minimum -> ₹50.00 COD fee
+    pct_branch = await _priced(
+        default_policy,
+        SellInputs(is_cod=True, cod_goods=Decimal("2500"), add_shipping_to_cod=True),
+        _box(2),
+    )
+    assert pct_branch.sell.forward_freight == Decimal("135.00")
+    assert pct_branch.sell.cod_fee == Decimal("50.00")
+    assert pct_branch.sell.gst == Decimal("33.30")  # 18% of (135 + 50)
+    assert pct_branch.sell.total == Decimal("218.30")
+    assert pct_branch.door_collectible == Decimal("2718.30")
+    assert pct_branch.cod_remittance == Decimal("2500.00")
+
+
 def test_markup_rounding() -> None:
     assert marked_up(Decimal("100.00"), Decimal("20")) == Decimal("120.00")
     assert marked_up(Decimal("10.01"), Decimal("12.5")) == Decimal("11.26")
@@ -304,7 +338,13 @@ async def test_carrier_cost_round_trips() -> None:
 
 
 def test_policy_defaults_and_invalid() -> None:
-    assert policy_of(SimpleNamespace(id=uuid.uuid4(), settings={})).cod_enabled is False
+    default_pol = policy_of(SimpleNamespace(id=uuid.uuid4(), settings={}))
+    assert default_pol is not None and default_pol.cod_enabled is True
+    assert default_pol.cod_fee_percent == 2.0 and default_pol.cod_fee_min == 20.0
+    disabled_pol = policy_of(
+        SimpleNamespace(id=uuid.uuid4(), settings={"pricing_policy": {"cod_fee_percent": None, "cod_fee_min": None}})
+    )
+    assert disabled_pol is not None and disabled_pol.cod_enabled is False
     assert policy_of(SimpleNamespace(id=uuid.uuid4(), settings={"pricing_policy": {"cod_fee_percent": -1}})) is None
     enabled = policy_of(SimpleNamespace(id=uuid.uuid4(), settings={"pricing_policy": {"cod_fee_percent": 2, "cod_fee_min": 30}}))
     assert enabled.cod_enabled is True

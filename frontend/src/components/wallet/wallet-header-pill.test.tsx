@@ -1,16 +1,31 @@
 // frontend/src/components/wallet/wallet-header-pill.test.tsx
 import { UserRole } from "@/api_client";
 import { resolveCapabilities } from "@/components/auth/capabilities";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WalletHeaderPill } from "./wallet-header-pill";
+import { WalletHeaderPill, WalletRechargeDialog } from "./wallet-header-pill";
+
+const mockCreateIntent = vi.fn();
+const mockConfirmUpi = vi.fn();
 
 const state: { role: UserRole; wallet: Record<string, unknown> | null } = {
   role: UserRole.CUSTOMER,
   wallet: null,
 };
 
+vi.mock("@/api_client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api_client")>();
+  return {
+    ...actual,
+    WalletService: {
+      createUpiRechargeIntent: (...args: unknown[]) => mockCreateIntent(...args),
+      confirmUpiRecharge: (...args: unknown[]) => mockConfirmUpi(...args),
+      getUpiRechargeStatus: vi.fn().mockResolvedValue({ status: "PENDING" }),
+    },
+  };
+});
 vi.mock("@/components/auth/auth-guard", () => ({
   useUser: () => ({ capabilities: resolveCapabilities(state.role) }),
 }));
@@ -64,4 +79,52 @@ describe("WalletHeaderPill (staff-finance #487)", () => {
       expect(screen.queryByRole("button", { name: /Recharge Wallet/i })).not.toBeInTheDocument();
     },
   );
+});
+
+describe("WalletRechargeDialog — click acknowledgement (rel8)", () => {
+  beforeEach(() => {
+    state.role = UserRole.CUSTOMER;
+    state.wallet = { balance: 0, summary: {}, wallet_config: { merchant_vpa: "shop@upi" } };
+    mockCreateIntent.mockReset();
+    mockConfirmUpi.mockReset();
+    vi.mocked(toast.success).mockClear();
+    mockCreateIntent.mockResolvedValue({
+      transaction_id: "txn-9",
+      amount: 1000,
+      qr_svg_data_url: "data:image/svg+xml,",
+      merchant_name: "Shop",
+      merchant_vpa: "shop@upi",
+      upi_uri: null,
+    });
+  });
+
+  it("I Have Paid spins, disables, and submits the UTR exactly once on a double click", async () => {
+    let resolveConfirm: (value: { balance: number }) => void = () => {};
+    mockConfirmUpi.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConfirm = resolve;
+      })
+    );
+    const onOpenChange = vi.fn();
+    render(<WalletRechargeDialog open onOpenChange={onOpenChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate UPI QR/i }));
+    fireEvent.change(await screen.findByTestId("wallet.recharge.utr-input"), {
+      target: { value: "640721641527" },
+    });
+    const paid = screen.getByRole("button", { name: /I Have Paid/i });
+    fireEvent.click(paid);
+    fireEvent.click(paid);
+
+    expect(paid).toBeDisabled();
+    expect(paid.querySelector(".animate-spin")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Change Amount/i })).toBeDisabled();
+    expect(mockConfirmUpi).toHaveBeenCalledTimes(1);
+    expect(mockConfirmUpi).toHaveBeenCalledWith("txn-9", "t", { utr_number: "640721641527" });
+
+    resolveConfirm({ balance: 0 });
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(mockConfirmUpi).toHaveBeenCalledTimes(1);
+  });
 });

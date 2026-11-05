@@ -51,7 +51,7 @@ import { ForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { useShipmentValuation } from "@/components/booking/use-shipment-valuation";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Trash2, ClipboardList, Truck, ArrowUpRight, ArrowDownLeft, Boxes, Banknote, TriangleAlert, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
+import { FileText, Trash2, ClipboardList, Truck, ArrowUpRight, ArrowDownLeft, Boxes, Banknote, TriangleAlert, ChevronDown, ChevronUp, ShieldCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 /** Legacy label lookup kept for existing importers (detail and edit pages). */
@@ -644,6 +644,15 @@ export function ForwardFormStep({
                         handleFileUpload(e, type);
                       }}
                     />
+                    {isUploading && (
+                      <span
+                        role="status"
+                        className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                      >
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        Uploading…
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -55,6 +55,7 @@ import {
   ShipmentPodActions,
   ShipmentPodBanner,
 } from "@/components/wallet/shipment-pod-controls";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { downloadShippingLabel } from "@/lib/api";
 import { openDocument } from "@/lib/document-storage";
 import {
@@ -335,8 +336,13 @@ export default function ShipmentDetailsPage() {
   const [loading, setLoading] = useState(
     () => !hasCachedQuery(detailCacheKey)
   );
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const { pending: isPrinting, run: runPrint } = useSingleFlight();
+  const { pending: isCancelling, run: runCancel } = useSingleFlight();
+  const {
+    pending: isOpeningDocument,
+    pendingKey: openingDocumentId,
+    run: runOpenDocument,
+  } = useSingleFlight();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const isPostPickupCancel = shipment?.status === PickupStatus.IN_TRANSIT || shipment?.status === PickupStatus.OUT_FOR_DELIVERY;
   const canCancelPostPickup = !capabilities.isStaff || capabilities.canManageTeam;
@@ -350,27 +356,26 @@ export default function ShipmentDetailsPage() {
   // Bumped after every reload so the charges history refetches with the shipment.
   const [chargesRefreshKey, setChargesRefreshKey] = useState(0);
 
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = () => {
     if (!shipment) return;
-    setIsCancelling(true);
-    try {
-      const updated = await ShipmentsService.cancelShipment(shipment.id);
-      setShipment(updated);
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      const convertedToRto =
-        updated?.status === PickupStatus.RTO_INITIATED || isPostPickupCancel;
-      toast.success(
-        convertedToRto
-          ? "Shipment converted to Return to Origin (RTO). Applicable RTO charges have been applied."
-          : "Order cancelled and prepaid wallet balance refunded!"
-      );
-      setShowCancelDialog(false);
-      fetchDetails();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to cancel order"));
-    } finally {
-      setIsCancelling(false);
-    }
+    void runCancel(async () => {
+      try {
+        const updated = await ShipmentsService.cancelShipment(shipment.id);
+        setShipment(updated);
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        const convertedToRto =
+          updated?.status === PickupStatus.RTO_INITIATED || isPostPickupCancel;
+        toast.success(
+          convertedToRto
+            ? "Shipment converted to Return to Origin (RTO). Applicable RTO charges have been applied."
+            : "Order cancelled and prepaid wallet balance refunded!"
+        );
+        setShowCancelDialog(false);
+        fetchDetails();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to cancel order"));
+      }
+    });
   };
 
   const handleCopyTrackingId = () => {
@@ -431,29 +436,37 @@ export default function ShipmentDetailsPage() {
     fetchDetails();
   }, [fetchDetails]);
 
-  const handlePrintLabel = async () => {
-    setIsPrinting(true);
-    try {
-      await downloadShippingLabel(
-        tenantSlug,
-        shipmentId,
-        shipment?.tracking_id || shipmentId
-      );
-    } catch {
-      toast.error("Failed to generate shipping label.");
-    } finally {
-      setIsPrinting(false);
-    }
+  const handlePrintLabel = () => {
+    void runPrint(async () => {
+      try {
+        await downloadShippingLabel(
+          tenantSlug,
+          shipmentId,
+          shipment?.tracking_id || shipmentId
+        );
+        toast.success("Shipping label downloaded.");
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to generate shipping label.")
+        );
+      }
+    });
   };
 
-  const handleSecureDownload = async (filePath: string) => {
+  const handleSecureDownload = (documentId: string, filePath: string) => {
     if (!(filePath || "").trim()) {
       toast.error("Document link is missing.");
       return;
     }
-    if (!(await openDocument(tenantSlug, filePath))) {
-      toast.error("You do not have permission to view this document.");
-    }
+    void runOpenDocument(async () => {
+      try {
+        if (!(await openDocument(tenantSlug, filePath))) {
+          toast.error("You do not have permission to view this document.");
+        }
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to open document."));
+      }
+    }, documentId);
   };
 
   const trackingStages = useMemo(
@@ -1705,8 +1718,12 @@ export default function ShipmentDetailsPage() {
                       variant="outline"
                       size="sm"
                       className="shrink-0 bg-white shadow-sm font-semibold"
-                      onClick={() => handleSecureDownload(doc.file_url)}
+                      onClick={() => handleSecureDownload(doc.id, doc.file_url)}
+                      disabled={isOpeningDocument}
                     >
+                      {openingDocumentId === doc.id && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
                       View
                     </Button>
                   </div>

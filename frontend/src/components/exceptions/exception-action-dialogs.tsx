@@ -51,6 +51,7 @@ import {
 } from "@/lib/form-options";
 import { documentReferenceUrl, uploadTenantDocument } from "@/lib/document-storage";
 import { useUser } from "@/components/auth/auth-guard";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { RepricePreviewPanel } from "@/components/shipments/reprice-preview-panel";
 import { useRepricePreview } from "@/components/shipments/use-reprice-preview";
@@ -171,8 +172,8 @@ export function ExceptionActionDialog({
   onOpenChange,
   onSuccess,
 }: ExceptionActionDialogProps) {
-  const [submitting, setSubmitting] = useState(false);
-  const [uploadingFile, setUploadingFile] = useState(false);
+  const { pending: submitting, run: runSubmit } = useSingleFlight();
+  const { pending: uploadingFile, run: runUpload } = useSingleFlight();
 
   // Shared comment field
   const [comment, setComment] = useState("");
@@ -263,7 +264,7 @@ export function ExceptionActionDialog({
     bulkShipmentIds.length > 0;
   const targetCount = isBulkAppointment ? bulkShipmentIds.length : 1;
 
-  const handleFileSelection = async (
+  const handleFileSelection = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
@@ -272,22 +273,21 @@ export function ExceptionActionDialog({
       toast.error("File size must be under 5 MB.");
       return;
     }
-    setUploadingFile(true);
-    try {
-      const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
-      setDocumentUrl(documentReferenceUrl(objectKey));
-      setDocumentName(file.name);
-      toast.success(`Uploaded ${file.name}`);
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to upload document to storage."),
-      );
-    } finally {
-      setUploadingFile(false);
-    }
+    void runUpload(async () => {
+      try {
+        const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
+        setDocumentUrl(documentReferenceUrl(objectKey));
+        setDocumentName(file.name);
+        toast.success(`Uploaded ${file.name}`);
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to upload document to storage."),
+        );
+      }
+    });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!isBulkAppointment && !row) return;
 
     if (action === NdrAction.UPDATE_CONSIGNEE && row) {
@@ -353,154 +353,153 @@ export function ExceptionActionDialog({
       }
     }
 
-    setSubmitting(true);
-    try {
-      if (isBulkAppointment && bulkShipmentIds) {
-        const { startIso, endIso } = _slotToIsoWindow(selectedDate, selectedSlot);
-        const noteParts = [
-          appointmentId.trim() ? `Appointment ID: ${appointmentId.trim()}` : "",
-          comment.trim(),
-        ].filter(Boolean);
-        const payload: NdrActionRequest = {
-          action: NdrAction.BOOK_APPOINTMENT,
-          appointment_start: startIso,
-          appointment_end: endIso,
-          notes: noteParts.length > 0 ? noteParts.join(" | ") : null,
-        };
-        let successCount = 0;
-        let failCount = 0;
-        for (const id of bulkShipmentIds) {
-          try {
-            await ExceptionsService.applyExceptionAction(id, payload, tenantSlug);
-            successCount += 1;
-          } catch {
-            failCount += 1;
+    void runSubmit(async () => {
+      try {
+        if (isBulkAppointment && bulkShipmentIds) {
+          const { startIso, endIso } = _slotToIsoWindow(selectedDate, selectedSlot);
+          const noteParts = [
+            appointmentId.trim() ? `Appointment ID: ${appointmentId.trim()}` : "",
+            comment.trim(),
+          ].filter(Boolean);
+          const payload: NdrActionRequest = {
+            action: NdrAction.BOOK_APPOINTMENT,
+            appointment_start: startIso,
+            appointment_end: endIso,
+            notes: noteParts.length > 0 ? noteParts.join(" | ") : null,
+          };
+          let successCount = 0;
+          let failCount = 0;
+          for (const id of bulkShipmentIds) {
+            try {
+              await ExceptionsService.applyExceptionAction(id, payload, tenantSlug);
+              successCount += 1;
+            } catch {
+              failCount += 1;
+            }
           }
+          if (successCount > 0) {
+            toast.success(
+              `Booked appointment for ${successCount} shipment(s).`,
+            );
+          }
+          if (failCount > 0) {
+            toast.error(
+              `${failCount} shipment(s) could not be updated for appointment booking.`,
+            );
+          }
+          onOpenChange(false);
+          onSuccess();
+          return;
         }
-        if (successCount > 0) {
-          toast.success(
-            `Booked appointment for ${successCount} shipment(s).`,
-          );
+
+        if (!row) return;
+
+        let payload: NdrActionRequest = {
+          action,
+          notes: comment.trim() || null,
+        };
+
+        if (action === NdrAction.REATTEMPT && selectedDate) {
+          payload = Object.assign({}, payload, {
+            preferred_date: selectedDate,
+          });
+        } else if (action === NdrAction.RETURN_TO_ORIGIN && logismartLiable) {
+          payload = Object.assign({}, payload, { logismart_liable: true });
+        } else if (action === NdrAction.PARTIAL_DELIVERY) {
+          payload = {
+            action: NdrAction.PARTIAL_DELIVERY,
+            delivered_box_count: _optionalNumber(deliveredBoxesInput),
+            revised_cod_amount: _optionalNumber(revisedCodInput),
+            notes: comment.trim() || null,
+          };
+        } else if (action === NdrAction.UPDATE_CONSIGNEE) {
+          const newName = consigneeName.trim();
+          payload = {
+            action: NdrAction.UPDATE_CONSIGNEE,
+            consignee_name: newName && newName !== row.consignee.name ? newName : null,
+            consignee_phone: consigneePhone.trim(),
+            consignee_address_line1: addressLine1.trim(),
+            consignee_address_line2: addressLine2.trim() || null,
+            landmark: landmark.trim() || null,
+            consignee_pincode: row.consignee.pincode,
+            notes: comment.trim() || null,
+          };
+        } else if (action === NdrAction.UPDATE_PAYMENT_MODE) {
+          payload = {
+            action: NdrAction.UPDATE_PAYMENT_MODE,
+            is_cod: paymentMode === ExceptionPaymentMode.COD,
+            notes: comment.trim() || null,
+          };
+        } else if (action === NdrAction.UPDATE_EWAY_BILL) {
+          payload = {
+            action: NdrAction.UPDATE_EWAY_BILL,
+            eway_bill_number: ewayBillNumber.trim(),
+            invoice_number: invoiceNumber.trim() || null,
+            notes: comment.trim() || null,
+          };
+        } else if (action === NdrAction.UPLOAD_DOCUMENT) {
+          const docNote = [
+            documentName ? `File: ${documentName}` : "",
+            comment.trim(),
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          payload = {
+            action: NdrAction.UPLOAD_DOCUMENT,
+            document_type: documentType,
+            document_url: documentUrl.trim(),
+            notes: docNote || null,
+          };
+        } else if (action === NdrAction.BOOK_APPOINTMENT) {
+          const { startIso, endIso } = _slotToIsoWindow(selectedDate, selectedSlot);
+          const noteParts = [
+            appointmentId.trim() ? `Appointment ID: ${appointmentId.trim()}` : "",
+            comment.trim(),
+          ].filter(Boolean);
+          payload = {
+            action: NdrAction.BOOK_APPOINTMENT,
+            appointment_start: startIso,
+            appointment_end: endIso,
+            notes: noteParts.length > 0 ? noteParts.join(" · ") : null,
+          };
+        } else if (action === NdrAction.RESCHEDULE_PICKUP) {
+          const slotMeta = PICKUP_TIME_SLOT_OPTIONS[selectedSlot];
+          const noteParts = [
+            slotMeta ? `Preferred slot: ${slotMeta.label}` : "",
+            comment.trim(),
+          ].filter(Boolean);
+          payload = {
+            action: NdrAction.RESCHEDULE_PICKUP,
+            preferred_date: selectedDate,
+            notes: noteParts.length > 0 ? noteParts.join(" · ") : null,
+          };
         }
-        if (failCount > 0) {
-          toast.error(
-            `${failCount} shipment(s) could not be updated for appointment booking.`,
-          );
+
+        await ExceptionsService.applyExceptionAction(
+          row.shipment_id,
+          payload,
+          tenantSlug,
+        );
+
+        if (
+          action === NdrAction.ACKNOWLEDGE_CHARGES ||
+          action === NdrAction.ACCEPT_WEIGHT ||
+          action === NdrAction.CANCEL_PICKUP ||
+          action === NdrAction.UPDATE_PAYMENT_MODE ||
+          action === NdrAction.PARTIAL_DELIVERY
+        ) {
+          window.dispatchEvent(new CustomEvent("wallet-updated"));
         }
+
+        toast.success(`${meta.label} submitted for ${row.tracking_id || "shipment"}.`);
         onOpenChange(false);
         onSuccess();
-        return;
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, `Failed to perform ${meta.label.toLowerCase()}.`),
+        );
       }
-
-      if (!row) return;
-
-      let payload: NdrActionRequest = {
-        action,
-        notes: comment.trim() || null,
-      };
-
-      if (action === NdrAction.REATTEMPT && selectedDate) {
-        payload = Object.assign({}, payload, {
-          preferred_date: selectedDate,
-        });
-      } else if (action === NdrAction.RETURN_TO_ORIGIN && logismartLiable) {
-        payload = Object.assign({}, payload, { logismart_liable: true });
-      } else if (action === NdrAction.PARTIAL_DELIVERY) {
-        payload = {
-          action: NdrAction.PARTIAL_DELIVERY,
-          delivered_box_count: _optionalNumber(deliveredBoxesInput),
-          revised_cod_amount: _optionalNumber(revisedCodInput),
-          notes: comment.trim() || null,
-        };
-      } else if (action === NdrAction.UPDATE_CONSIGNEE) {
-        const newName = consigneeName.trim();
-        payload = {
-          action: NdrAction.UPDATE_CONSIGNEE,
-          consignee_name: newName && newName !== row.consignee.name ? newName : null,
-          consignee_phone: consigneePhone.trim(),
-          consignee_address_line1: addressLine1.trim(),
-          consignee_address_line2: addressLine2.trim() || null,
-          landmark: landmark.trim() || null,
-          consignee_pincode: row.consignee.pincode,
-          notes: comment.trim() || null,
-        };
-      } else if (action === NdrAction.UPDATE_PAYMENT_MODE) {
-        payload = {
-          action: NdrAction.UPDATE_PAYMENT_MODE,
-          is_cod: paymentMode === ExceptionPaymentMode.COD,
-          notes: comment.trim() || null,
-        };
-      } else if (action === NdrAction.UPDATE_EWAY_BILL) {
-        payload = {
-          action: NdrAction.UPDATE_EWAY_BILL,
-          eway_bill_number: ewayBillNumber.trim(),
-          invoice_number: invoiceNumber.trim() || null,
-          notes: comment.trim() || null,
-        };
-      } else if (action === NdrAction.UPLOAD_DOCUMENT) {
-        const docNote = [
-          documentName ? `File: ${documentName}` : "",
-          comment.trim(),
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        payload = {
-          action: NdrAction.UPLOAD_DOCUMENT,
-          document_type: documentType,
-          document_url: documentUrl.trim(),
-          notes: docNote || null,
-        };
-      } else if (action === NdrAction.BOOK_APPOINTMENT) {
-        const { startIso, endIso } = _slotToIsoWindow(selectedDate, selectedSlot);
-        const noteParts = [
-          appointmentId.trim() ? `Appointment ID: ${appointmentId.trim()}` : "",
-          comment.trim(),
-        ].filter(Boolean);
-        payload = {
-          action: NdrAction.BOOK_APPOINTMENT,
-          appointment_start: startIso,
-          appointment_end: endIso,
-          notes: noteParts.length > 0 ? noteParts.join(" · ") : null,
-        };
-      } else if (action === NdrAction.RESCHEDULE_PICKUP) {
-        const slotMeta = PICKUP_TIME_SLOT_OPTIONS[selectedSlot];
-        const noteParts = [
-          slotMeta ? `Preferred slot: ${slotMeta.label}` : "",
-          comment.trim(),
-        ].filter(Boolean);
-        payload = {
-          action: NdrAction.RESCHEDULE_PICKUP,
-          preferred_date: selectedDate,
-          notes: noteParts.length > 0 ? noteParts.join(" · ") : null,
-        };
-      }
-
-      await ExceptionsService.applyExceptionAction(
-        row.shipment_id,
-        payload,
-        tenantSlug,
-      );
-
-      if (
-        action === NdrAction.ACKNOWLEDGE_CHARGES ||
-        action === NdrAction.ACCEPT_WEIGHT ||
-        action === NdrAction.CANCEL_PICKUP ||
-        action === NdrAction.UPDATE_PAYMENT_MODE ||
-        action === NdrAction.PARTIAL_DELIVERY
-      ) {
-        window.dispatchEvent(new CustomEvent("wallet-updated"));
-      }
-
-      toast.success(`${meta.label} submitted for ${row.tracking_id || "shipment"}.`);
-      onOpenChange(false);
-      onSuccess();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, `Failed to perform ${meta.label.toLowerCase()}.`),
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   const isDestructive =

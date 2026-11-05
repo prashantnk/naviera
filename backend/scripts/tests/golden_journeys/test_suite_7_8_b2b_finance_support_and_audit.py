@@ -623,7 +623,10 @@ async def test_j29_b2b_pur_manifested_and_blind_pickup_dispatch_to_completed() -
         disp_resp = await client.post(
             f"/api/v1/manifests/{b2b_pur_id}/dispatch",
             headers=ops_headers,
-            json={"picked_shipment_ids": [b2b_lr1_id]},
+            json={
+                "picked_shipment_ids": [b2b_lr1_id],
+                "pickup_otp": b2b_pur_data["pickup_otp"],
+            },
         )
         assert disp_resp.status_code == 200, (
             f"Dispatching B2B PUR failed ({disp_resp.status_code}): {disp_resp.text}"

@@ -294,6 +294,7 @@ export default function B2BRateCalculatorPage() {
   const watchedCategory = form.watch("product_category");
   const watchedIsBlind = form.watch("is_blind_pickup");
   const watchedIsCod = form.watch("is_cod");
+  const watchedIsCarriersRisk = form.watch("is_carriers_risk");
   const watchedDoorDelivery = Boolean(form.watch("door_delivery"));
 
   // --- Volumetric Safety Net Logic ---
@@ -402,8 +403,8 @@ export default function B2BRateCalculatorPage() {
             description: pkg.description || null,
           }));
 
-      // B2B (Logismart Prime) has no COD at launch; B2C parcels are prepaid or COD.
-      const isCod = !isB2BFlow && values.is_cod;
+      // Delhivery B2C and Delhivery B2B Cargo support COD; Logismart Prime is Prepaid-only.
+      const isCod = values.is_cod;
       const response = await fetchQuotes(
         buildQuoteRequest({
           flow: isB2BFlow ? ServiceFlow.B2B : ServiceFlow.B2C,
@@ -1047,7 +1048,7 @@ export default function B2BRateCalculatorPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* Shipment Value (Required if carriers risk or COD is checked) */}
-                      {!isB2BFlow && watchedIsCod && (
+                      {(watchedIsCod || (isB2BFlow && watchedIsCarriersRisk)) && (
                         <FormField
                           control={form.control}
                           name="shipment_total_value"
@@ -1110,12 +1111,7 @@ export default function B2BRateCalculatorPage() {
                       )}
                     </div>
 
-                    {/* COD settings (B2C only: Logismart Prime has no COD at launch) */}
-                    {isB2BFlow ? (
-                      <p className="text-xs text-slate-500" data-testid="rate-calculator.cod-unavailable">
-                        Cash on Delivery isn&apos;t available for B2B cargo yet.
-                      </p>
-                    ) : (
+                    {/* COD settings (Delhivery B2C & Delhivery B2B Cargo; Logismart Prime is Prepaid-only) */}
                     <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-100 space-y-4">
                       <FormField
                         control={form.control}
@@ -1146,8 +1142,9 @@ export default function B2BRateCalculatorPage() {
                                     Cash-on-Delivery (COD)
                                   </span>
                                   <p className="text-[10px] text-slate-500 font-medium">
-                                    Collect cash payment upon delivery from
-                                    receiver
+                                    {isB2BFlow
+                                      ? "Collect cash upon delivery on Delhivery B2B Cargo (Logismart Prime is Prepaid-only)"
+                                      : "Collect cash payment upon delivery from receiver"}
                                   </p>
                                 </div>
                               </div>
@@ -1199,7 +1196,6 @@ export default function B2BRateCalculatorPage() {
                         />
                       )}
                     </div>
-                    )}
                   </div>
 
                   {/* Submit button */}

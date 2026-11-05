@@ -164,7 +164,11 @@ async def test_cod_goods_is_typed_amount_a01() -> None:
 
 
 async def test_cod_off_is_refused_with_plain_message() -> None:
-    tenant = SimpleNamespace(id=uuid.uuid4(), slug="logismart-test", settings={})
+    tenant = SimpleNamespace(
+        id=uuid.uuid4(),
+        slug="logismart-test",
+        settings={"pricing_policy": {"cod_fee_percent": None, "cod_fee_min": None}},
+    )
     body = _payload(payment_details={"shipment_value": 2000, "is_cod": True, "cod_amount": 1000})
     with pytest.raises(HTTPException) as err:
         await price_booking(None, tenant, body, pickup_pincode="122001", delivery_pincode="110001")

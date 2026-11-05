@@ -30,6 +30,8 @@ FAKE_B2B_DOWN = False
 FAKE_B2B_PRE_TAX_OVERRIDE: Optional[Decimal] = None
 """When set, the pre-tax amount of every estimate (409 tests)."""
 FAKE_B2B_UNSERVICEABLE_PINS: FrozenSet[str] = frozenset({"999999"})
+FAKE_B2B_NO_COD_PINS: FrozenSet[str] = frozenset({"799001"})
+"""Destination PINs that are serviceable for Prepaid B2B LRs but do not offer COD."""
 
 RATE_PER_KG = Decimal("9")
 FUEL_PERCENT = Decimal("10")
@@ -113,10 +115,16 @@ class FakeDelhiveryB2BApi:
             },
         }
 
-    async def pincode_serviceable(self, pincode: str, weight_g: int) -> bool:
-        """Every pin is served except the configured unserviceable ones."""
+    async def pincode_serviceable(
+        self, pincode: str, weight_g: int, *, is_cod: bool = False, is_origin: bool = False
+    ) -> bool:
+        """Every pin is served except the configured unserviceable (or non-COD destination) ones."""
         self._check_up()
-        return pincode not in FAKE_B2B_UNSERVICEABLE_PINS
+        if pincode in FAKE_B2B_UNSERVICEABLE_PINS:
+            return False
+        if is_cod and not is_origin and pincode in FAKE_B2B_NO_COD_PINS:
+            return False
+        return True
 
     async def tat_days(self, origin_pin: str, destination_pin: str) -> Optional[int]:
         """Fixed transit days."""

@@ -404,11 +404,15 @@ async def _dispatch(
         },
     )
     assert pur.status_code == 201, pur.text
-    body: Dict[str, Any] = {"picked_shipment_ids": list(shipment_ids)}
+    pur_json = pur.json()
+    body: Dict[str, Any] = {
+        "picked_shipment_ids": list(shipment_ids),
+        "pickup_otp": pur_json["pickup_otp"],
+    }
     if measurements is not None:
         body["measurements"] = list(measurements)
     disp = await client.post(
-        f"/api/v1/manifests/{pur.json()['id']}/dispatch",
+        f"/api/v1/manifests/{pur_json['id']}/dispatch",
         headers=headers(accounts, OPERATIONS_EMAIL),
         json=body,
     )

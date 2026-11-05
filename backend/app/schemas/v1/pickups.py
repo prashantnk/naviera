@@ -590,8 +590,14 @@ class PickupRead(SQLModel):
         """
         Statuses the server accepts next from the current one (E-11), straight from
         `ShipmentLifecycleMachine`, so the status dialog never offers a move that 400s.
+        When an ASSIGNED shipment is linked to a Pickup Request (`manifest_id` set),
+        moving to `IN_TRANSIT` must go through Pickup Request dispatch (`POST /manifests/{id}/dispatch`)
+        so Pickup Handover OTP verification cannot be bypassed.
         """
-        return ShipmentLifecycleMachine.allowed_next_statuses(self.status)
+        statuses = ShipmentLifecycleMachine.allowed_next_statuses(self.status)
+        if self.status == PickupStatus.ASSIGNED and self.manifest_id is not None:
+            return [s for s in statuses if s != PickupStatus.IN_TRANSIT]
+        return statuses
 
     @computed_field
     def total_box_count(self) -> int:

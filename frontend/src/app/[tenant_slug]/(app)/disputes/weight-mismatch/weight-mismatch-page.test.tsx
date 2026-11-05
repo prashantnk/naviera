@@ -106,6 +106,33 @@ describe("Weight mismatch page", () => {
     });
   });
 
+  it("shows a pending spinner and sends one claim on a fast double click", async () => {
+    mockList.mockResolvedValue([dispute("AWB-NEW", "NONE")]);
+    let resolveRaise: (value: unknown[]) => void = () => undefined;
+    mockRaise.mockReturnValue(
+      new Promise<unknown[]>((resolve) => {
+        resolveRaise = resolve;
+      })
+    );
+    render(<WeightMismatchDisputesPage />);
+    const [raise] = await screen.findAllByTestId("weight-mismatch.row.AWB-NEW.raise-claim");
+    fireEvent.click(raise);
+    fireEvent.change(await screen.findByTestId("weight-mismatch.claim.weight"), {
+      target: { value: "1200" },
+    });
+    const submit = screen.getByTestId("weight-mismatch.claim.submit");
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(submit).toBeDisabled());
+    expect(submit.querySelector(".animate-spin")).not.toBeNull();
+    expect(mockRaise).toHaveBeenCalledTimes(1);
+
+    resolveRaise([]);
+    await waitFor(() => expect(screen.queryByTestId("weight-mismatch.claim.submit")).not.toBeInTheDocument());
+    expect(mockRaise).toHaveBeenCalledTimes(1);
+  });
+
   it("hides claim actions from read-only staff and labels open claims for staff", async () => {
     mockUseUser.mockReturnValue({
       capabilities: { isStaff: true, canWrite: false, canManageFinance: false },

@@ -34,6 +34,9 @@ from app.services.pricing.types import QuoteUnavailableCode
 AMOUNT_MAX = 100_000_000.0
 CARRIER_AWB_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9-]{3,39}$"
 ALL_SERVICE_OPTIONS: List[ServiceOption] = list(ServiceOption)
+DEFAULT_COD_FEE_PERCENT: float = 2.0
+DEFAULT_COD_FEE_MIN: float = 20.0
+"""Standard Delhivery One COD charge structure (`rate-card`): max(₹20, 2% of COD value)."""
 
 
 # --- Pricing policy ---------------------------------------------------------------
@@ -44,8 +47,8 @@ class _PricingPolicyFields(BaseModel):
 
     delhivery_markup_percent: float = Field(default=0.0, ge=0, le=MARKUP_PERCENT_MAX)
     prime_default_markup_percent: float = Field(default=20.0, ge=0, le=MARKUP_PERCENT_MAX)
-    cod_fee_percent: Optional[float] = Field(default=None, ge=0, le=COD_FEE_PERCENT_MAX)
-    cod_fee_min: Optional[float] = Field(default=None, ge=0, le=COD_FEE_MIN_MAX)
+    cod_fee_percent: Optional[float] = Field(default=DEFAULT_COD_FEE_PERCENT, ge=0, le=COD_FEE_PERCENT_MAX)
+    cod_fee_min: Optional[float] = Field(default=DEFAULT_COD_FEE_MIN, ge=0, le=COD_FEE_MIN_MAX)
     enabled_options: List[ServiceOption] = Field(default_factory=lambda: list(ALL_SERVICE_OPTIONS))
     option_markups: Dict[ServiceOption, OptionMarkup] = Field(default_factory=dict)
     """

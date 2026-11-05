@@ -556,13 +556,20 @@ async def _create_pur(
 
 
 def _dispatch_request(
-    client: httpx.AsyncClient, accounts: Mapping[str, Any], pur_id: str, picked: Sequence[str]
+    client: httpx.AsyncClient,
+    accounts: Mapping[str, Any],
+    pur_id: str,
+    picked: Sequence[str],
+    pickup_otp: Optional[str] = None,
 ) -> Awaitable[httpx.Response]:
     """Ops 'Confirm picked up' request (not awaited, so callers can race it)."""
+    body: Dict[str, Any] = {"picked_shipment_ids": list(picked)}
+    if pickup_otp is not None:
+        body["pickup_otp"] = pickup_otp
     return client.post(
         f"/api/v1/manifests/{pur_id}/dispatch",
         headers=headers(accounts, OPERATIONS_EMAIL),
-        json={"picked_shipment_ids": list(picked)},
+        json=body,
     )
 
 
@@ -572,7 +579,9 @@ async def _book_and_dispatch(
     """Books a shipment, puts it on a PUR and dispatches it (IN_TRANSIT). Returns the shipment JSON."""
     shipment = await _book(client, accounts, warehouse_id, label, **kwargs)
     pur = await _create_pur(client, accounts, warehouse_id, [shipment["id"]])
-    resp = await _dispatch_request(client, accounts, pur["id"], [shipment["id"]])
+    resp = await _dispatch_request(
+        client, accounts, pur["id"], [shipment["id"]], pickup_otp=pur["pickup_otp"]
+    )
     assert resp.status_code == 200, resp.text
     shipment["manifest_id"] = pur["id"]
     return shipment
@@ -732,7 +741,13 @@ async def _build_world(client: httpx.AsyncClient, accounts: Mapping[str, Any]) -
 
     delivered = await _book(client, accounts, warehouse_id, "J54-DLV", is_cod=True)
     picked_pur = await _create_pur(client, accounts, warehouse_id, [delivered["id"]])
-    dispatch = await _dispatch_request(client, accounts, picked_pur["id"], [delivered["id"]])
+    dispatch = await _dispatch_request(
+        client,
+        accounts,
+        picked_pur["id"],
+        [delivered["id"]],
+        pickup_otp=picked_pur["pickup_otp"],
+    )
     assert dispatch.status_code == 200, dispatch.text
     await _audit_weight(client, accounts, delivered["id"], MEASURED_WEIGHT_KG)
     await _deliver(client, accounts, delivered["id"])
@@ -1330,8 +1345,12 @@ async def test_j55_dispatch_race_picks_up_once(j55_ctx: Tuple[Mapping[str, Any],
         shipment = await _book(client, accounts, warehouse_id, "J55-DISPATCH")
         pur = await _create_pur(client, accounts, warehouse_id, [shipment["id"]])
         responses = await _gather(
-            _dispatch_request(client, accounts, pur["id"], [shipment["id"]]),
-            _dispatch_request(client, accounts, pur["id"], [shipment["id"]]),
+            _dispatch_request(
+                client, accounts, pur["id"], [shipment["id"]], pickup_otp=pur["pickup_otp"]
+            ),
+            _dispatch_request(
+                client, accounts, pur["id"], [shipment["id"]], pickup_otp=pur["pickup_otp"]
+            ),
         )
     winner = _one_winner(responses, DUPLICATE_REFUSED)
     assert winner.json()["status"] == ManifestStatus.PICKED.value

@@ -129,12 +129,6 @@ export function notifyTenantAccessCheck(status: number | undefined, url: string 
   return true;
 }
 
-/**
- * Registers (once) a response interceptor on the axios instance the generated
- * client uses. It only observes failures and always re-throws them unchanged,
- * so every caller still receives its usual `ApiError`: a 403 asks `AuthGuard`
- * to re-check access, and a 401 on an authenticated call redirects to login.
- */
 const MUTATION_METHODS: ReadonlySet<string> = new Set([
   "POST",
   "PUT",
@@ -142,17 +136,63 @@ const MUTATION_METHODS: ReadonlySet<string> = new Set([
   "DELETE",
 ]);
 
+/**
+ * POST endpoints that only compute and return data (rate quotes, valuation,
+ * reprice previews). Booking forms call them on every input change; letting
+ * them wipe the query cache would make every other screen reload cold.
+ */
+const READ_ONLY_POST_PATHS: readonly RegExp[] = [
+  /^\/api\/v1\/quotes\/?$/,
+  /^\/api\/v1\/shipments\/valuation\/?$/,
+  /^\/api\/v1\/shipments\/[^/]+\/reprice-preview\/?$/,
+];
+
+/** Lowest status meaning "the server failed", where a write may still have happened. */
+const SERVER_ERROR_STATUS = 500;
+
+/**
+ * Whether a finished request may have changed server data, so cached
+ * responses must be dropped.
+ *
+ * @param method - HTTP method of the request.
+ * @param url - Request URL (relative or absolute).
+ * @param status - Response status, or undefined when no response arrived
+ *   (timeout / network drop: the write may have committed).
+ * @returns True for successful or unknown-outcome mutations; false for reads,
+ *   read-only POSTs and 4xx refusals (the server rejected the write).
+ */
+export function shouldInvalidateAfterRequest(
+  method: string | undefined,
+  url: string | undefined,
+  status: number | undefined,
+): boolean {
+  if (!method || !MUTATION_METHODS.has(method.toUpperCase())) return false;
+  const path = (url ?? "").split("?")[0].replace(/^https?:\/\/[^/]+/i, "");
+  if (READ_ONLY_POST_PATHS.some((pattern) => pattern.test(path))) return false;
+  if (status === undefined) return true;
+  return status < 400 || status >= SERVER_ERROR_STATUS;
+}
+
+/**
+ * Registers (once) a response interceptor on the axios instance the generated
+ * client uses. Failures are always re-thrown unchanged, so every caller still
+ * receives its usual `ApiError`: a 403 asks `AuthGuard` to re-check access, and
+ * a 401 on an authenticated call redirects to login. Any request that may have
+ * changed data evicts the query cache (in every open tab).
+ */
 function registerForbiddenInterceptor(): void {
   if (typeof window === "undefined" || forbiddenInterceptorId !== null) return;
   forbiddenInterceptorId = axios.interceptors.response.use(
     (response) => {
-      const method = response.config?.method?.toUpperCase();
-      if (method && MUTATION_METHODS.has(method)) {
+      if (shouldInvalidateAfterRequest(response.config?.method, response.config?.url, response.status)) {
         invalidateQueryCache();
       }
       return response;
     },
     (error: AxiosError) => {
+      if (shouldInvalidateAfterRequest(error.config?.method, error.config?.url, error.response?.status)) {
+        invalidateQueryCache();
+      }
       notifyTenantAccessCheck(error.response?.status, error.config?.url);
       redirectToLoginOnUnauthorized(
         error.response?.status,

@@ -2,6 +2,7 @@
 import { ApiError, UsersService, type UserRead } from "@/api_client";
 import { TENANT_ACCESS_CHECK_EVENT } from "@/lib/api-config";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCESS_RECHECK_MIN_INTERVAL_MS,
@@ -44,6 +45,8 @@ async function renderSignedIn() {
     </AuthGuard>,
   );
   await screen.findByText("page content");
+  // Flush passive effects so the re-check listeners are registered before a test fires events.
+  await act(async () => {});
 }
 
 describe("AuthGuard mid-session access re-check", () => {
@@ -144,6 +147,51 @@ describe("AuthGuard mid-session access re-check", () => {
     }
     expect(await screen.findByTestId("auth.access-denied")).toBeInTheDocument();
     expect(profileSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps child state when a re-check returns the same user", async () => {
+    profileSpy.mockResolvedValue({ ...PROFILE } as never);
+    const mounts = vi.fn();
+    function Child() {
+      useEffect(() => mounts(), []);
+      return <p>page content</p>;
+    }
+    render(
+      <AuthGuard>
+        <Child />
+      </AuthGuard>,
+    );
+    await screen.findByText("page content");
+
+    now += ACCESS_RECHECK_MIN_INTERVAL_MS;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(profileSpy).toHaveBeenCalledTimes(2));
+    expect(mounts).toHaveBeenCalledTimes(1);
+  });
+
+  it("remounts the shell when another tab signed in as a different user", async () => {
+    profileSpy
+      .mockResolvedValueOnce(PROFILE as never)
+      .mockResolvedValueOnce({ ...PROFILE, id: "u2", email: "owner@logismart.in" } as never);
+    const mounts = vi.fn();
+    function Child() {
+      useEffect(() => mounts(), []);
+      return <p>page content</p>;
+    }
+    render(
+      <AuthGuard>
+        <Child />
+      </AuthGuard>,
+    );
+    await screen.findByText("page content");
+
+    now += ACCESS_RECHECK_MIN_INTERVAL_MS;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(mounts).toHaveBeenCalledTimes(2));
   });
 });
 

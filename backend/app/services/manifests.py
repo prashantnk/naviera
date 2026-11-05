@@ -1,5 +1,6 @@
 import re
 import secrets
+import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -7,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.dependencies import cache_tenant, get_cached_tenant_by_id
+from app.core.dependencies import load_tenant_by_id
 from app.core.permissions import (
     assert_can_manage_shipments_or_pickups,
     assert_not_read_only,
@@ -28,11 +29,9 @@ from app.models.tenants import Tenant, User, UserRole
 from app.repositories.addresses import get_cached_address_by_id
 from app.repositories.manifests import (
     ManifestRepository,
-    cache_eligible_shipments,
-    cache_manifests_list,
-    get_cached_eligible_shipments,
-    get_cached_manifests_list,
+    eligible_shipments_cache,
     invalidate_manifests_cache,
+    manifest_list_cache,
 )
 from app.repositories.shipments import ShipmentRepository
 from app.schemas.v1.manifests import ManifestCreate, ManifestDispatchMeasurement
@@ -93,6 +92,34 @@ ERR_DISPATCH_WITHOUT_SHIPMENTS = (
     "This pickup request has no shipments (LRs) yet. Add the booked shipments before "
     "confirming the pickup, or mark it Not Picked."
 )
+
+# --- Pickup Handover OTP (Delhivery parity: help.delhivery.com/docs/pickup-request) ---
+PICKUP_OTP_MIN = 100_000
+PICKUP_OTP_MAX = 999_999
+PICKUP_OTP_MAX_ATTEMPTS = 5
+PICKUP_OTP_LOCKOUT_SECONDS = 300
+OTP_VISIBLE_STAFF_ROLES = (UserRole.owner, UserRole.admin)
+ERR_PICKUP_OTP_REQUIRED = (
+    "Pickup OTP is required. Enter the 6-digit handover OTP shared by the seller "
+    "to mark this pickup as picked up."
+)
+ERR_PICKUP_OTP_OVERRIDE_FORBIDDEN = (
+    "Only Owner or Admin can override pickup OTP verification."
+)
+ERR_PICKUP_OTP_OVERRIDE_REASON_REQUIRED = (
+    "A mandatory override reason is required to bypass pickup OTP verification."
+)
+
+_pickup_otp_attempts: Dict[uuid.UUID, List[float]] = {}
+"""Per-manifest failed OTP attempt timestamps (monotonic seconds) for 5-attempt lockout."""
+
+
+def reset_pickup_otp_attempts(manifest_id: Optional[uuid.UUID] = None) -> None:
+    """Clears failed pickup OTP attempt counters (used on success/override and in unit tests)."""
+    if manifest_id is None:
+        _pickup_otp_attempts.clear()
+    else:
+        _pickup_otp_attempts.pop(manifest_id, None)
 
 
 class ManifestService:
@@ -268,6 +295,51 @@ class ManifestService:
         extra = len(shipments) - len(refs)
         return ", ".join(refs) + (f" (+{extra} more)" if extra > 0 else "")
 
+    @staticmethod
+    def generate_pickup_otp() -> str:
+        """Generates a 6-digit cryptographically random pickup handover OTP using `secrets`."""
+        return f"{PICKUP_OTP_MIN + secrets.randbelow(PICKUP_OTP_MAX - PICKUP_OTP_MIN + 1):06d}"
+
+    @classmethod
+    def _can_view_pickup_otp(
+        cls,
+        user: Optional[User],
+        manifest: Optional[Manifest] = None,
+        address: Optional[Address] = None,
+    ) -> bool:
+        """
+        True ONLY for:
+        - Owner or Admin (`UserRole.owner`, `UserRole.admin`)
+        - The merchant (`UserRole.customer`) who owns the pickup request
+        NEVER True for `operations_user`, `support_user`, `read_only_user`, or `None`.
+        """
+        if user is None:
+            return False
+        if user.role in OTP_VISIBLE_STAFF_ROLES:
+            return True
+        if user.role == UserRole.customer:
+            if manifest is None:
+                return True
+            return cls._customer_owns_manifest(manifest, address, user)
+        return False
+
+    @classmethod
+    def _apply_otp_visibility(
+        cls,
+        row: Dict[str, Any],
+        current_user: Optional[User],
+        *,
+        manifest: Optional[Manifest] = None,
+        address: Optional[Address] = None,
+    ) -> Dict[str, Any]:
+        """
+        Returns a copy of `row` with `pickup_otp` preserved only when `current_user` is
+        authorized to view it (owning customer or owner/admin); stripped to `None` otherwise.
+        """
+        if cls._can_view_pickup_otp(current_user, manifest=manifest, address=address):
+            return {**row}
+        return {**row, "pickup_otp": None}
+
     @classmethod
     def _to_response(cls, manifest: Manifest, address: Optional[Address]) -> Dict[str, Any]:
         """Serializes a Manifest into the 'ManifestResponse' shape with derived counters."""
@@ -285,6 +357,12 @@ class ManifestService:
             "service_flow": manifest.service_flow or ServiceFlow.B2B,
             "pickup_request_number": manifest.pickup_request_number,
             "failure_reason": manifest.failure_reason,
+            "pickup_otp": getattr(manifest, "pickup_otp", None),
+            "pickup_otp_verified_at": getattr(manifest, "pickup_otp_verified_at", None),
+            "pickup_otp_verified_by": getattr(manifest, "pickup_otp_verified_by", None),
+            "pickup_otp_override_reason": getattr(
+                manifest, "pickup_otp_override_reason", None
+            ),
             "pickup_location_name": address.name if address is not None else UNKNOWN_LOCATION_NAME,
             "pickup_location_address": cls._one_line_address(address),
             "expected_awbs": len(pickups),
@@ -385,6 +463,10 @@ class ManifestService:
                 detail="Pickup address not found or does not belong to the tenant.",
             )
         return addresses[address_id]
+
+    async def _get_tenant(self, tenant_id: uuid.UUID) -> Optional[Tenant]:
+        """Read-only tenant settings (cached detached copy)."""
+        return await load_tenant_by_id(tenant_id, lambda: self.session.get(Tenant, tenant_id))
 
     async def _get_manifest_for_update(self, manifest_id: uuid.UUID, tenant_id: uuid.UUID) -> Manifest:
         """
@@ -562,6 +644,121 @@ class ManifestService:
             )
 
     # =====================================================================
+    # Pickup Handover OTP helpers
+    # =====================================================================
+
+    def _ensure_open_manifest_otp_in_place(self, manifest: Manifest) -> bool:
+        """
+        Lazily assigns a 6-digit `pickup_otp` (`secrets`) when an open (`SCHEDULED` /
+        `OUT_FOR_PICKUP`) manifest does not yet have one. Returns True when modified.
+        """
+        if (
+            manifest.status in DISPATCHABLE_STATUSES
+            and not getattr(manifest, "pickup_otp", None)
+        ):
+            manifest.pickup_otp = self.generate_pickup_otp()
+            self.session.add(manifest)
+            return True
+        return False
+
+    @classmethod
+    def _verify_or_override_pickup_otp(
+        cls,
+        manifest: Manifest,
+        *,
+        current_user: Optional[User],
+        effective_user_id: Optional[uuid.UUID],
+        pickup_otp: Optional[str],
+        pickup_otp_override_reason: Optional[str],
+        now_mono: Optional[float] = None,
+    ) -> None:
+        """
+        Enforces Delhivery-parity Pickup Handover OTP verification on dispatch:
+        - Owner/Admin may override ONLY with a non-empty `pickup_otp_override_reason`
+          (recorded on `manifest.pickup_otp_override_reason` and in `ShipmentActivity`);
+          operations/other roles receive 403 if they attempt to override.
+        - Otherwise requires `pickup_otp`, verified via constant-time `secrets.compare_digest`.
+        - Tracks failed attempts per manifest in `_pickup_otp_attempts`: 5 wrong attempts within
+          5 minutes returns 429 Too Many Requests (`Retry-After` header).
+        - Never logs or echoes `manifest.pickup_otp`.
+        """
+        raw_override = pickup_otp_override_reason
+        override_reason = (raw_override or "").strip()
+        candidate_otp = (pickup_otp or "").strip()
+
+        if raw_override is not None and (override_reason or not candidate_otp):
+            if current_user is None or current_user.role not in OTP_VISIBLE_STAFF_ROLES:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=ERR_PICKUP_OTP_OVERRIDE_FORBIDDEN,
+                )
+            if not override_reason:
+                raise cls._bad_request(ERR_PICKUP_OTP_OVERRIDE_REASON_REQUIRED)
+            reset_pickup_otp_attempts(manifest.id)
+            manifest.pickup_otp_verified_at = datetime.now(timezone.utc)
+            manifest.pickup_otp_verified_by = effective_user_id
+            manifest.pickup_otp_override_reason = override_reason
+            return
+
+        clock = now_mono if now_mono is not None else time.monotonic()
+        cutoff = clock - PICKUP_OTP_LOCKOUT_SECONDS
+        recent_failures = [
+            ts for ts in _pickup_otp_attempts.get(manifest.id, []) if ts > cutoff
+        ]
+        if recent_failures:
+            _pickup_otp_attempts[manifest.id] = recent_failures
+        else:
+            _pickup_otp_attempts.pop(manifest.id, None)
+
+        if len(recent_failures) >= PICKUP_OTP_MAX_ATTEMPTS:
+            retry_after = max(
+                1, int(PICKUP_OTP_LOCKOUT_SECONDS - (clock - recent_failures[0]))
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Too many incorrect pickup OTP attempts. Pickup verification is locked "
+                    f"for {retry_after} seconds. Please wait or ask an Owner/Admin to override "
+                    "with a mandatory reason."
+                ),
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        if not candidate_otp:
+            raise cls._bad_request(ERR_PICKUP_OTP_REQUIRED)
+
+        expected_otp = (getattr(manifest, "pickup_otp", None) or "").strip()
+        if not expected_otp:
+            expected_otp = cls.generate_pickup_otp()
+            manifest.pickup_otp = expected_otp
+
+        if not secrets.compare_digest(
+            candidate_otp.encode("utf-8"), expected_otp.encode("utf-8")
+        ):
+            recent_failures.append(clock)
+            _pickup_otp_attempts[manifest.id] = recent_failures
+            if len(recent_failures) >= PICKUP_OTP_MAX_ATTEMPTS:
+                retry_after = PICKUP_OTP_LOCKOUT_SECONDS
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=(
+                        f"Too many incorrect pickup OTP attempts ({PICKUP_OTP_MAX_ATTEMPTS} failed "
+                        f"attempts). Pickup verification is locked for {retry_after} seconds."
+                    ),
+                    headers={"Retry-After": str(retry_after)},
+                )
+            remaining = PICKUP_OTP_MAX_ATTEMPTS - len(recent_failures)
+            raise cls._bad_request(
+                f"Invalid pickup OTP. Ask the seller for the 6-digit pickup handover OTP "
+                f"({remaining} attempt(s) remaining before lockout)."
+            )
+
+        reset_pickup_otp_attempts(manifest.id)
+        manifest.pickup_otp_verified_at = datetime.now(timezone.utc)
+        manifest.pickup_otp_verified_by = effective_user_id
+        manifest.pickup_otp_override_reason = None
+
+    # =====================================================================
     # Use cases
     # =====================================================================
 
@@ -589,11 +786,7 @@ class ManifestService:
 
         use_declared_boxes = payload.is_blind_pickup or not shipments
         
-        tenant = get_cached_tenant_by_id(tenant_id)
-        if tenant is None:
-            tenant = await self.session.get(Tenant, tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
+        tenant = await self._get_tenant(tenant_id)
         cutoff = DEFAULT_CUTOFF
         if tenant and tenant.settings and tenant.settings.get("operations"):
             cutoff = tenant.settings["operations"].get("pickup_cutoff_time") or DEFAULT_CUTOFF
@@ -607,6 +800,7 @@ class ManifestService:
             time_slot=new_slot,
             service_flow=payload.service_flow,
             pickup_request_number=await self._generate_pickup_request_number(tenant_id),
+            pickup_otp=self.generate_pickup_otp(),
             is_blind_pickup=payload.is_blind_pickup,
             total_boxes=payload.total_boxes if use_declared_boxes else self._total_boxes(shipments),
             status=ManifestStatus.SCHEDULED,
@@ -618,10 +812,35 @@ class ManifestService:
         await self.session.commit()
         invalidate_manifests_cache(tenant_id)
         refreshed = await self._get_manifest_or_404(manifest.id, tenant_id)
-        resp = self._to_response(refreshed, pickup_addr)
+        resp = self._apply_otp_visibility(
+            self._to_response(refreshed, pickup_addr),
+            current_user,
+            manifest=refreshed,
+            address=pickup_addr,
+        )
         if adjusted:
             resp["notice"] = SLOT_ADJUSTED_NOTICE
         return resp
+
+    async def get_manifest(
+        self,
+        manifest_id: uuid.UUID,
+        tenant_id: uuid.UUID,
+        current_user: User | None = None,
+    ) -> Dict[str, Any]:
+        """Single Pickup Request detail (lazily generates `pickup_otp` on open manifests)."""
+        manifest = await self._get_manifest_or_404(manifest_id, tenant_id)
+        address = await self._get_manifest_address(manifest)
+        self._assert_can_access_manifest(manifest, address, current_user, "view")
+        if self._ensure_open_manifest_otp_in_place(manifest):
+            await self.session.commit()
+            invalidate_manifests_cache(tenant_id)
+        return self._apply_otp_visibility(
+            self._to_response(manifest, address),
+            current_user,
+            manifest=manifest,
+            address=address,
+        )
 
     async def list_manifests(
         self,
@@ -633,52 +852,42 @@ class ManifestService:
     ) -> List[Dict[str, Any]]:
         """Lists pickup requests with optional flow/status/date filters (customer-scoped)."""
         user_scope_id = current_user.id if self._is_customer(current_user) else None
-        cached = get_cached_manifests_list(
-            tenant_id=tenant_id,
-            user_scope_id=user_scope_id,
-            service_flow=service_flow,
-            status_filter=status_filter,
-            scheduled_date=scheduled_date,
+        key = (
+            tenant_id,
+            user_scope_id,
+            service_flow.value if service_flow else None,
+            status_filter.value if status_filter else None,
+            scheduled_date,
         )
+        cached = manifest_list_cache.get(key)
         if cached is not None:
-            return cached
+            return [self._apply_otp_visibility(row, current_user) for row in cached]
+        generation = manifest_list_cache.generation()
 
         manifests = await self.repo.list_manifests(
             tenant_id,
             service_flow=service_flow,
             status=status_filter,
             scheduled_date=scheduled_date,
-        )
-        missing_addr_ids = [
-            m.pickup_address_id
-            for m in manifests
-            if m.pickup_address_id and not getattr(m, "_pickup_address_loaded", False)
-        ]
-        addresses = (
-            await self.repo.get_addresses(missing_addr_ids, tenant_id)
-            if missing_addr_ids
-            else {}
+            customer_user_id=user_scope_id,
         )
         response = []
+        lazily_generated_otp = False
         for manifest in manifests:
-            address = (
-                getattr(manifest, "_pickup_address", None)
-                if getattr(manifest, "_pickup_address_loaded", False)
-                else addresses.get(manifest.pickup_address_id)
-            )
+            address = await self._get_manifest_address(manifest)
             if self._is_customer(current_user) and not self._customer_owns_manifest(
                 manifest, address, current_user
             ):
                 continue
+            if self._ensure_open_manifest_otp_in_place(manifest):
+                lazily_generated_otp = True
             response.append(self._to_response(manifest, address))
-        return cache_manifests_list(
-            response,
-            tenant_id=tenant_id,
-            user_scope_id=user_scope_id,
-            service_flow=service_flow,
-            status_filter=status_filter,
-            scheduled_date=scheduled_date,
-        )
+        if lazily_generated_otp:
+            await self.session.commit()
+            invalidate_manifests_cache(tenant_id)
+            generation = manifest_list_cache.generation()
+        stored = manifest_list_cache.set(key, response, generation=generation)
+        return [self._apply_otp_visibility(row, current_user) for row in stored]
 
     async def list_eligible_shipments(
         self,
@@ -689,14 +898,11 @@ class ManifestService:
     ) -> List[Dict[str, Any]]:
         """OPEN shipments of one flow that ship from the given pickup location (Create PUR picker)."""
         user_scope_id = current_user.id if self._is_customer(current_user) else None
-        cached = get_cached_eligible_shipments(
-            tenant_id=tenant_id,
-            user_scope_id=user_scope_id,
-            service_flow=service_flow,
-            pickup_address_id=pickup_address_id,
-        )
+        key = (tenant_id, user_scope_id, service_flow.value, pickup_address_id)
+        cached = eligible_shipments_cache.get(key)
         if cached is not None:
             return cached
+        generation = eligible_shipments_cache.generation()
 
         pickup_addr = await self._get_address_or_404(pickup_address_id, tenant_id)
         self._assert_can_use_pickup_address(pickup_addr, current_user)
@@ -720,13 +926,7 @@ class ManifestService:
             for s in shipments
             if self._is_same_pickup_location(s.pickup_address, pickup_addr)
         ]
-        return cache_eligible_shipments(
-            eligible,
-            tenant_id=tenant_id,
-            user_scope_id=user_scope_id,
-            service_flow=service_flow,
-            pickup_address_id=pickup_address_id,
-        )
+        return eligible_shipments_cache.set(key, eligible, generation=generation)
 
     async def get_pickup_candidates(
         self,
@@ -766,6 +966,7 @@ class ManifestService:
             else {}
         )
         candidates = []
+        lazily_generated_otp = False
         for manifest in manifests:
             address = (
                 getattr(manifest, "_pickup_address", None)
@@ -780,7 +981,19 @@ class ManifestService:
                 continue
             if not self._linked_owner_ids(manifest.pickups or []) <= selection_owners:
                 continue
-            candidates.append(self._to_response(manifest, address))
+            if self._ensure_open_manifest_otp_in_place(manifest):
+                lazily_generated_otp = True
+            candidates.append(
+                self._apply_otp_visibility(
+                    self._to_response(manifest, address),
+                    current_user,
+                    manifest=manifest,
+                    address=address,
+                )
+            )
+        if lazily_generated_otp:
+            await self.session.commit()
+            invalidate_manifests_cache(tenant_id)
         return {
             "service_flow": service_flow,
             "pickup_address_id": anchor_address.id,
@@ -815,12 +1028,18 @@ class ManifestService:
         await self.repo.link_shipments(manifest, shipments, current_user.id if current_user else None)
 
         refreshed = await self._get_manifest_or_404(manifest.id, tenant_id)
+        self._ensure_open_manifest_otp_in_place(refreshed)
         if not refreshed.is_blind_pickup:
             await self.repo.set_total_boxes(refreshed, self._total_boxes(refreshed.pickups))
         await self.session.commit()
         invalidate_manifests_cache(tenant_id)
         refreshed = await self._get_manifest_or_404(manifest.id, tenant_id)
-        return self._to_response(refreshed, address)
+        return self._apply_otp_visibility(
+            self._to_response(refreshed, address),
+            current_user,
+            manifest=refreshed,
+            address=address,
+        )
 
     async def cancel_manifest(
         self,
@@ -837,7 +1056,12 @@ class ManifestService:
 
         manifest = await self.repo.cancel_manifest(manifest)
         invalidate_manifests_cache(tenant_id)
-        return self._to_response(manifest, address)
+        return self._apply_otp_visibility(
+            self._to_response(manifest, address),
+            current_user,
+            manifest=manifest,
+            address=address,
+        )
 
     async def mark_out_for_pickup(
         self,
@@ -852,9 +1076,16 @@ class ManifestService:
             raise self._bad_request(
                 f"Only SCHEDULED pickups can go out for pickup (current: {manifest.status.value})."
             )
+        self._ensure_open_manifest_otp_in_place(manifest)
         manifest = await self.repo.mark_out_for_pickup(manifest)
         invalidate_manifests_cache(tenant_id)
-        return self._to_response(manifest, await self._get_manifest_address(manifest))
+        address = await self._get_manifest_address(manifest)
+        return self._apply_otp_visibility(
+            self._to_response(manifest, address),
+            current_user,
+            manifest=manifest,
+            address=address,
+        )
 
     async def mark_not_picked(
         self,
@@ -875,7 +1106,13 @@ class ManifestService:
             )
         manifest = await self.repo.mark_not_picked(manifest, reason, current_user.id)
         invalidate_manifests_cache(tenant_id)
-        return self._to_response(manifest, await self._get_manifest_address(manifest))
+        address = await self._get_manifest_address(manifest)
+        return self._apply_otp_visibility(
+            self._to_response(manifest, address),
+            current_user,
+            manifest=manifest,
+            address=address,
+        )
 
     async def dispatch_manifest(
         self,
@@ -885,6 +1122,8 @@ class ManifestService:
         current_user: User | None = None,
         picked_shipment_ids: Optional[List[uuid.UUID]] = None,
         measurements: Optional[Sequence[ManifestDispatchMeasurement]] = None,
+        pickup_otp: Optional[str] = None,
+        pickup_otp_override_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._assert_admin(current_user, "dispatch fleet pickup trucks")
         manifest = await self._get_manifest_for_update(manifest_id, tenant_id)
@@ -914,6 +1153,15 @@ class ManifestService:
                     "Cannot record a measurement for a shipment that was not picked up."
                 )
 
+        effective_user_id = user_id or (current_user.id if current_user else None)
+        self._verify_or_override_pickup_otp(
+            manifest,
+            current_user=current_user,
+            effective_user_id=effective_user_id,
+            pickup_otp=pickup_otp,
+            pickup_otp_override_reason=pickup_otp_override_reason,
+        )
+
         pickup_by_id = {s.id: s for s in pickups}
         resolved_by_id: Dict[uuid.UUID, Tuple[Optional[Tuple[PackageCreate, ...]], int]] = {
             entry.shipment_id: self._resolve_dispatch_packages(
@@ -921,7 +1169,6 @@ class ManifestService:
             )
             for entry in measurement_list
         }
-        effective_user_id = user_id or (current_user.id if current_user else None)
         measured_ids = {
             sid for sid, (pkgs, _) in resolved_by_id.items() if pkgs is not None
         }
@@ -932,11 +1179,7 @@ class ManifestService:
             measured_shipment_ids=measured_ids,
         )
         if measurement_list:
-            tenant = get_cached_tenant_by_id(tenant_id)
-            if tenant is None:
-                tenant = await self.session.get(Tenant, tenant_id)
-                if tenant is not None:
-                    cache_tenant(tenant)
+            tenant = await self._get_tenant(tenant_id)
             if tenant is None:
                 raise self._bad_request("Tenant not found.")
             shipment_service = ShipmentService(ShipmentRepository(self.session))
@@ -1006,7 +1249,13 @@ class ManifestService:
         await self.session.commit()
         invalidate_manifests_cache(tenant_id)
         manifest = await self._get_manifest_or_404(manifest_id, tenant_id)
-        return self._to_response(manifest, await self._get_manifest_address(manifest))
+        address = await self._get_manifest_address(manifest)
+        return self._apply_otp_visibility(
+            self._to_response(manifest, address),
+            current_user,
+            manifest=manifest,
+            address=address,
+        )
 
     async def get_manifest_with_details(
         self,

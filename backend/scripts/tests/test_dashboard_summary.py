@@ -140,10 +140,15 @@ async def test_dashboard_summary_shape_and_live_counts():
             headers=HEADERS,
         )
         assert res.status_code == 201, res.text
+        pur_json = res.json()
         after_assign = await _summary(client, "B2C")
         assert after_assign["stages"]["awaiting_pickup"] == before["stages"]["awaiting_pickup"] + 1
 
-        res = await client.post(f"{MANIFESTS_URL}/{res.json()['id']}/dispatch", headers=HEADERS)
+        res = await client.post(
+            f"{MANIFESTS_URL}/{pur_json['id']}/dispatch",
+            json={"pickup_otp": pur_json["pickup_otp"]},
+            headers=HEADERS,
+        )
         assert res.status_code == 200, res.text
         after_dispatch = await _summary(client, "B2C")
         assert after_dispatch["stages"]["in_transit"] == before["stages"]["in_transit"] + 1

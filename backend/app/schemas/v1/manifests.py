@@ -57,6 +57,10 @@ class ManifestResponse(BaseModel):
     service_flow: ServiceFlow = ServiceFlow.B2B
     pickup_request_number: Optional[str] = None
     failure_reason: Optional[str] = None
+    pickup_otp: Optional[str] = None
+    pickup_otp_verified_at: Optional[datetime] = None
+    pickup_otp_verified_by: Optional[uuid.UUID] = None
+    pickup_otp_override_reason: Optional[str] = None
     pickup_location_name: str = ""
     pickup_location_address: str = ""
     expected_awbs: int = 0
@@ -105,10 +109,16 @@ class ManifestDispatchRequest(BaseModel):
 
     - `picked_shipment_ids`: partial pickup AWB checklist (omitted = every linked LR picked).
     - `measurements`: optional actual pieces per picked LR (also optional for blind LRs).
+    - `pickup_otp`: 6-digit pickup handover OTP shared by the seller with the pickup executive.
+    - `pickup_otp_override_reason`: mandatory audit reason when an Owner/Admin overrides OTP verification.
     """
 
     picked_shipment_ids: Optional[List[uuid.UUID]] = None
     measurements: Optional[List[ManifestDispatchMeasurement]] = None
+    pickup_otp: Optional[str] = Field(default=None, max_length=32)
+    pickup_otp_override_reason: Optional[str] = Field(
+        default=None, max_length=FAILURE_REASON_MAX_LENGTH
+    )
 
     @model_validator(mode="after")
     def _one_measurement_per_lr(self) -> "ManifestDispatchRequest":

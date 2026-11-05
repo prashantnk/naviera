@@ -28,7 +28,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   B2B_CARGO_FLEET_DATA_URI,
@@ -200,7 +201,7 @@ export function HeroSection({
   images = [],
 }: HeroSectionProps) {
   const { routeTo } = useTenant();
-  const router = useRouter();
+  const router = useProgressRouter();
   const pathname = usePathname();
   const [trackingId, setTrackingId] = useState("");
 

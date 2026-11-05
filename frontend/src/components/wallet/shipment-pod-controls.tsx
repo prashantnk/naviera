@@ -6,7 +6,9 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { MeasurementDialog } from "@/components/shipments/measurement-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { downloadShipmentInvoicePdf } from "@/lib/api";
+import { extractApiErrorMessage } from "@/lib/utils";
 import {
   CheckCircle2,
   FileText,
@@ -108,21 +110,20 @@ export function ShipmentPodActions({
 }: ShipmentPodActionsProps) {
   const { routeTo, tenantSlug } = useTenant();
   const { capabilities } = useUser();
-  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const { pending: downloadingInvoice, run: runInvoiceDownload } = useSingleFlight();
   const [measurementOpen, setMeasurementOpen] = useState(false);
   // Remounts the dialog per open, so every submission gets a fresh Idempotency-Key.
   const [measurementDialogKey, setMeasurementDialogKey] = useState(0);
 
-  const handleDownloadInvoice = async () => {
-    setDownloadingInvoice(true);
-    try {
-      await downloadShipmentInvoicePdf(shipment.id, shipment.tracking_id);
-      toast.success("GST Invoice PDF downloaded!");
-    } catch {
-      toast.error("Failed to generate GST Invoice PDF.");
-    } finally {
-      setDownloadingInvoice(false);
-    }
+  const handleDownloadInvoice = () => {
+    void runInvoiceDownload(async () => {
+      try {
+        await downloadShipmentInvoicePdf(shipment.id, shipment.tracking_id);
+        toast.success("GST Invoice PDF downloaded!");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to generate GST Invoice PDF."));
+      }
+    });
   };
 
   const handleShareTracking = () => {
@@ -132,8 +133,10 @@ export function ShipmentPodActions({
       typeof window !== "undefined"
         ? `${window.location.origin}${relativeUrl}`
         : relativeUrl;
-    navigator.clipboard.writeText(fullUrl);
-    toast.success("Public tracking link copied to clipboard!");
+    navigator.clipboard.writeText(fullUrl).then(
+      () => toast.success("Public tracking link copied to clipboard!"),
+      () => toast.error("Could not copy the tracking link to the clipboard.")
+    );
   };
 
   return (

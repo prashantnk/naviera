@@ -8,7 +8,7 @@ const createSignedUrl = vi.fn();
 vi.mock("@/lib/supabase", () => ({
   getSupabaseClient: () => ({ storage: { from: () => ({ upload, createSignedUrl }) } }),
 }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { toast } from "sonner";
 

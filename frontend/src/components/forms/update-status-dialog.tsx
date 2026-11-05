@@ -14,6 +14,7 @@ import * as z from "zod";
 
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/components/auth/auth-guard";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
     Dialog,
     DialogContent,
@@ -196,7 +197,7 @@ export function UpdateStatusDialog({
     onSuccess,
 }: UpdateStatusDialogProps) {
     const [open, setOpen] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { pending: isSubmitting, run: runSubmit } = useSingleFlight();
     const { capabilities } = useUser();
     const filteredStatusOptions = buildStatusSelectOptions(
         currentStatus,
@@ -229,8 +230,7 @@ export function UpdateStatusDialog({
         }
     }, [watchedStatus, form]);
 
-    const onSubmit = async (data: UpdateStatusFormValues) => {
-        setIsSubmitting(true);
+    const submitStatus = async (data: UpdateStatusFormValues) => {
         try {
             const isException = data.status === PickupStatus.EXCEPTION;
             const isFreightCharge =
@@ -284,10 +284,12 @@ export function UpdateStatusDialog({
                     "Failed to update status. Check OTP or transition rules."
                 )
             );
-        } finally {
-            setIsSubmitting(false);
         }
     };
+
+    // react-hook-form only flips isSubmitting after a re-render; the single-flight
+    // ref drops a second Enter / click that lands before it.
+    const onSubmit = (data: UpdateStatusFormValues) => runSubmit(() => submitStatus(data));
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -607,7 +609,7 @@ export function UpdateStatusDialog({
                             <Button type="submit" disabled={isSubmitting} data-testid="update-status.actions.submit">
                                 {isSubmitting ? (
                                     <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
                                     </>
                                 ) : (
                                     "Save Update"

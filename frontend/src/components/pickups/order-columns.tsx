@@ -37,7 +37,8 @@ import {
 import { downloadShipmentInvoicePdf, downloadShippingLabel } from "@/lib/api";
 import { FREIGHT_PAYMENT_MODE_OPTIONS } from "@/lib/form-options";
 import { B2B_REVERSE_BOOKING_ENABLED } from "@/lib/mvp-scope";
-import { cn, parseUtcDate, safeFormatDate } from "@/lib/utils";
+import { useSingleFlight } from "@/hooks/use-single-flight";
+import { cn, extractApiErrorMessage, parseUtcDate, safeFormatDate } from "@/lib/utils";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -53,8 +54,8 @@ import {
   Truck,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type MouseEvent } from "react";
+import { useProgressRouter } from "@/hooks/use-progress-router";
+import { type MouseEvent } from "react";
 import { toast } from "sonner";
 
 /** Delhivery transport labels: Air = EXPRESS, road/rail = SURFACE. */
@@ -173,10 +174,10 @@ interface OrderRowActionsProps {
 
 /** Status-aware row actions (Delhivery: Add to pickup / Print POD / Initiate return + ⋯). */
 export function OrderRowActions({ shipment, copy, permissions, compact }: OrderRowActionsProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const { routeTo, tenantSlug } = useTenant();
-  const [printingPod, setPrintingPod] = useState(false);
-  const [printingLabel, setPrintingLabel] = useState(false);
+  const { pending: printingPod, run: runPrintPod } = useSingleFlight();
+  const { pending: printingLabel, run: runPrintLabel } = useSingleFlight();
 
   const isReadyToShip = shipment.status === PickupStatus.OPEN;
   const isDelivered = shipment.status === PickupStatus.COMPLETED;
@@ -193,29 +194,25 @@ export function OrderRowActions({ shipment, copy, permissions, compact }: OrderR
   const showAddToPickup = permissions.canBook && isReadyToShip;
   const showReturn = permissions.canBook && isDelivered && isForward && initiateReturnHref !== null;
 
-  const handlePrintPod = async () => {
-    setPrintingPod(true);
-    try {
-      await downloadShipmentInvoicePdf(shipment.id, shipment.tracking_id);
-      toast.success("POD downloaded.");
-    } catch {
-      toast.error("Failed to download POD.");
-    } finally {
-      setPrintingPod(false);
-    }
-  };
+  const handlePrintPod = () =>
+    runPrintPod(async () => {
+      try {
+        await downloadShipmentInvoicePdf(shipment.id, shipment.tracking_id);
+        toast.success("POD downloaded.");
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to download POD."));
+      }
+    });
 
-  const handlePrintLabel = async () => {
-    setPrintingLabel(true);
-    try {
-      await downloadShippingLabel(tenantSlug, shipment.id, shipment.tracking_id || shipment.id);
-      toast.success("Shipping label downloaded.");
-    } catch {
-      toast.error("Failed to generate shipping label.");
-    } finally {
-      setPrintingLabel(false);
-    }
-  };
+  const handlePrintLabel = () =>
+    runPrintLabel(async () => {
+      try {
+        await downloadShippingLabel(tenantSlug, shipment.id, shipment.tracking_id || shipment.id);
+        toast.success("Shipping label downloaded.");
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to generate shipping label."));
+      }
+    });
 
   const buttonClass = cn(
     "text-xs font-semibold border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
@@ -270,9 +267,14 @@ export function OrderRowActions({ shipment, copy, permissions, compact }: OrderR
             variant="outline"
             size="icon"
             aria-label="More order actions"
+            aria-busy={printingLabel || printingPod}
             className="h-8 w-8 border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            {printingLabel || printingPod ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <MoreHorizontal className="h-4 w-4" />
+            )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">

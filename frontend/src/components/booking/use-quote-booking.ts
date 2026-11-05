@@ -100,6 +100,8 @@ export function useQuoteBooking({ onBooked, bookingFailedMessage }: UseQuoteBook
   const [priceChange, setPriceChange] = useState<PriceChangedDetail | null>(null);
   const keyRef = useRef<string | null>(null);
   const lastPayloadRef = useRef<BookingPayload | null>(null);
+  // Flips synchronously so a double click cannot send a second booking before re-render.
+  const sendingRef = useRef(false);
 
   const selectOption = useCallback((option: ServiceOption) => {
     keyRef.current = null;
@@ -125,6 +127,8 @@ export function useQuoteBooking({ onBooked, bookingFailedMessage }: UseQuoteBook
 
   const send = useCallback(
     async (payload: BookingPayload) => {
+      if (sendingRef.current) return;
+      sendingRef.current = true;
       keyRef.current ??= newBookingKey();
       lastPayloadRef.current = payload;
       setIsSubmitting(true);
@@ -151,6 +155,7 @@ export function useQuoteBooking({ onBooked, bookingFailedMessage }: UseQuoteBook
         }
         toast.error(extractApiErrorMessage(error, bookingFailedMessage));
       } finally {
+        sendingRef.current = false;
         setIsSubmitting(false);
       }
     },

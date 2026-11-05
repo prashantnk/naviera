@@ -6,13 +6,6 @@ from sqlalchemy import delete, desc, text
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.dependencies import (
-    cache_tenant,
-    cache_tenant_users,
-    cache_user,
-    get_cached_tenant_users,
-    invalidate_auth_cache,
-)
 from app.models.tenants import Tenant, TenantSettingsHistory, User
 
 DEFAULT_SUPABASE_INSTANCE_ID = "00000000-0000-0000-0000-000000000000"
@@ -53,26 +46,9 @@ class TenantRepository:
         """
         Retrieves all users for a specific tenant.
         """
-        cached = get_cached_tenant_users(tenant_id)
-        if cached is not None:
-            return cached
-        statement = select(
-            User,
-            func.count().over().label("_total_count"),
-        ).where(User.tenant_id == tenant_id)
-        raw_rows = (await self.session.exec(statement)).all()
-        if not raw_rows:
-            return cache_tenant_users(tenant_id, [])
-        first = raw_rows[0]
-        if isinstance(first, User):
-            return cache_tenant_users(tenant_id, list(raw_rows))  # type: ignore[arg-type]
-        total = int(first[1] or 0)
-        users: list[User] = []
-        for row in raw_rows:
-            user_obj: User = row[0]
-            object.__setattr__(user_obj, "_total_count", total)
-            users.append(user_obj)
-        return cache_tenant_users(tenant_id, users)
+        statement = select(User).where(User.tenant_id == tenant_id)
+        result = await self.session.exec(statement)
+        return list(result.all())
 
     async def get_user_by_supabase_id_and_tenant_id(
         self, *, supabase_user_id: str, tenant_id: uuid.UUID
@@ -108,10 +84,6 @@ class TenantRepository:
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
-        invalidate_auth_cache(
-            tenant_id=user.tenant_id, supabase_user_id=user.supabase_user_id
-        )
-        cache_user(user)
         return user
 
     async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
@@ -206,15 +178,12 @@ class TenantRepository:
         """Stages tenant changes without committing (caller owns the transaction)."""
         self.session.add(tenant)
         await self.session.flush()
-        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
         return tenant
 
     async def commit_and_refresh(self, tenant: Tenant) -> Tenant:
         """Commits the unit of work and reloads the tenant."""
         await self.session.commit()
         await self.session.refresh(tenant)
-        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
-        cache_tenant(tenant)
         return tenant
 
     async def get_auth_user_by_email(self, email: str) -> Optional[dict]:

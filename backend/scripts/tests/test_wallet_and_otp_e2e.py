@@ -580,7 +580,10 @@ async def test_wallet_and_otp_e2e_suite(db_session):
             headers=headers,
         )
         assert res_man.status_code == 201, res_man.text
-        manifest_id = res_man.json()["id"]
+        manifest_json = res_man.json()
+        manifest_id = manifest_json["id"]
+        manifest_otp = manifest_json["pickup_otp"]
+        assert manifest_otp is not None and len(manifest_otp) == 6 and manifest_otp.isdigit()
 
         # Download Manifest Run-Sheet PDF
         res_man_pdf = await client.get(
@@ -609,6 +612,7 @@ async def test_wallet_and_otp_e2e_suite(db_session):
         active_user_ref["user"] = user_a
         res_disp = await client.post(
             f"{settings.API_V1_STR}/manifests/{manifest_id}/dispatch",
+            json={"pickup_otp": manifest_otp},
             headers=headers,
         )
         assert res_disp.status_code == 200, res_disp.text

@@ -32,6 +32,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WalletRechargeDialog } from "@/components/wallet/wallet-header-pill";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { downloadWalletLedgerCsv, downloadWalletReceiptPdf } from "@/lib/api";
 import {
   buildQueryCacheKey,
@@ -163,18 +164,25 @@ export default function UnifiedWalletPage() {
   >(() => initialCachedLedger?.pendingItems ?? []);
   const [auditReport, setAuditReport] =
     useState<WalletIntegrityAuditResponse | null>(null);
-  const [runningAudit, setRunningAudit] = useState<boolean>(false);
+  const { pending: runningAudit, run: runAudit } = useSingleFlight();
   const [loading, setLoading] = useState<boolean>(
     () => initialCachedLedger === null
   );
   const [activeTab, setActiveTab] = useState<string>("spends");
   const [rechargeOpen, setRechargeOpen] = useState<boolean>(false);
-  const [settlingRemittance, setSettlingRemittance] = useState<boolean>(false);
-  const [downloadingCsv, setDownloadingCsv] = useState<boolean>(false);
-  const [downloadingTxnId, setDownloadingTxnId] = useState<string | null>(null);
-  const [processingApprovalId, setProcessingApprovalId] = useState<
-    string | null
-  >(null);
+  const { pending: settlingRemittance, run: runSettle } = useSingleFlight();
+  const { pending: downloadingCsv, run: runCsvExport } = useSingleFlight();
+  const {
+    pending: downloadingReceipt,
+    pendingKey: downloadingTxnId,
+    run: runReceiptDownload,
+  } = useSingleFlight();
+  /** One flight for approve / reject / submit-UTR; keys tell the rows which button spins. */
+  const {
+    pending: reviewPending,
+    pendingKey: reviewPendingKey,
+    run: runReview,
+  } = useSingleFlight();
   const [inlineUtrByTxnId, setInlineUtrByTxnId] = useState<
     Record<string, string>
   >({});
@@ -190,7 +198,7 @@ export default function UnifiedWalletPage() {
   const [offlineMethod, setOfflineMethod] = useState<string>("NEFT");
   const [offlineReference, setOfflineReference] = useState<string>("");
   const [offlineNotes, setOfflineNotes] = useState<string>("");
-  const [submittingOfflineCredit, setSubmittingOfflineCredit] = useState<boolean>(false);
+  const { pending: submittingOfflineCredit, run: runOfflineCredit } = useSingleFlight();
 
   const fetchWalletData = useCallback(async () => {
     if (!tenantSlug) return;
@@ -275,28 +283,27 @@ export default function UnifiedWalletPage() {
     }
   }, [tenantSlug, canManageFinance, canViewAllTxns, ledgerUserFilter, ledgerCacheKey]);
 
-  const handleRunIntegrityAudit = async () => {
+  const handleRunIntegrityAudit = () => {
     if (!tenantSlug) return;
-    setRunningAudit(true);
-    try {
-      const report = await WalletService.auditWalletIntegrity(tenantSlug);
-      setAuditReport(report);
-      if (report.passed) {
-        toast.success(
-          `Ledger & Lifecycle Integrity Verified (${report.wallets_checked} wallet(s), ${report.transactions_checked} txns, ${report.shipments_checked} shipments, ${report.invoices_checked} GST invoices — 0 discrepancies).`
-        );
-      } else {
+    void runAudit(async () => {
+      try {
+        const report = await WalletService.auditWalletIntegrity(tenantSlug);
+        setAuditReport(report);
+        if (report.passed) {
+          toast.success(
+            `Ledger & Lifecycle Integrity Verified (${report.wallets_checked} wallet(s), ${report.transactions_checked} txns, ${report.shipments_checked} shipments, ${report.invoices_checked} GST invoices — 0 discrepancies).`
+          );
+        } else {
+          toast.error(
+            `Integrity audit detected ${report.discrepancy_count} discrepancy(ies).`
+          );
+        }
+      } catch (err: unknown) {
         toast.error(
-          `Integrity audit detected ${report.discrepancy_count} discrepancy(ies).`
+          extractApiErrorMessage(err, "Failed to run wallet integrity audit.")
         );
       }
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to run wallet integrity audit.")
-      );
-    } finally {
-      setRunningAudit(false);
-    }
+    });
   };
 
   useEffect(() => {
@@ -310,53 +317,51 @@ export default function UnifiedWalletPage() {
     };
   }, [fetchWalletData]);
 
-  const handleApproveRecharge = async (txn: WalletTransactionRead) => {
-    setProcessingApprovalId(txn.id);
-    try {
-      const res = await WalletService.approvePendingRecharge(
-        txn.id,
-        tenantSlug
-      );
-      toast.success(
-        `Approved! ₹${txn.amount.toFixed(
-          2
-        )} merged into main wallet balance (New Balance: ₹${res.balance.toFixed(
-          2
-        )}).`
-      );
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      fetchWalletData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to approve pending recharge.")
-      );
-    } finally {
-      setProcessingApprovalId(null);
-    }
+  const handleApproveRecharge = (txn: WalletTransactionRead) => {
+    void runReview(async () => {
+      try {
+        const res = await WalletService.approvePendingRecharge(
+          txn.id,
+          tenantSlug
+        );
+        toast.success(
+          `Approved! ₹${txn.amount.toFixed(
+            2
+          )} merged into main wallet balance (New Balance: ₹${res.balance.toFixed(
+            2
+          )}).`
+        );
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        fetchWalletData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to approve pending recharge.")
+        );
+      }
+    }, txn.id);
   };
 
-  const handleRejectRecharge = async (txn: WalletTransactionRead) => {
-    setProcessingApprovalId(txn.id);
+  const handleRejectRecharge = (txn: WalletTransactionRead) => {
     const reason = (rejectReasonByTxnId[txn.id] || "").trim() || undefined;
-    try {
-      await WalletService.rejectPendingRecharge(txn.id, tenantSlug, {
-        reason,
-      });
-      toast.info(
-        `Rejected pending recharge request (${txn.receipt_number}).`
-      );
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      fetchWalletData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to reject pending recharge.")
-      );
-    } finally {
-      setProcessingApprovalId(null);
-    }
+    void runReview(async () => {
+      try {
+        await WalletService.rejectPendingRecharge(txn.id, tenantSlug, {
+          reason,
+        });
+        toast.info(
+          `Rejected pending recharge request (${txn.receipt_number}).`
+        );
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        fetchWalletData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to reject pending recharge.")
+        );
+      }
+    }, `reject:${txn.id}`);
   };
 
-  const handleRecordOfflineCredit = async () => {
+  const handleRecordOfflineCredit = () => {
     const email = offlineUserEmail.trim();
     const amountNum = Number(offlineAmount);
     const reference = offlineReference.trim();
@@ -372,111 +377,106 @@ export default function UnifiedWalletPage() {
       toast.error("Enter a bank reference / UTR / receipt number (min 3 characters).");
       return;
     }
-    setSubmittingOfflineCredit(true);
-    try {
-      const res = await WalletService.recordAdminOfflineWalletCredit(
-        {
-          user_email: email,
-          amount: amountNum,
-          payment_method: offlineMethod,
-          utr_number: reference,
-          notes: offlineNotes.trim() || null,
-        },
-        tenantSlug
-      );
-      toast.success(
-        `Credited ₹${res.transaction.amount.toFixed(2)} to ${res.transaction.user_email || email} (${res.transaction.receipt_number}).`
-      );
-      setOfflineCreditOpen(false);
-      setOfflineAmount("");
-      setOfflineReference("");
-      setOfflineNotes("");
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      fetchWalletData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to record offline wallet credit.")
-      );
-    } finally {
-      setSubmittingOfflineCredit(false);
-    }
+    void runOfflineCredit(async () => {
+      try {
+        const res = await WalletService.recordAdminOfflineWalletCredit(
+          {
+            user_email: email,
+            amount: amountNum,
+            payment_method: offlineMethod,
+            utr_number: reference,
+            notes: offlineNotes.trim() || null,
+          },
+          tenantSlug
+        );
+        toast.success(
+          `Credited ₹${res.transaction.amount.toFixed(2)} to ${res.transaction.user_email || email} (${res.transaction.receipt_number}).`
+        );
+        setOfflineCreditOpen(false);
+        setOfflineAmount("");
+        setOfflineReference("");
+        setOfflineNotes("");
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        fetchWalletData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to record offline wallet credit.")
+        );
+      }
+    });
   };
 
-  const handleSubmitInlineUtr = async (txn: WalletTransactionRead) => {
+  const handleSubmitInlineUtr = (txn: WalletTransactionRead) => {
     const trimmedUtr = (inlineUtrByTxnId[txn.id] || "").trim();
     if (!/^\d{12}$/.test(trimmedUtr)) {
       toast.error("Please enter a valid 12-digit UPI UTR reference number.");
       return;
     }
-    setProcessingApprovalId(txn.id);
-    try {
-      await WalletService.confirmUpiRecharge(txn.id, tenantSlug, {
-        utr_number: trimmedUtr,
-      });
-      toast.success(
-        `UTR submitted for ${txn.receipt_number}. Request is now awaiting admin approval.`
-      );
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      fetchWalletData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to submit UTR reference.")
-      );
-    } finally {
-      setProcessingApprovalId(null);
-    }
-  };
-
-  const handleSettleDeliveredRemittance = async () => {
-    setSettlingRemittance(true);
-    try {
-      const res = await WalletService.settleCodShipmentsToWallet(null, tenantSlug);
-      if (res.settled_count > 0) {
+    void runReview(async () => {
+      try {
+        await WalletService.confirmUpiRecharge(txn.id, tenantSlug, {
+          utr_number: trimmedUtr,
+        });
         toast.success(
-          `Settled ₹${res.settled_amount.toFixed(2)} across ${res.settled_count} delivered shipment(s) into your Wallet!`
+          `UTR submitted for ${txn.receipt_number}. Request is now awaiting admin approval.`
         );
-      } else {
-        toast.info("No pending delivered cash shipments available to settle.");
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        fetchWalletData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to submit UTR reference.")
+        );
       }
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      fetchWalletData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to settle cash to wallet.")
-      );
-    } finally {
-      setSettlingRemittance(false);
-    }
+    }, `utr:${txn.id}`);
   };
 
-  const handleExportCsv = async () => {
-    setDownloadingCsv(true);
-    try {
-      await downloadWalletLedgerCsv(
-        canViewAllTxns && ledgerUserFilter !== ALL_USERS_FILTER
-          ? ledgerUserFilter
-          : undefined
-      );
-      toast.success("Unified Wallet Ledger CSV downloaded!");
-    } catch {
-      toast.error("Failed to download wallet ledger CSV.");
-    } finally {
-      setDownloadingCsv(false);
-    }
+  const handleSettleDeliveredRemittance = () => {
+    void runSettle(async () => {
+      try {
+        const res = await WalletService.settleCodShipmentsToWallet(null, tenantSlug);
+        if (res.settled_count > 0) {
+          toast.success(
+            `Settled ₹${res.settled_amount.toFixed(2)} across ${res.settled_count} delivered shipment(s) into your Wallet!`
+          );
+        } else {
+          toast.info("No pending delivered cash shipments available to settle.");
+        }
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        fetchWalletData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to settle cash to wallet.")
+        );
+      }
+    });
   };
 
-  const handleDownloadReceipt = async (txn: WalletTransactionRead) => {
-    setDownloadingTxnId(txn.id);
-    try {
-      await downloadWalletReceiptPdf(txn.id, txn.receipt_number);
-      toast.success(`Receipt ${txn.receipt_number} downloaded!`);
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to generate receipt PDF.")
-      );
-    } finally {
-      setDownloadingTxnId(null);
-    }
+  const handleExportCsv = () => {
+    void runCsvExport(async () => {
+      try {
+        await downloadWalletLedgerCsv(
+          canViewAllTxns && ledgerUserFilter !== ALL_USERS_FILTER
+            ? ledgerUserFilter
+            : undefined
+        );
+        toast.success("Unified Wallet Ledger CSV downloaded!");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to download wallet ledger CSV."));
+      }
+    });
+  };
+
+  const handleDownloadReceipt = (txn: WalletTransactionRead) => {
+    void runReceiptDownload(async () => {
+      try {
+        await downloadWalletReceiptPdf(txn.id, txn.receipt_number);
+        toast.success(`Receipt ${txn.receipt_number} downloaded!`);
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to generate receipt PDF.")
+        );
+      }
+    }, txn.id);
   };
 
   const getTxnBadgeStyle = (txn: WalletTransactionRead) => {
@@ -844,11 +844,11 @@ export default function UnifiedWalletPage() {
                         <Button
                           type="button"
                           size="sm"
-                          disabled={processingApprovalId === txn.id}
+                          disabled={reviewPending}
                           onClick={() => setApproveTarget(txn)}
                           className="h-8 px-2.5 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700"
                         >
-                          {processingApprovalId === txn.id ? (
+                          {reviewPendingKey === txn.id ? (
                             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                           ) : (
                             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
@@ -859,11 +859,15 @@ export default function UnifiedWalletPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={processingApprovalId === txn.id}
+                          disabled={reviewPending}
                           onClick={() => handleRejectRecharge(txn)}
                           className="h-8 px-2.5 text-xs font-bold border-rose-200 text-rose-700 hover:bg-rose-50"
                         >
-                          <XCircle className="mr-1 h-3.5 w-3.5" />
+                          {reviewPendingKey === `reject:${txn.id}` ? (
+                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <XCircle className="mr-1 h-3.5 w-3.5" />
+                          )}
                           Reject
                         </Button>
                       </div>
@@ -1068,7 +1072,7 @@ export default function UnifiedWalletPage() {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              disabled={downloadingTxnId === txn.id}
+                              disabled={downloadingReceipt}
                               onClick={() => handleDownloadReceipt(txn)}
                               className="h-8 text-xs font-bold text-primary hover:bg-primary/10"
                             >
@@ -1235,7 +1239,7 @@ export default function UnifiedWalletPage() {
                                     type="button"
                                     size="sm"
                                     disabled={
-                                      processingApprovalId === txn.id ||
+                                      reviewPending ||
                                       !/^\d{12}$/.test(
                                         (inlineUtrByTxnId[txn.id] || "").trim()
                                       )
@@ -1244,6 +1248,9 @@ export default function UnifiedWalletPage() {
                                     className="h-7 px-2.5 text-[11px] font-bold bg-primary text-primary-foreground"
                                     data-testid={`wallet.txn.${txn.receipt_number}.submit-utr`}
                                   >
+                                    {reviewPendingKey === `utr:${txn.id}` && (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    )}
                                     Submit UTR
                                   </Button>
                                 </div>
@@ -1258,11 +1265,11 @@ export default function UnifiedWalletPage() {
                                   <Button
                                     type="button"
                                     size="sm"
-                                    disabled={processingApprovalId === txn.id}
+                                    disabled={reviewPending}
                                     onClick={() => setApproveTarget(txn)}
                                     className="h-7 px-2.5 text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-700"
                                   >
-                                    {processingApprovalId === txn.id ? (
+                                    {reviewPendingKey === txn.id ? (
                                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                                     ) : (
                                       <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -1273,10 +1280,13 @@ export default function UnifiedWalletPage() {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={processingApprovalId === txn.id}
+                                    disabled={reviewPending}
                                     onClick={() => handleRejectRecharge(txn)}
                                     className="h-7 px-2 text-[11px] font-bold border-rose-200 text-rose-700 hover:bg-rose-50"
                                   >
+                                    {reviewPendingKey === `reject:${txn.id}` && (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    )}
                                     Reject
                                   </Button>
                                 </div>
@@ -1294,7 +1304,7 @@ export default function UnifiedWalletPage() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                disabled={downloadingTxnId === txn.id}
+                                disabled={downloadingReceipt}
                                 onClick={() => handleDownloadReceipt(txn)}
                                 className="h-8 text-xs font-bold text-primary hover:bg-primary/10"
                               >
@@ -1349,11 +1359,11 @@ export default function UnifiedWalletPage() {
             <Button
               type="button"
               data-testid="wallet.approve-dialog.confirm"
-              disabled={approveTarget === null || processingApprovalId === approveTarget.id}
+              disabled={approveTarget === null || reviewPending}
               onClick={() => {
                 const target = approveTarget;
                 setApproveTarget(null);
-                if (target) void handleApproveRecharge(target);
+                if (target) handleApproveRecharge(target);
               }}
               className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
@@ -1488,7 +1498,7 @@ export default function UnifiedWalletPage() {
             <Button
               type="button"
               disabled={submittingOfflineCredit}
-              onClick={() => void handleRecordOfflineCredit()}
+              onClick={handleRecordOfflineCredit}
               className="bg-emerald-600 text-white hover:bg-emerald-700"
               data-testid="wallet.offline-credit.submit"
             >

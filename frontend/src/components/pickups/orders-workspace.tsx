@@ -66,7 +66,8 @@ import {
   getCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
-import { cn, parseUtcDate } from "@/lib/utils";
+import { useSingleFlight } from "@/hooks/use-single-flight";
+import { cn, extractApiErrorMessage, parseUtcDate } from "@/lib/utils";
 import { B2B_REVERSE_BOOKING_ENABLED } from "@/lib/mvp-scope";
 import { directionTabsFor } from "./order-direction";
 import { ServiceFlow } from "@/lib/workspace-flow";
@@ -81,6 +82,7 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
+  Loader2,
   MoreVertical,
   Plus,
   Search,
@@ -88,7 +90,7 @@ import {
   Truck,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -375,7 +377,7 @@ interface OrdersWorkspaceProps {
 }
 
 export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const { tenantSlug, routeTo } = useTenant();
   const { capabilities } = useUser();
   const copy = PAGE_COPY[flow];
@@ -412,6 +414,7 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [autoOpenPickupDialog, setAutoOpenPickupDialog] = useState(false);
+  const { pending: downloadingCsv, run: runDownloadCsv } = useSingleFlight();
   const pickupBarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -551,14 +554,15 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
     setAutoOpenPickupDialog(true);
   }, [visibleOpenIds]);
 
-  const handleDownloadCsv = async () => {
-    try {
-      await downloadShipmentsCsv(isB2B);
-      toast.success(copy.csvSuccess);
-    } catch {
-      toast.error("Failed to export orders CSV.");
-    }
-  };
+  const handleDownloadCsv = () =>
+    runDownloadCsv(async () => {
+      try {
+        await downloadShipmentsCsv(isB2B);
+        toast.success(copy.csvSuccess);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to export orders CSV."));
+      }
+    });
 
   const activeExtraFilters =
     (directionFilter !== ALL ? 1 : 0) +
@@ -589,10 +593,17 @@ export function OrdersWorkspace({ flow }: OrdersWorkspaceProps) {
             type="button"
             variant="outline"
             onClick={handleDownloadCsv}
+            disabled={downloadingCsv}
             className="h-10 border-slate-300 px-3 font-semibold"
           >
-            <Download className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Download CSV</span>
+            {downloadingCsv ? (
+              <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
+            ) : (
+              <Download className="h-4 w-4 sm:mr-2" />
+            )}
+            <span className="hidden sm:inline">
+              {downloadingCsv ? "Downloading…" : "Download CSV"}
+            </span>
           </Button>
           {canBook && (
             <DropdownMenu>

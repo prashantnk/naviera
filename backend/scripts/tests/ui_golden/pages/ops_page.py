@@ -4,7 +4,7 @@ Mobile `/ops` field-executive view, used at 390x844 (plan B5, E4 phone viewport)
 The rider opens a My Pickups card, types the actual pieces per LR and confirms.
 """
 
-from typing import Mapping
+from typing import Mapping, Optional
 
 from ..testids import OpsIds
 from ..ui_config import ELEMENT_TIMEOUT_MS, MONEY_WRITE_TIMEOUT_MS, PHONE_VIEWPORT
@@ -22,8 +22,13 @@ class OpsMobilePage(BasePage):
         actual = (size.get("width"), size.get("height"))
         assert actual == PHONE_VIEWPORT, f"/ops must run at {PHONE_VIEWPORT}, got {actual}"
 
-    async def confirm_pickup(self, pur_number: str, pieces_by_awb: Mapping[str, str]) -> None:
-        """Types actual pieces for each AWB on the PUR card, then confirms."""
+    async def confirm_pickup(
+        self,
+        pur_number: str,
+        pieces_by_awb: Mapping[str, str],
+        pickup_otp: Optional[str] = None,
+    ) -> None:
+        """Types actual pieces for each AWB on the PUR card, enters the seller's 6-digit pickup OTP, then confirms."""
         await self.assert_phone_viewport()
         await self.expect_visible(OpsIds.pickup_card(pur_number))
         for awb, pieces in pieces_by_awb.items():
@@ -31,6 +36,8 @@ class OpsMobilePage(BasePage):
         await self.click(OpsIds.confirm(pur_number))
         modal_submit = self.by_testid(OpsIds.CONFIRM_SUBMIT)
         await modal_submit.wait_for(state="visible", timeout=ELEMENT_TIMEOUT_MS)
+        if pickup_otp:
+            await self.fill(OpsIds.CONFIRM_OTP_INPUT, pickup_otp)
         await self.click_locator(modal_submit)
         await self.by_testid(OpsIds.confirm(pur_number)).wait_for(
             state="hidden", timeout=MONEY_WRITE_TIMEOUT_MS

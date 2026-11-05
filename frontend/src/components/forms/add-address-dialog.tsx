@@ -1,7 +1,7 @@
 // src/components/forms/add-address-dialog.tsx
 "use client";
 
-import { AddressesService, AddressCategory, AddressScope, ApiError } from "@/api_client";
+import { AddressesService, AddressCategory, AddressScope } from "@/api_client";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/components/auth/auth-guard";
 import {
@@ -21,6 +21,8 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { invalidateAddressesCache } from "@/hooks/use-addresses";
 import { usePincodeLocator } from "@/hooks/use-pincode-locator";
+import { useSingleFlight } from "@/hooks/use-single-flight";
+import { extractApiErrorMessage } from "@/lib/utils";
 import * as z from "zod";
 
 // The Upgraded Enterprise Schema
@@ -94,7 +96,7 @@ export function AddAddressDialog({
     const open = isControlled ? controlledOpen : localOpen;
     const setOpen = isControlled ? controlledOnOpenChange! : setLocalOpen;
 
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { pending: isSubmitting, run } = useSingleFlight();
     const { isAdmin } = useUser();
 
     const form = useForm<AddressFormValues>({
@@ -153,60 +155,42 @@ export function AddAddressDialog({
         stateField: "state",
     });
 
-    const onSubmit = async (data: AddressFormValues) => {
-        setIsSubmitting(true);
-        try {
-            // Sanitize empty strings to undefined for strict backend validation
-            const payload = {
-                ...data,
-                email: data.email === "" ? undefined : data.email,
-                company_name: data.company_name === "" ? undefined : data.company_name,
-                alternate_phone: data.alternate_phone === "" ? undefined : data.alternate_phone,
-                address_line2: data.address_line2 === "" ? undefined : data.address_line2,
-                landmark: data.landmark === "" ? undefined : data.landmark,
-                gstin: data.gstin === "" ? undefined : data.gstin,
-                // Force PRIVATE if user is not an Admin/Owner
-                scope: isAdmin ? data.scope : AddressScope.PRIVATE,
-            };
+    const onSubmit = (data: AddressFormValues) =>
+        run(async () => {
+            try {
+                // Sanitize empty strings to undefined for strict backend validation
+                const payload = {
+                    ...data,
+                    email: data.email === "" ? undefined : data.email,
+                    company_name: data.company_name === "" ? undefined : data.company_name,
+                    alternate_phone: data.alternate_phone === "" ? undefined : data.alternate_phone,
+                    address_line2: data.address_line2 === "" ? undefined : data.address_line2,
+                    landmark: data.landmark === "" ? undefined : data.landmark,
+                    gstin: data.gstin === "" ? undefined : data.gstin,
+                    // Force PRIVATE if user is not an Admin/Owner
+                    scope: isAdmin ? data.scope : AddressScope.PRIVATE,
+                };
 
-            if (onSaveTransient) {
-                onSaveTransient(payload);
+                if (onSaveTransient) {
+                    onSaveTransient(payload);
+                    setOpen(false);
+                    form.reset();
+                    return;
+                }
+
+                await AddressesService.createSavedAddress(payload);
+                invalidateAddressesCache();
+                toast.success("Address saved successfully!");
                 setOpen(false);
                 form.reset();
-                return;
+                onSuccess?.();
+            } catch (error: unknown) {
+                console.error("Failed to save address:", error);
+                toast.error(
+                    extractApiErrorMessage(error, "Failed to save address. Please check your inputs.")
+                );
             }
-
-            await AddressesService.createSavedAddress(payload);
-            invalidateAddressesCache();
-            toast.success("Address saved successfully!");
-            setOpen(false);
-            form.reset();
-            onSuccess?.();
-        } catch (error: unknown) {
-            console.error("Failed to save address:", error);
-
-            let errorMessage = "Failed to save address. Please check your inputs.";
-            const apiError = error as ApiError;
-            if (apiError && typeof apiError === "object" && "body" in apiError) {
-                const body = apiError.body as { detail?: unknown } | undefined;
-                if (body && body.detail) {
-                    if (Array.isArray(body.detail)) {
-                        errorMessage = body.detail
-                            .map((err: { loc?: unknown[]; msg?: string }) => {
-                                const lastLoc = err.loc?.at(-1);
-                                return `${lastLoc ? String(lastLoc) : "field"}: ${err.msg || "invalid value"}`;
-                              })
-                            .join(" | ");
-                    } else if (typeof body.detail === "string") {
-                        errorMessage = body.detail;
-                    }
-                }
-            }
-            toast.error(errorMessage);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+        });
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>

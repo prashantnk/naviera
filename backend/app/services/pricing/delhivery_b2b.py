@@ -4,8 +4,9 @@ option for one LR (contract: llm_resources/.agents/pricing/delhivery_b2b_api.md)
 
 - Request: `POST /freight/estimate` with the boxes (whole cm, identical sizes grouped),
   the total dead weight in grams, both pins, `payment_mode=prepaid` and `freight_mode=fop`
-  (B2B COD and Freight-on-Delivery are off at launch), the declared invoice value and
-  `rov_insurance` = carrier's risk.
+  (carrier freight is always estimated as prepaid so Delhivery's COD surcharge is never
+  double-counted; Logismart adds its own COD fee on `sell_price`, while Freight-on-Delivery
+  is off at launch), the declared invoice value and `rov_insurance` = carrier's risk.
 - Freshness and fallback follow the B2C provider (DESIGN.md v4 Q6/Q7): "Get rates" reuses a
   stored answer ≤ 30 min; Book asks Delhivery first; when Delhivery is down a stored answer
   ≤ 24 h is used (flagged CACHED); otherwise "price unavailable" — never an invented price.
@@ -99,6 +100,7 @@ UNAVAILABLE_REASON = "Delhivery B2B Cargo's price is unavailable right now. Plea
 NO_BOXES_REASON = "Add the boxes with their size and weight to get a Delhivery B2B Cargo price."
 REFUSED_REASON = "Delhivery B2B Cargo can't serve this route: {detail}"
 PIN_NOT_SERVED = "Delhivery B2B Cargo does not serve PIN {pin}."
+COD_NOT_SERVED = "Cash on Delivery is not available for PIN {pin} on Delhivery B2B Cargo."
 
 
 B2C_SURFACE_MODE = "S"
@@ -192,12 +194,23 @@ class B2CFallbackDelhiveryB2BApi:
             },
         }
 
-    async def pincode_serviceable(self, pincode: str, weight_g: int) -> bool:
-        """Checks pincode serviceability via the B2C pincode API (non-embargoed, prepaid/pickup active)."""
+    async def pincode_serviceable(
+        self, pincode: str, weight_g: int, *, is_cod: bool = False, is_origin: bool = False
+    ) -> bool:
+        """
+        Checks pincode serviceability via the B2C pincode API:
+        - origin (`is_origin=True`): requires `pickup == 'Y'`
+        - destination with COD (`is_cod=True`): requires `cod == 'Y'`
+        - destination Prepaid (`is_cod=False`): requires `pre_paid == 'Y'`
+        """
         record = await self._b2c.pincode(pincode)
         if record is None or is_embargoed(record):
             return False
-        return bool(flag(record, "pre_paid") or flag(record, "pickup"))
+        if is_origin:
+            return bool(flag(record, "pickup"))
+        if is_cod:
+            return bool(flag(record, "cod"))
+        return bool(flag(record, "pre_paid"))
 
     async def tat_days(self, origin_pin: str, destination_pin: str) -> Optional[int]:
         """Surface (`mot=S`) expected transit days from the B2C TAT API."""
@@ -457,7 +470,7 @@ class DelhiveryB2BProvider:
             spec: The LR.
             freshness: QUOTE (rate cards) or BOOK (ask Delhivery first).
             include_rto: Also price the return lane (booking).
-            is_cod: Unused (COD is refused before the provider for B2B).
+            is_cod: True when the customer wants Cash on Delivery (checks destination COD serviceability).
 
         Returns:
             A serviceable quote, or an unavailable one with a plain-English reason.
@@ -466,7 +479,7 @@ class DelhiveryB2BProvider:
             return CarrierQuote.unavailable(option, QuoteUnavailableCode.PRICE_UNAVAILABLE, NOT_CONNECTED_REASON)
         if not spec.packages:
             return CarrierQuote.unavailable(option, QuoteUnavailableCode.NOT_SERVICEABLE, NO_BOXES_REASON)
-        refusal = await self._serviceability_refusal(option, spec)
+        refusal = await self._serviceability_refusal(option, spec, is_cod=is_cod)
         if refusal is not None:
             return refusal
         body = estimate_body(spec)
@@ -489,7 +502,7 @@ class DelhiveryB2BProvider:
             serviceable=True,
             forward=forward,
             rto=rto,
-            cod_supported=False,
+            cod_supported=True,
             snapshot={"request": body},
         )
 
@@ -533,16 +546,50 @@ class DelhiveryB2BProvider:
         except (DelhiveryUnavailableError, DelhiveryRefusedError):
             return None
 
-    async def _serviceability_refusal(self, option: ServiceOption, spec: ParcelSpec) -> Optional[CarrierQuote]:
-        """An unavailable quote when Delhivery B2B does not serve a pin; lookup failures never block."""
+    async def _serviceability_refusal(
+        self, option: ServiceOption, spec: ParcelSpec, *, is_cod: bool = False
+    ) -> Optional[CarrierQuote]:
+        """
+        An unavailable quote when Delhivery B2B does not serve the origin/destination PIN or
+        does not offer COD at the destination PIN; lookup failures never block.
+        """
         grams = weight_grams(spec.packages)
-        for pin in (spec.pickup_pincode, spec.delivery_pincode):
-            try:
-                served = await self.api.pincode_serviceable(pin, grams)  # type: ignore[union-attr]
-            except (DelhiveryUnavailableError, DelhiveryRefusedError):
-                return None  # the estimate decides
-            if not served:
+        try:
+            origin_served = await self.api.pincode_serviceable(  # type: ignore[union-attr]
+                spec.pickup_pincode, grams, is_cod=False, is_origin=True
+            )
+            if not origin_served:
                 return CarrierQuote.unavailable(
-                    option, QuoteUnavailableCode.NOT_SERVICEABLE, PIN_NOT_SERVED.format(pin=pin)
+                    option,
+                    QuoteUnavailableCode.NOT_SERVICEABLE,
+                    PIN_NOT_SERVED.format(pin=spec.pickup_pincode),
                 )
+            dest_prepaid_served = await self.api.pincode_serviceable(  # type: ignore[union-attr]
+                spec.delivery_pincode, grams, is_cod=False, is_origin=False
+            )
+            if not is_cod:
+                if not dest_prepaid_served:
+                    return CarrierQuote.unavailable(
+                        option,
+                        QuoteUnavailableCode.NOT_SERVICEABLE,
+                        PIN_NOT_SERVED.format(pin=spec.delivery_pincode),
+                    )
+                return None
+            dest_cod_served = await self.api.pincode_serviceable(  # type: ignore[union-attr]
+                spec.delivery_pincode, grams, is_cod=True, is_origin=False
+            )
+            if not dest_cod_served:
+                if not dest_prepaid_served:
+                    return CarrierQuote.unavailable(
+                        option,
+                        QuoteUnavailableCode.NOT_SERVICEABLE,
+                        PIN_NOT_SERVED.format(pin=spec.delivery_pincode),
+                    )
+                return CarrierQuote.unavailable(
+                    option,
+                    QuoteUnavailableCode.COD_NOT_AVAILABLE,
+                    COD_NOT_SERVED.format(pin=spec.delivery_pincode),
+                )
+        except (DelhiveryUnavailableError, DelhiveryRefusedError):
+            return None  # the estimate decides
         return None

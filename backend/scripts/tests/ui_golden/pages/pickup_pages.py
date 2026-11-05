@@ -5,7 +5,7 @@ B2C `/pickup-requests`, B2B `/b2b/pickup-requests`.
 """
 
 from dataclasses import dataclass
-from typing import List, Mapping, Sequence
+from typing import List, Mapping, Optional, Sequence
 
 from ..testids import PickupDispatchIds, PickupRequestsIds
 from ..ui_config import MONEY_WRITE_TIMEOUT_MS
@@ -43,7 +43,7 @@ class PickupRequestsPage(BasePage):
 
 
 class PickupDispatchDialog(BasePage):
-    """Checklist of LRs with a picked checkbox and an actual-pieces input per row."""
+    """Checklist of LRs with a picked checkbox, actual-pieces input, and 6-digit pickup handover OTP."""
 
     async def set_lines(self, lines: Sequence[PickedLine]) -> None:
         """Ticks/unticks each AWB and types actual pieces where given."""
@@ -54,15 +54,19 @@ class PickupDispatchDialog(BasePage):
             if line.picked and line.actual_pieces:
                 await self.fill(PickupDispatchIds.actual_pieces(line.awb), line.actual_pieces)
 
-    async def confirm(self) -> None:
-        """Confirms the pickup and waits for the dialog to close."""
+    async def confirm(self, pickup_otp: Optional[str] = None) -> None:
+        """Enters the 6-digit pickup handover OTP (if given), confirms the pickup, and waits for close."""
+        if pickup_otp:
+            await self.fill(PickupDispatchIds.OTP_INPUT, pickup_otp)
         await self.click(PickupDispatchIds.CONFIRM)
         await self.by_testid(PickupDispatchIds.CONFIRM).wait_for(state="hidden", timeout=MONEY_WRITE_TIMEOUT_MS)
 
-    async def dispatch(self, lines: Sequence[PickedLine]) -> None:
+    async def dispatch(
+        self, lines: Sequence[PickedLine], pickup_otp: Optional[str] = None
+    ) -> None:
         """`set_lines` + `confirm` in one call."""
         await self.set_lines(lines)
-        await self.confirm()
+        await self.confirm(pickup_otp=pickup_otp)
 
 
 def lines_from_pieces(pieces_by_awb: Mapping[str, str]) -> List[PickedLine]:

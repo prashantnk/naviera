@@ -51,7 +51,7 @@ import { B2BForwardShipmentFormValues, MAX_PO_NUMBERS } from "@/lib/validations/
 import { useShipmentValuation } from "@/components/booking/use-shipment-valuation";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { toIstDateTimeLocalValue, toIstIsoString } from "@/lib/utils";
-import { FileText, Trash2, ClipboardList, Truck, Warehouse, ArrowUpRight, ArrowDownLeft, Boxes, Banknote, ShieldCheck, ShieldAlert, Plus, Calendar, TriangleAlert } from "lucide-react";
+import { FileText, Trash2, ClipboardList, Truck, Warehouse, ArrowUpRight, ArrowDownLeft, Boxes, Banknote, ShieldCheck, ShieldAlert, Plus, Calendar, TriangleAlert, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 /** Legacy label lookup (toasts and existing importers). */
@@ -64,6 +64,8 @@ const DOC_TYPE_SELECT_OPTIONS = toOptions(DOCUMENT_TYPE_OPTIONS);
 interface B2BForwardFormStepProps {
   control: Control<B2BForwardShipmentFormValues>;
   savedAddresses: AddressRead[];
+  addShippingToCod?: boolean;
+  setAddShippingToCod?: (val: boolean) => void;
   docFields: FieldArrayWithId<B2BForwardShipmentFormValues, "documents">[];
   removeDoc: (index: number) => void;
   isUploading: boolean;
@@ -76,6 +78,8 @@ interface B2BForwardFormStepProps {
 export function B2BForwardFormStep({
   control,
   savedAddresses,
+  addShippingToCod = false,
+  setAddShippingToCod,
   docFields,
   removeDoc,
   isUploading,
@@ -90,6 +94,7 @@ export function B2BForwardFormStep({
   // Set by the booking schema when no GST invoice number was entered (create only).
   const invoiceNumbersError = formState.errors.payment_details?.invoice_numbers?.message;
 
+  const watchedIsCod = useWatch({ control, name: "payment_details.is_cod" });
   // D-06: the cargo total and the e-way bill rule come from the backend valuation.
   const watchedShipmentValue = useWatch({ control, name: "payment_details.shipment_value" });
   const watchedShipmentTaxValue = useWatch({ control, name: "payment_details.shipment_tax_value" });
@@ -473,15 +478,106 @@ export function B2BForwardFormStep({
               )}
             />
 
-            {/* Logismart Prime has no Cash on Delivery at launch (pricing decision Q9). */}
-            <div
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2 px-3 min-h-9 self-end mt-6 text-xs text-slate-600"
-              data-testid="booking.payment.cod-unavailable"
-            >
-              <Banknote className="h-4 w-4 text-slate-400 shrink-0" />
-              Cash on Delivery isn&apos;t available for B2B cargo yet. LRs are billed to your wallet.
-            </div>
+            {/* Cash on Delivery (supported on Delhivery B2B Cargo; Logismart Prime is Prepaid-only). */}
+            <FormField
+              control={control}
+              name="payment_details.is_cod"
+              render={({ field }) => (
+                <FormItem className="flex flex-col space-y-2 rounded-lg border border-slate-200 p-2 px-3 bg-slate-50/40 justify-center min-h-9 self-end mt-6">
+                  <div className="flex items-center space-x-2">
+                    <FormControl>
+                      <input
+                        data-testid="booking.payment.cod-toggle"
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={(e) => {
+                          field.onChange(e.target.checked);
+                          if (!e.target.checked) {
+                            setAddShippingToCod?.(false);
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary accent-primary cursor-pointer"
+                      />
+                    </FormControl>
+                    <FormLabel className="text-xs font-bold text-slate-900 cursor-pointer flex items-center gap-1.5 m-0">
+                      <Banknote className="h-4 w-4 text-emerald-600" />
+                      Cash on Delivery (COD)
+                    </FormLabel>
+                  </div>
+                  <p className="text-[10px] text-slate-500 pl-6">
+                    Available on Delhivery B2B Cargo (Logismart Prime is Prepaid-only).
+                  </p>
+                </FormItem>
+              )}
+            />
           </div>
+
+          {watchedIsCod && (
+            <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="bg-emerald-50/50 border border-emerald-200/80 p-4 rounded-xl space-y-4">
+                <FormField
+                  control={control}
+                  name="payment_details.cod_amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
+                        COD Collection Amount (Goods Value)
+                        <RequiredMark />
+                      </FormLabel>
+                      <FormControl>
+                        <InputAdornment prefix="₹">
+                          <Input
+                            data-testid="booking.payment.cod-amount"
+                            type="number"
+                            step="any"
+                            min={1}
+                            placeholder="0.00"
+                            className="h-9 bg-white border-emerald-300 font-bold text-emerald-950 focus-visible:ring-emerald-500"
+                            {...field}
+                            value={field.value || ""}
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value === ""
+                                  ? 0
+                                  : parseFloat(e.target.value),
+                              )
+                            }
+                          />
+                        </InputAdornment>
+                      </FormControl>
+                      <FormDescription className="text-[11px] text-emerald-700 font-medium">
+                        Amount to collect at the door for the goods (cannot exceed the declared cargo total).
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {setAddShippingToCod && (
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-start space-x-2.5">
+                    <input
+                      type="checkbox"
+                      id="b2bAddShippingToCodToggle"
+                      checked={addShippingToCod}
+                      onChange={(e) => setAddShippingToCod(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-600 accent-emerald-600 cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <label
+                        htmlFor="b2bAddShippingToCodToggle"
+                        className="text-xs font-bold text-emerald-900 cursor-pointer block"
+                      >
+                        Also collect shipping charges from receiver
+                      </label>
+                      <p className="text-[10px] text-emerald-700">
+                        Adds the LR freight &amp; GST to the door collectible amount.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Logismart Prime Delivery Mode: Door Delivery vs Godown / Hub Self-Pickup */}
           <FormField
@@ -761,6 +857,15 @@ export function B2BForwardFormStep({
                     handleFileUpload(e, type);
                   }}
                 />
+                {isUploading && (
+                  <span
+                    role="status"
+                    className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    Uploading…
+                  </span>
+                )}
               </div>
             </div>
           </div>

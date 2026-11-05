@@ -9,6 +9,7 @@ import {
   SupportTicketsService,
 } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
+import { useTenant } from "@/components/providers/tenant-provider";
 import { LearnMore } from "@/components/finance/learn-more";
 import {
   CLAIMS_FINANCE_CHIP,
@@ -34,6 +35,7 @@ import {
   getCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage, formatIstDateTime } from "@/lib/utils";
 import {
   CheckCircle2,
@@ -163,12 +165,14 @@ function _renderCategoryGroupPill(group: string | undefined) {
 
 export default function SupportTicketsPage() {
   const { capabilities, user: currentUser } = useUser();
+  const { tenantSlug } = useTenant();
   const canWrite = capabilities.canWrite;
 
   const [activeTab, setActiveTab] = useState<TicketStatusTab>("OPEN");
   const [searchQuery, setSearchQuery] = useState("");
-  const cacheScope = currentUser?.id || (capabilities.isStaff ? "staff" : "customer");
-  const cacheKey = buildQueryCacheKey("workspace", cacheScope, "support-tickets", {
+  // The signed-in user is already part of every key (see `buildQueryCacheKey`).
+  const cacheScope = capabilities.isStaff ? "staff" : "customer";
+  const cacheKey = buildQueryCacheKey(tenantSlug, cacheScope, "support-tickets", {
     tab: activeTab,
     search: searchQuery.trim(),
   });
@@ -185,7 +189,7 @@ export default function SupportTicketsPage() {
   const [trackingIdInput, setTrackingIdInput] = useState("");
   const [subjectInput, setSubjectInput] = useState("");
   const [descriptionInput, setDescriptionInput] = useState("");
-  const [submittingTicket, setSubmittingTicket] = useState(false);
+  const { pending: submittingTicket, run: runCreateTicket } = useSingleFlight();
   const awbRequired = selectedChip
     ? ticketNeedsAwb(selectedChip.group, selectedChip.label)
     : false;
@@ -214,8 +218,12 @@ export default function SupportTicketsPage() {
   const [ticketDetail, setTicketDetail] = useState<SupportTicketDetailRead | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyText, setReplyText] = useState("");
-  const [sendingReply, setSendingReply] = useState(false);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const { pending: sendingReply, run: runSendReply } = useSingleFlight();
+  const {
+    pending: updatingStatus,
+    pendingKey: updatingStatusTo,
+    run: runUpdateStatus,
+  } = useSingleFlight();
 
   const fetchTickets = useCallback(async () => {
     const cached = getCachedQuery<SupportTicketRead[]>(cacheKey);
@@ -302,59 +310,56 @@ export default function SupportTicketsPage() {
       tracking_id: trackingIdInput.trim() || null,
     };
 
-    setSubmittingTicket(true);
-    try {
-      const created = await SupportTicketsService.createSupportTicket(payload);
-      toast.success(`Support ticket ${created.ticket_number} created`);
-      setIsRaiseOpen(false);
-      resetRaiseTicketForm();
-      if (activeTab !== "OPEN") {
-        setActiveTab("OPEN");
-      } else {
-        fetchTickets();
+    await runCreateTicket(async () => {
+      try {
+        const created = await SupportTicketsService.createSupportTicket(payload);
+        toast.success(`Support ticket ${created.ticket_number} created`);
+        setIsRaiseOpen(false);
+        resetRaiseTicketForm();
+        if (activeTab !== "OPEN") {
+          setActiveTab("OPEN");
+        } else {
+          fetchTickets();
+        }
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Failed to raise support ticket"));
       }
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Failed to raise support ticket"));
-    } finally {
-      setSubmittingTicket(false);
-    }
+    });
   };
 
   const handleSendReply = async () => {
     if (!activeTicketId || !replyText.trim()) return;
-    setSendingReply(true);
-    try {
-      const updated = await SupportTicketsService.addSupportTicketMessage(
-        activeTicketId,
-        { message: replyText.trim() }
-      );
-      setTicketDetail(updated);
-      setReplyText("");
-      toast.success("Reply posted to ticket");
-      fetchTickets();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Failed to post reply"));
-    } finally {
-      setSendingReply(false);
-    }
+    await runSendReply(async () => {
+      try {
+        const updated = await SupportTicketsService.addSupportTicketMessage(
+          activeTicketId,
+          { message: replyText.trim() }
+        );
+        setTicketDetail(updated);
+        setReplyText("");
+        toast.success("Reply posted to ticket");
+        fetchTickets();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Failed to post reply"));
+      }
+    });
   };
 
   const handleUpdateTicketStatus = async (nextStatus: TicketStatusTab) => {
     if (!activeTicketId) return;
-    setUpdatingStatus(true);
-    try {
-      const updated = await SupportTicketsService.updateSupportTicketStatus(
-        activeTicketId,
-        { status: nextStatus }
-      );
-      setTicketDetail(updated);
-      toast.success(`Ticket marked as ${nextStatus}`);
-      fetchTickets();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Failed to update ticket status"));
-    } finally {
-      setUpdatingStatus(false);
-    }
+    await runUpdateStatus(async () => {
+      try {
+        const updated = await SupportTicketsService.updateSupportTicketStatus(
+          activeTicketId,
+          { status: nextStatus }
+        );
+        setTicketDetail(updated);
+        toast.success(`Ticket marked as ${nextStatus}`);
+        fetchTickets();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Failed to update ticket status"));
+      }
+    }, nextStatus);
   };
 
   const currentTimestampLabel = useMemo(() => {
@@ -826,7 +831,11 @@ export default function SupportTicketsPage() {
                       onClick={() => handleUpdateTicketStatus("RESOLVED")}
                       className="h-7 text-xs border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 gap-1"
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {updatingStatusTo === "RESOLVED" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
                       Mark Resolved
                     </Button>
                   )}
@@ -839,7 +848,11 @@ export default function SupportTicketsPage() {
                       onClick={() => handleUpdateTicketStatus("CLOSED")}
                       className="h-7 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-100 gap-1"
                     >
-                      <XCircle className="h-3.5 w-3.5" />
+                      {updatingStatusTo === "CLOSED" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5" />
+                      )}
                       Close Ticket
                     </Button>
                   )}

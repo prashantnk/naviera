@@ -59,6 +59,7 @@ import {
   setCachedQuery,
 } from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { ServiceFlow } from "@/lib/workspace-flow";
 import { format, parseISO } from "date-fns";
 import {
@@ -118,18 +119,21 @@ export default function B2BShipmentDetailsPage() {
   const [loading, setLoading] = useState(
     () => !hasCachedQuery(detailCacheKey)
   );
-  const [isPrinting, setIsPrinting] = useState(false);
+  // Keyed by label format so only the clicked print button spins.
+  const { pending: isPrinting, pendingKey: printingFormat, run: runPrint } = useSingleFlight();
+  // Keyed by document id so only the clicked "View" button spins.
+  const { pending: isOpeningDoc, pendingKey: openingDocId, run: runOpenDoc } = useSingleFlight();
   // Bumped after every reload so the charges history refetches with the shipment.
   const [chargesRefreshKey, setChargesRefreshKey] = useState(0);
 
   // NDR Exception Resolution States
-  const [uploading, setUploading] = useState(false);
+  const { pending: uploading, run: runUpload } = useSingleFlight();
   const [uploadDocumentType, setUploadDocumentType] = useState<DocumentType>(DocumentType.OTHER);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
-  const [scheduling, setScheduling] = useState(false);
+  const { pending: scheduling, run: runSchedule } = useSingleFlight();
 
-  const [isCancelling, setIsCancelling] = useState(false);
+  const { pending: isCancelling, run: runCancel } = useSingleFlight();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const isPostPickupCancel = shipment?.status === PickupStatus.IN_TRANSIT || shipment?.status === PickupStatus.OUT_FOR_DELIVERY;
   const canCancelPostPickup = !capabilities.isStaff || capabilities.canManageTeam;
@@ -140,20 +144,19 @@ export default function B2BShipmentDetailsPage() {
     { enabled: showCancelDialog && isPostPickupCancel && canCancelPostPickup }
   );
 
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = () => {
     if (!shipment) return;
-    setIsCancelling(true);
-    try {
-      await ShipmentsService.cancelShipment(shipment.id);
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      toast.success(isPostPickupCancel ? "Shipment RTO initiated." : "Order cancelled successfully!");
-      setShowCancelDialog(false);
-      fetchDetails();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to cancel order."));
-    } finally {
-      setIsCancelling(false);
-    }
+    void runCancel(async () => {
+      try {
+        await ShipmentsService.cancelShipment(shipment.id);
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        toast.success(isPostPickupCancel ? "Shipment RTO initiated." : "Order cancelled successfully!");
+        setShowCancelDialog(false);
+        fetchDetails();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to cancel order."));
+      }
+    });
   };
 
   const fetchDetails = useCallback(async () => {
@@ -199,46 +202,47 @@ export default function B2BShipmentDetailsPage() {
     toast.success("Tracking ID copied to clipboard!");
   };
 
-  const handlePrintLabel = async (labelFormat: "a4" | "thermal_4x2" = "a4") => {
-    setIsPrinting(true);
-    try {
-      await downloadShippingLabel(
-        tenantSlug,
-        shipmentId,
-        shipment?.tracking_id || shipmentId,
-        labelFormat
-      );
-      toast.success(
-        labelFormat === "thermal_4x2"
-          ? "4x2 Thermal label PDF downloaded!"
-          : "Consolidated shipping label PDF downloaded!"
-      );
-    } catch (error) {
-      console.error("Print error:", error);
-      toast.error("Failed to generate B2B shipping label.");
-    } finally {
-      setIsPrinting(false);
-    }
+  const handlePrintLabel = (labelFormat: "a4" | "thermal_4x2" = "a4") => {
+    void runPrint(async () => {
+      try {
+        await downloadShippingLabel(
+          tenantSlug,
+          shipmentId,
+          shipment?.tracking_id || shipmentId,
+          labelFormat
+        );
+        toast.success(
+          labelFormat === "thermal_4x2"
+            ? "4x2 Thermal label PDF downloaded!"
+            : "Consolidated shipping label PDF downloaded!"
+        );
+      } catch (error) {
+        console.error("Print error:", error);
+        toast.error(extractApiErrorMessage(error, "Failed to generate B2B shipping label."));
+      }
+    }, labelFormat);
   };
 
   // Safe Document Download Helper (D-18: stored bucket keys and URLs both open via a signed URL)
-  const handleSecureDownload = async (filePath: string) => {
+  const handleSecureDownload = (docId: string, filePath: string) => {
     if (!(filePath || "").trim()) {
       toast.error("Document link is missing.");
       return;
     }
-    try {
-      if (!(await openDocument(tenantSlug, filePath))) {
-        toast.error("You do not have permission to view this document.");
+    void runOpenDoc(async () => {
+      try {
+        if (!(await openDocument(tenantSlug, filePath))) {
+          toast.error("You do not have permission to view this document.");
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(extractApiErrorMessage(err, "Failed to fetch document download link."));
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to fetch document download link.");
-    }
+    }, docId);
   };
 
   // NDR File Dropzone Handler
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !shipment) return;
 
@@ -247,68 +251,66 @@ export default function B2BShipmentDetailsPage() {
       return;
     }
 
-    setUploading(true);
-    try {
-      const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
+    void runUpload(async () => {
+      try {
+        const objectKey = await uploadTenantDocument(tenantSlug, file, "ndr");
 
-      // Resolve the NDR via the merchant-accessible ExceptionsService (reference URL, signed on read: D-18)
-      await ExceptionsService.applyExceptionAction(
-        shipmentId,
-        {
-          action: NdrAction.UPLOAD_DOCUMENT,
-          document_type: uploadDocumentType,
-          document_url: documentReferenceUrl(objectKey),
-          notes: `NDR Exception Resolved: Compliance document '${file.name}' uploaded.`,
-        },
-        tenantSlug,
-      );
+        // Resolve the NDR via the merchant-accessible ExceptionsService (reference URL, signed on read: D-18)
+        await ExceptionsService.applyExceptionAction(
+          shipmentId,
+          {
+            action: NdrAction.UPLOAD_DOCUMENT,
+            document_type: uploadDocumentType,
+            document_url: documentReferenceUrl(objectKey),
+            notes: `NDR Exception Resolved: Compliance document '${file.name}' uploaded.`,
+          },
+          tenantSlug,
+        );
 
-      toast.success("Compliance document successfully uploaded! Shipment status reset to In-Transit.");
-      fetchDetails();
-    } catch (err: unknown) {
-      console.error(err);
-      toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
-    } finally {
-      setUploading(false);
-    }
+        toast.success("Compliance document successfully uploaded! Shipment status reset to In-Transit.");
+        fetchDetails();
+      } catch (err: unknown) {
+        console.error(err);
+        toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
+      }
+    });
   };
 
   // NDR Scheduling Handler
-  const handleScheduleAppointment = async () => {
+  const handleScheduleAppointment = () => {
     if (!selectedDate || !selectedSlot || !shipment) {
       toast.error("Please select both a date and an appointment slot.");
       return;
     }
 
-    setScheduling(true);
-    try {
-      // Parse slot in IST (+05:30, D-09): e.g. "10:00 - 14:00"
-      const [startStr, endStr] = selectedSlot.split(" - ");
-      const startIso = new Date(`${selectedDate}T${startStr}:00+05:30`);
-      const endIso = new Date(`${selectedDate}T${endStr}:00+05:30`);
+    void runSchedule(async () => {
+      try {
+        // Parse slot in IST (+05:30, D-09): e.g. "10:00 - 14:00"
+        const [startStr, endStr] = selectedSlot.split(" - ");
+        const startIso = new Date(`${selectedDate}T${startStr}:00+05:30`);
+        const endIso = new Date(`${selectedDate}T${endStr}:00+05:30`);
 
-      const appointmentId = `APT-${Date.now()}`;
+        const appointmentId = `APT-${Date.now()}`;
 
-      // Resolve appointment exception via merchant-accessible ExceptionsService
-      await ExceptionsService.applyExceptionAction(
-        shipmentId,
-        {
-          action: NdrAction.BOOK_APPOINTMENT,
-          appointment_start: startIso.toISOString(),
-          appointment_end: endIso.toISOString(),
-          notes: `Appointment ${appointmentId} scheduled for ${selectedDate} (${selectedSlot}).`,
-        },
-        tenantSlug,
-      );
+        // Resolve appointment exception via merchant-accessible ExceptionsService
+        await ExceptionsService.applyExceptionAction(
+          shipmentId,
+          {
+            action: NdrAction.BOOK_APPOINTMENT,
+            appointment_start: startIso.toISOString(),
+            appointment_end: endIso.toISOString(),
+            notes: `Appointment ${appointmentId} scheduled for ${selectedDate} (${selectedSlot}).`,
+          },
+          tenantSlug,
+        );
 
-      toast.success("Delivery appointment scheduled! Shipment status reset to In-Transit.");
-      fetchDetails();
-    } catch (err: unknown) {
-      console.error(err);
-      toast.error("Failed to schedule appointment: " + extractApiErrorMessage(err, "Scheduling failed"));
-    } finally {
-      setScheduling(false);
-    }
+        toast.success("Delivery appointment scheduled! Shipment status reset to In-Transit.");
+        fetchDetails();
+      } catch (err: unknown) {
+        console.error(err);
+        toast.error("Failed to schedule appointment: " + extractApiErrorMessage(err, "Scheduling failed"));
+      }
+    });
   };
 
   // Deterministic Boxes Generator for Table
@@ -450,7 +452,7 @@ export default function B2BShipmentDetailsPage() {
             disabled={isPrinting}
             data-testid="shipment-detail.actions.download-label"
           >
-            {isPrinting ? (
+            {isPrinting && printingFormat === "a4" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-primary" />
             ) : (
               <Printer className="mr-2 h-4 w-4 text-slate-500" />
@@ -464,7 +466,7 @@ export default function B2BShipmentDetailsPage() {
             onClick={() => handlePrintLabel("thermal_4x2")}
             disabled={isPrinting}
           >
-            {isPrinting ? (
+            {isPrinting && printingFormat === "thermal_4x2" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-primary" />
             ) : (
               <Printer className="mr-2 h-4 w-4 text-primary" />
@@ -993,9 +995,15 @@ export default function B2BShipmentDetailsPage() {
                       variant="outline"
                       size="sm"
                       className="shrink-0 bg-white shadow-sm font-bold text-xs h-8 px-2.5 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-                      onClick={() => handleSecureDownload(doc.file_url)}
+                      onClick={() => handleSecureDownload(doc.id, doc.file_url)}
+                      disabled={isOpeningDoc}
                     >
-                      <Download className="w-3.5 h-3.5 mr-1" /> View
+                      {openingDocId === doc.id ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 mr-1" />
+                      )}{" "}
+                      View
                     </Button>
                   </div>
                 ))}

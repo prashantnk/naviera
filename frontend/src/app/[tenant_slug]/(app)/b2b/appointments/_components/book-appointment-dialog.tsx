@@ -25,6 +25,7 @@ import { IconSelect } from "@/components/ui/icon-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { todayApiDate } from "@/components/pickups/pickup-constants";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { PICKUP_TIME_SLOT_OPTIONS, toOptions } from "@/lib/form-options";
 import { extractApiErrorMessage } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
@@ -65,7 +66,7 @@ export function BookAppointmentDialog({
   const [date, setDate] = useState("");
   const [slot, setSlot] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const { pending: saving, run } = useSingleFlight();
 
   useEffect(() => {
     if (!open) return;
@@ -77,7 +78,7 @@ export function BookAppointmentDialog({
     setErrors({});
   }, [open, single]);
 
-  const handleSubmit = async (event: React.FormEvent) => {
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const nextErrors = validateBookAppointment({ poNumber, poExpiry, date, slot });
     if (isBulk) {
@@ -93,33 +94,33 @@ export function BookAppointmentDialog({
       po_expiry_date: poExpiry || undefined,
     });
 
-    setSaving(true);
-    let booked = 0;
-    let failed = 0;
-    let lastError = "";
-    for (const row of rows) {
-      try {
-        await ShipmentsService.updateAppointment(row.shipment_id, body, tenantSlug);
-        booked += 1;
-      } catch (error) {
-        failed += 1;
-        lastError = extractApiErrorMessage(error, "Failed to book appointment.");
+    void run(async () => {
+      let booked = 0;
+      let failed = 0;
+      let lastError = "";
+      for (const row of rows) {
+        try {
+          await ShipmentsService.updateAppointment(row.shipment_id, body, tenantSlug);
+          booked += 1;
+        } catch (error) {
+          failed += 1;
+          lastError = extractApiErrorMessage(error, "Failed to book appointment.");
+        }
       }
-    }
-    setSaving(false);
 
-    if (booked > 0) {
-      toast.success(
-        isBulk ? `Appointment booked for ${booked} LR(s).` : "Appointment booked."
-      );
-    }
-    if (failed > 0) {
-      toast.error(isBulk ? `${failed} LR(s) could not be booked. ${lastError}` : lastError);
-    }
-    if (booked > 0) {
-      onOpenChange(false);
-      onBooked();
-    }
+      if (booked > 0) {
+        toast.success(
+          isBulk ? `Appointment booked for ${booked} LR(s).` : "Appointment booked."
+        );
+      }
+      if (failed > 0) {
+        toast.error(isBulk ? `${failed} LR(s) could not be booked. ${lastError}` : lastError);
+      }
+      if (booked > 0) {
+        onOpenChange(false);
+        onBooked();
+      }
+    });
   };
 
   return (
@@ -196,7 +197,7 @@ export function BookAppointmentDialog({
           <DialogFooter>
             <Button type="submit" disabled={saving || !date || !slot}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Book appointment
+              {saving ? "Booking…" : "Book appointment"}
             </Button>
           </DialogFooter>
         </form>

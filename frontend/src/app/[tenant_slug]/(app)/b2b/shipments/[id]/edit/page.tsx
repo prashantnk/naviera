@@ -23,6 +23,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   b2bForwardShipmentSchema,
   b2bReverseShipmentSchema,
@@ -32,7 +33,8 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Save, Building2 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Resolver, useFieldArray, Control, FieldArrayWithId, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -203,7 +205,7 @@ function _isReadyForPreview(change: PickupUpdate): boolean {
 export default function B2BForwardEditPage() {
   const params = useParams();
   const shipmentId = params.id as string;
-  const router = useRouter();
+  const router = useProgressRouter();
   const { routeTo, tenantSlug } = useTenant();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -214,7 +216,8 @@ export default function B2BForwardEditPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [addShippingToCod, setAddShippingToCod] = useState(false);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Covers validation, the charges check and the save, so a second click is dropped.
+  const { pending: isSubmitting, run: runSave } = useSingleFlight();
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   // Snapshot of the loaded values: the diff base for "send only changed fields".
@@ -243,7 +246,7 @@ export default function B2BForwardEditPage() {
     name: "documents",
   });
   
-  const [isUploading, setIsUploading] = useState(false);
+  const { pending: isUploading, run: runUpload } = useSingleFlight();
 
   useEffect(() => {
     async function init() {
@@ -374,31 +377,30 @@ export default function B2BForwardEditPage() {
       return;
     }
 
-    setIsUploading(true);
-    try {
-      const objectKey = await uploadTenantDocument(tenantSlug, file, "doc");
+    await runUpload(async () => {
+      try {
+        const objectKey = await uploadTenantDocument(tenantSlug, file, "doc");
 
-      appendDoc({
-        document_type: docType,
-        file_url: objectKey,
-        file_name: file.name,
-      });
-      toast.success("Document uploaded to preview stack");
-    } catch (err: unknown) {
-      console.error(err);
-      toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
-    } finally {
-      setIsUploading(false);
-    }
+        appendDoc({
+          document_type: docType,
+          file_url: objectKey,
+          file_name: file.name,
+        });
+        toast.success("Document uploaded to preview stack");
+      } catch (err: unknown) {
+        console.error(err);
+        toast.error("Failed to upload document: " + extractApiErrorMessage(err, "Upload failed"));
+      }
+    });
   };
 
   /**
    * Saves the changed fields. The backend re-prices only when a price input changed.
+   * Runs inside the save single-flight, which owns the pending state.
    *
    * @param change - PickupUpdate holding only the changed fields.
    */
   const saveChange = async (change: PickupUpdate) => {
-    setIsSubmitting(true);
     try {
       await ShipmentsService.updateShipment(shipmentId, change, tenantSlug);
       window.dispatchEvent(new CustomEvent("wallet-updated"));
@@ -406,12 +408,10 @@ export default function B2BForwardEditPage() {
       router.push(routeTo(`/b2b/shipments/${shipmentId}`));
     } catch (err: unknown) {
       toast.error(extractApiErrorMessage(err, "Failed to update shipment."));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  const handleSaveChanges = async () => {
+  const handleSaveChanges = () => runSave(async () => {
     const valid = await form.trigger();
     if (!valid) {
       toast.error("Please fill all required fields correctly.");
@@ -443,7 +443,7 @@ export default function B2BForwardEditPage() {
       setIsPreviewing(false);
     }
     await saveChange(change);
-  };
+  });
 
   if (isLoading) {
     return (
@@ -473,7 +473,7 @@ export default function B2BForwardEditPage() {
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 md:p-8">
         <Form {...form}>
-          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSaveChanges(); }} className="space-y-8">
+          <form ref={formRef} onSubmit={(e) => { e.preventDefault(); void handleSaveChanges(); }} className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
               <FormField control={form.control} name="order_reference_id" render={({ field }) => (
                   <FormItem>
@@ -532,8 +532,8 @@ export default function B2BForwardEditPage() {
                 }
                 className="font-bold bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center gap-2 px-6 py-2 h-9 rounded-lg shadow-md w-full sm:w-auto"
               >
-                {(isPreviewing || isSubmitting) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {isPreviewing ? "Checking charges" : "Save Changes"}
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {isPreviewing ? "Checking charges" : isSubmitting ? "Saving…" : "Save Changes"}
               </Button>
             </div>
           </form>

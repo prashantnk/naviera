@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   cn,
   extractApiErrorMessage,
@@ -117,7 +118,7 @@ export default function RemittanceDetailPage() {
 
   const [remittance, setRemittance] = useState<CodRemittanceRead | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [downloading, setDownloading] = useState<boolean>(false);
+  const { pending: downloading, run: runCsvDownload } = useSingleFlight();
   const [awbSearch, setAwbSearch] = useState<string>("");
 
   const fetchDetail = useCallback(async () => {
@@ -179,22 +180,21 @@ export default function RemittanceDetailPage() {
     );
   }, [breakdownItems, awbSearch]);
 
-  const handleDownloadCsv = async () => {
+  const handleDownloadCsv = () => {
     if (!remittance) return;
-    setDownloading(true);
-    try {
-      await downloadRemittanceCsvBlob(
-        remittance.remittance_number,
-        remittance.remittance_number
-      );
-      toast.success("Downloaded AWB remittance CSV.");
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to download remittance CSV.")
-      );
-    } finally {
-      setDownloading(false);
-    }
+    void runCsvDownload(async () => {
+      try {
+        await downloadRemittanceCsvBlob(
+          remittance.remittance_number,
+          remittance.remittance_number
+        );
+        toast.success("Downloaded AWB remittance CSV.");
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to download remittance CSV.")
+        );
+      }
+    });
   };
 
   if (loading) {

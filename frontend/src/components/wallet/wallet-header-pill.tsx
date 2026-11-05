@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { InputAdornment } from "@/components/ui/form-extras";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   CheckCircle2,
   Loader2,
@@ -53,8 +54,8 @@ export function WalletRechargeDialog({
   const [amountInput, setAmountInput] = useState<string>("1000");
   const [intent, setIntent] = useState<UpiIntentResponse | null>(null);
   const [utrNumber, setUtrNumber] = useState<string>("");
-  const [loadingIntent, setLoadingIntent] = useState<boolean>(false);
-  const [confirmingPayment, setConfirmingPayment] = useState<boolean>(false);
+  const { pending: loadingIntent, run: runGenerateQr } = useSingleFlight();
+  const { pending: confirmingPayment, run: runConfirmPayment } = useSingleFlight();
 
   const handlePaymentCompleted = useCallback(
     (creditedAmount: number, newBalance: number, receiptNumber?: string | null) => {
@@ -105,32 +106,31 @@ export function WalletRechargeDialog({
     };
   }, [open, intent, tenantSlug, handlePaymentCompleted]);
 
-  const handleGenerateQr = async () => {
+  const handleGenerateQr = () => {
     const parsedVal = Number(amountInput);
     if (!parsedVal || parsedVal < 1) {
       toast.error("Please enter a valid recharge amount of at least ₹1.");
       return;
     }
 
-    setLoadingIntent(true);
-    try {
-      const response = await WalletService.createUpiRechargeIntent(
-        {
-          amount: parsedVal,
-        },
-        tenantSlug
-      );
-      setIntent(response);
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to generate UPI QR intent.")
-      );
-    } finally {
-      setLoadingIntent(false);
-    }
+    void runGenerateQr(async () => {
+      try {
+        const response = await WalletService.createUpiRechargeIntent(
+          {
+            amount: parsedVal,
+          },
+          tenantSlug
+        );
+        setIntent(response);
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to generate UPI QR intent.")
+        );
+      }
+    });
   };
 
-  const handleMarkAsPaid = async () => {
+  const handleMarkAsPaid = () => {
     if (!intent) return;
     const trimmedUtr = utrNumber.trim();
     if (!/^\d{12}$/.test(trimmedUtr)) {
@@ -140,44 +140,42 @@ export function WalletRechargeDialog({
       return;
     }
 
-    setConfirmingPayment(true);
-    try {
-      const res = await WalletService.confirmUpiRecharge(
-        intent.transaction_id,
-        tenantSlug,
-        {
-          utr_number: trimmedUtr,
+    void runConfirmPayment(async () => {
+      try {
+        const res = await WalletService.confirmUpiRecharge(
+          intent.transaction_id,
+          tenantSlug,
+          {
+            utr_number: trimmedUtr,
+          }
+        );
+        toast.success(
+          `Payment of ₹${intent.amount.toFixed(
+            2
+          )} submitted! It is now in Pending Approval and will merge into your main balance once approved by Admin.`
+        );
+        setIntent(null);
+        setUtrNumber("");
+        onOpenChange(false);
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        if (onSuccess) {
+          onSuccess(res.balance);
         }
-      );
-      toast.success(
-        `Payment of ₹${intent.amount.toFixed(
-          2
-        )} submitted! It is now in Pending Approval and will merge into your main balance once approved by Admin.`
-      );
-      setIntent(null);
-      setUtrNumber("");
-      onOpenChange(false);
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      if (onSuccess) {
-        onSuccess(res.balance);
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(
+            err,
+            "Failed to submit payment confirmation."
+          )
+        );
       }
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(
-          err,
-          "Failed to submit payment confirmation."
-        )
-      );
-    } finally {
-      setConfirmingPayment(false);
-    }
+    });
   };
 
   const handleReset = (nextOpen: boolean) => {
     if (!nextOpen) {
       setIntent(null);
       setUtrNumber("");
-      setConfirmingPayment(false);
     }
     onOpenChange(nextOpen);
   };
