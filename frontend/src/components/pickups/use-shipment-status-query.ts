@@ -13,7 +13,8 @@
  */
 import { PickupStatus } from "@/api_client";
 import { ALL_FILTER_VALUE } from "@/lib/form-options";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useCallback, useMemo } from "react";
 
 /** Query parameter name used by dashboard deep links. */
@@ -54,7 +55,7 @@ export interface ShipmentStatusQuery {
  * @returns Current filter state and a setter that keeps the URL in sync.
  */
 export function useShipmentStatusQuery(): ShipmentStatusQuery {
-  const router = useRouter();
+  const router = useProgressRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const rawStatus = searchParams.get(SHIPMENT_STATUS_QUERY_PARAM);

@@ -173,13 +173,17 @@ async def test_ui_money_flows(
     edited = await db_oracle.shipment(booked.awb)
     assert edited.total_logistics_cost == preview.new_total
 
-    # 3. Pickup request (API glue), then the rider confirms actual pieces on the phone.
+    # 3. Pickup request (API glue), then the rider confirms actual pieces + seller's pickup OTP on the phone.
     pur = await create_b2c_pickup_request(
         CUSTOMER_B2C_EMAIL, str(edited.pickup_address_id), [shipment_id]
     )
     ops = OpsMobilePage(ops_tab.page, ui_settings, step_banner)
     await ops.open()
-    await ops.confirm_pickup(pur["pickup_request_number"], {booked.awb: B2C_ACTUAL_PIECES})
+    await ops.confirm_pickup(
+        pur["pickup_request_number"],
+        {booked.awb: B2C_ACTUAL_PIECES},
+        pickup_otp=pur.get("pickup_otp"),
+    )
     picked = await db_oracle.shipment(booked.awb)
     assert picked.status == PickupStatus.IN_TRANSIT.value
 

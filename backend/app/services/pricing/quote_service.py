@@ -92,7 +92,6 @@ B2B_TOTAL_TOO_HEAVY = "One LR can carry at most {limit} kg. Split the consignmen
 OPTION_DISABLED_REASON = "This service is switched off by Logismart for now."
 WRONG_FLOW_REASON = "This service is not offered for this kind of shipment."
 PRIME_COD_REASON = "Cash on Delivery is not available for Logismart Prime (B2B cargo)."
-B2B_COD_REASON = "Cash on Delivery is not available for B2B cargo bookings yet. Book this LR as Prepaid."
 BLIND_NOT_B2C = "Blind pickups (no box details) are only for B2B cargo."
 
 
@@ -450,8 +449,6 @@ class QuoteService:
             if is_cod:
                 return CarrierQuote.unavailable(option, QuoteUnavailableCode.COD_NOT_AVAILABLE, PRIME_COD_REASON)
             return await self.prime.quote(tenant.id, spec)
-        if option == ServiceOption.DELHIVERY_B2B_SURFACE and is_cod:
-            return CarrierQuote.unavailable(option, QuoteUnavailableCode.COD_NOT_AVAILABLE, B2B_COD_REASON)
         return await delhivery_provider_for(self.session, tenant, option).quote(
             option, spec, freshness=freshness, include_rto=include_rto, is_cod=is_cod
         )
@@ -517,10 +514,10 @@ class QuoteService:
     @staticmethod
     def _cod_availability(flow: ServiceFlow, policy: Optional[PricingPolicy]) -> Tuple[bool, Optional[str]]:
         """(COD can be booked, plain-English reason when not)."""
-        if flow == ServiceFlow.B2B:
-            return False, B2B_COD_REASON
         if policy is None or not policy.cod_enabled:
             return False, COD_DISABLED_REASON
+        if flow == ServiceFlow.B2B and ServiceOption.DELHIVERY_B2B_SURFACE not in policy.enabled_options:
+            return False, PRIME_COD_REASON
         return True, None
 
     # --- re-pricing (D4: RepricingService's only price source) --------------------------
@@ -596,7 +593,7 @@ class QuoteService:
             serviceable=True,
             forward=new_forward,
             rto=new_rto,
-            cod_supported=option != ServiceOption.DELHIVERY_B2B_SURFACE,
+            cod_supported=option != ServiceOption.PRIME_SURFACE,
             snapshot=dict(record.get("snapshot") or {}),
         )
         return _with_rto_if_billed(quote, request.sell.include_rto)

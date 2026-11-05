@@ -445,14 +445,15 @@ On the Users page, an amber banner **Pending B2B Heavy Cargo Access Requests (N)
 |---|---|---|---|
 | **Delhivery Surface** ("Economical road delivery") | B2C forward and reverse | Delhivery | Yes, if the COD fee is set |
 | **Delhivery Express** ("Fastest delivery, air where available") | B2C forward and reverse | Delhivery | Yes, if the COD fee is set |
-| **Logismart Prime** ("B2B cargo by road through Logismart's partner network") | B2B forward only | Partner transporter | No |
-| **Delhivery B2B Cargo** | B2B forward only | Delhivery Cargo | No (prepaid only) |
+| **Logismart Prime** ("B2B cargo by road through Logismart's partner network") | B2B forward only | Partner transporter | No (prepaid only) |
+| **Delhivery B2B Cargo** | B2B forward only | Delhivery Cargo | Yes, if the COD fee is set |
 
 ### 6.2 The formula (same for every service)
 
 > **Customer price = carrier cost + Logismart markup + COD fee (if COD) + 18% GST**
 
-- **GST is always 18%** (SAC 996812, Courier services). It is split CGST + SGST within Haryana and IGST outside.
+- **Standard COD fee (when COD is switched on):** **`max(₹20, 2% of COD collectible amount)`** (`cod_fee_min = ₹20.00`, `cod_fee_percent = 2.0%` by default; editable by Admin under **Settings ▸ Workspace Settings ▸ Pricing**). Shown as its own `"COD fee"` (`COD_FEE`) line in the quote, booking breakdown, and GST invoice.
+- **GST is always 18%** (SAC 996812 Courier / SAC 996511 Road GTA). It is split CGST + SGST within Haryana and IGST outside.
 - Markup, COD fee and GST are **frozen at booking**. Changing the pricing policy later never changes old shipments.
 - Customers see the price lines (Freight, COD fee, RTO freight, GST). They never see the carrier cost, the markup or the transporter name.
 
@@ -472,7 +473,7 @@ On the Users page, an amber banner **Pending B2B Heavy Cargo Access Requests (N)
 - Shown as **Delhivery B2B Cargo** (`DELHIVERY_B2B_SURFACE`) alongside **Logismart Prime** on the B2B Rate Calculator (`/b2b/rate-calculator`) and B2B Booking Step 2 (`/b2b/shipments/new/forward`).
 - Priced at Delhivery's pre-GST freight + Logismart markup (`%` or `Fixed ₹`, launch: `0%`) + 18% GST.
 - Supports **Owner's Risk** and **Carrier's Risk**: ticking **Carrier's Risk** adds the ROV surcharge (`higher of 0.1% of declared value or ₹100`).
-- Prepaid only: no COD and no To-Pay. The RTO leg is estimated with the pincodes swapped.
+- Supports **Prepaid** and **Cash on Delivery (COD)** (with the standard COD fee `max(₹20, 2% of COD amount)` + 18% GST; no To-Pay). The RTO leg is estimated with the pincodes swapped.
 - **Live API & Automatic B2C Token Fallback:**
   - Logismart's Delhivery One B2B account is **`B2B Surface · LOGISMART B2BC`** (API username `LOGISMARTB2BC` on `https://ltl-clients-api.delhivery.com`).
   - Whenever `DELHIVERY_B2B_PASSWORD` is not yet set in `backend/.env` and `DELHIVERY_B2C_TOKEN` (`Domestic · LOGISMART PVT LTD Franchise`) is configured, the server **automatically falls back to pricing `Delhivery B2B Cargo` via the live B2C Surface API** (summing chargeable weight across all boxes rounded to 500 g slabs, plus Carrier's Risk ROV when selected). This ensures **both Logismart Prime and Delhivery B2B Cargo return live, bookable quotes today**.
@@ -599,7 +600,7 @@ Fields: product category, PO number and date (up to 5 comma-separated POs), carg
 
 ![B2B booking: Prime Godown Self-Pickup option](images/booking/17b-b2b-booking-prime-godown.png)
 
-- No COD on B2B. LRs are billed to the wallet.
+- **COD on B2B:** **Delhivery B2B Cargo** supports Cash on Delivery (`max(₹20, 2% of COD amount)` + 18% GST); **Logismart Prime** is Prepaid-only. LRs are billed to the wallet.
 - **B2B returns are off** in this version (no Reverse tab on `/b2b/shipments`). Customers who need a return should raise a ticket; ops arrange it.
 - Printing a B2B LR (**Print Label**) generates **3 A4 Lorry Receipt Docket copies** (`CONSIGNOR COPY`, `CONSIGNEE COPY`, `DRIVER / TRANSPORTER COPY`) with itemized charges and compliance numbers (`GST Invoice No.`, `E-Way Bill`, `PO No.`) plus child box labels (`-B1..-BN` in `4×6` or `4×2` thermal).
 
@@ -1081,7 +1082,7 @@ These are known and accepted for launch. Plan around them.
 | 4 | **Open credit / negative wallet.** With Strict Finlock OFF, customers can book with no balance. | Decide Finlock before launch; watch negative wallets; COD payouts are held while negative. |
 | 5 | **Freight on Delivery (To-Pay) is off.** | Prepaid or Postpaid (billed to wallet) only. |
 | 6 | **B2B returns (reverse LRs) are off.** | Customer raises a ticket; ops arrange the return. |
-| 7 | **No COD on B2B.** | Prepaid LRs only. |
+| 7 | **No COD on Logismart Prime (B2B).** | Use **Delhivery B2B Cargo** for B2B COD LRs (`max(₹20, 2% of COD amount)` + GST), or book Logismart Prime as Prepaid. |
 | 8 | **No staff "book for customer".** Staff bookings are billed to the booking staff member's own wallet. | Customers book in their own account ([7.4](#74-booking-for-a-customer-staff)). |
 | 9 | **Uploaded documents are not private enough.** The documents store can be read by any signed-in user who has the link. A private store is planned. | Do not upload sensitive personal documents (ID cards). |
 | 10 | **No user invite emails.** | People self-register; you assign the role ([5.1](#51-how-people-get-an-account)). |
@@ -1210,7 +1211,7 @@ These are known and accepted for launch. Plan around them.
 | 3 | Check **Company Profile**: Legal Name `LOGISMART PRIVATE LIMITED`, GSTIN `06AAECL2138H1ZQ`, PAN `AAECL2138H`, prefix `LOGI`, registered address | Admin (finance) | **DONE** — Live DB verified (`LOGI2627I000001` ready) |
 | 4 | Update **Merchant UPI VPA** (`Settings › Wallet & Payments`) when Logismart decides on its business UPI ID (currently `logismart@okaxis`) | Owner | Recharge dialog shows a QR paying the chosen business account |
 | 5 | Decide **Strict Finlock** and minimum balances (`min_b2c: ₹0`, `min_b2b: ₹500`, `strict_finlock: OFF` at launch) | Owner + Admin (finance) | Setting saved in Settings › Wallet & Payments |
-| 6 | Set **markups** (launch: Delhivery `0%`, Prime `20%`) and decide the **COD fee** (launch: off) | Owner | **DONE** — Saved on live workspace (`all 4 services enabled`) |
+| 6 | Set **markups** (launch: Delhivery `0%`, Prime `20%`) and the **standard COD fee** (`max(₹20, 2% of COD amount)` + 18% GST) | Owner | **DONE** — Saved on live workspace (`cod_fee_min: ₹20`, `cod_fee_percent: 2%`, `all 4 services enabled`) |
 | 7 | Review **Prime lanes** (transporters, rates, active lane per route) | Ops lead + Admin | **DONE** — 56 zones (`2,123` pincodes) and 74 lanes (`55` active routes from Delhi NCR, `19` standby) seeded on live |
 | 8 | Fill **Support & Escalation** contacts and the escalation matrix | Support lead | **DONE** — `1800-309-1130`, `9205-444-895/896/897`, `contact@logismart.in`, and escalation matrix configured |
 | 9 | Create staff accounts and roles; at least **two** Owner/Admin (sole live owner at launch: `owner@logismart.in`) | Owner | Users page lists everyone with the right role |

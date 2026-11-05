@@ -17,11 +17,12 @@ import {
 } from "@/components/blocks/nav-config";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { useWorkspaceFlow } from "@/components/providers/workspace-flow-provider";
+import { SAFETY_TIMEOUT_MS } from "@/components/ui/navigation-progress";
 import { cn } from "@/lib/utils";
 import { toTenantRelativePath } from "@/lib/workspace-flow";
 import { ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 /** Shared row classes for top-level entries. */
@@ -48,7 +49,6 @@ function _splitNavTarget(href: string): { path: string; category: string | null 
 
 function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
   const { routeTo, tenantSlug } = useTenant();
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { capabilities } = useUser();
@@ -72,27 +72,22 @@ function NavMenuContent({ isExpanded, onNavigate }: NavMenuProps) {
     optimisticNav && optimisticNav.fromKey === locationKey
       ? optimisticNav.href
       : null;
+
+  // A navigation that never lands (cancelled, redirected back) must not leave
+  // the clicked item spinning forever.
+  useEffect(() => {
+    if (!optimisticNav) return;
+    const timer = setTimeout(() => setOptimisticNav(null), SAFETY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [optimisticNav]);
   const pendingTarget = pendingHref ? _splitNavTarget(pendingHref) : null;
   const relativePath = pendingTarget ? pendingTarget.path : actualRelativePath;
   const currentCategory = pendingTarget ? pendingTarget.category : actualCategory;
 
   const items = getNavItems(activeFlow, capabilities);
 
-  // Eagerly prefetch all visible sidebar routes so clicking any menu item is instant.
-  useEffect(() => {
-    if (typeof router?.prefetch !== "function") return;
-    const timer = setTimeout(() => {
-      for (const item of items) {
-        if (item.href) {
-          router.prefetch(routeTo(item.href));
-        }
-        for (const child of item.children ?? []) {
-          router.prefetch(routeTo(child.href));
-        }
-      }
-    }, 30);
-    return () => clearTimeout(timer);
-  }, [items, routeTo, router]);
+  // Visible sidebar links prefetch themselves (`<Link prefetch>`); a second,
+  // manual `router.prefetch` pass doubled the RSC requests on every page load.
 
   const handleLinkClick = (targetHref: string) => {
     const target = _splitNavTarget(targetHref);

@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import { NoticeBanner, NoticeTone } from "./notice-banner";
@@ -73,7 +74,7 @@ export function PrimeImportDialog({ open, onOpenChange, tenantSlug, onImported }
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [report, setReport] = useState<PrimeImportReport | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { pending: busy, run } = useSingleFlight();
 
   const reset = () => {
     setFile(null);
@@ -96,36 +97,34 @@ export function PrimeImportDialog({ open, onOpenChange, tenantSlug, onImported }
 
   const runDryRun = async () => {
     if (!file) return;
-    setBusy(true);
-    try {
-      setReport(await importPrimeLanes(file, true, tenantSlug));
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "We couldn't check this file."));
-    } finally {
-      setBusy(false);
-    }
+    await run(async () => {
+      try {
+        setReport(await importPrimeLanes(file, true, tenantSlug));
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "We couldn't check this file."));
+      }
+    });
   };
 
   const confirmImport = async () => {
     if (!file) return;
-    setBusy(true);
-    try {
-      const result = await importPrimeLanes(file, false, tenantSlug);
-      const summary = summarizeImportReport(result, false);
-      if (summary.blocked) {
-        setReport(result);
-        toast.error(summary.headline);
-        return;
+    await run(async () => {
+      try {
+        const result = await importPrimeLanes(file, false, tenantSlug);
+        const summary = summarizeImportReport(result, false);
+        if (summary.blocked) {
+          setReport(result);
+          toast.error(summary.headline);
+          return;
+        }
+        toast.success(summary.headline);
+        reset();
+        onOpenChange(false);
+        onImported();
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Lanes were not imported."));
       }
-      toast.success(summary.headline);
-      reset();
-      onOpenChange(false);
-      onImported();
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Lanes were not imported."));
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const summary = report ? summarizeImportReport(report, true) : null;

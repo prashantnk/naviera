@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 
 import {
@@ -290,7 +291,7 @@ export function CarrierBillingPanel({
   const [addingCharge, setAddingCharge] = useState(false);
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeLabel, setChargeLabel] = useState("Carrier rate difference");
-  const [submittingCharge, setSubmittingCharge] = useState(false);
+  const { pending: submittingCharge, run: runCharge } = useSingleFlight();
   const fallback = (
     <CarrierInfo carrierName={carrierName} carrierAwb={carrierAwb} serviceOption={serviceOption} />
   );
@@ -306,25 +307,24 @@ export function CarrierBillingPanel({
     const useGross = billing.gap_gross_amount !== null && billing.gap_gross_amount !== undefined && billing.gap_gross_amount > 0;
     const rawAmount = useGross ? billing.gap_gross_amount : billing.gap_amount;
     if (!rawAmount || rawAmount <= 0) return;
-    setSubmittingCharge(true);
-    try {
-      const updated = await applyAdminShipmentCharge(
-        shipmentId,
-        {
-          amount: rawAmount,
-          includes_gst: useGross,
-          label: "Carrier rate difference recovery",
-        },
-        tenantSlug,
-      );
-      toast.success("Recovered carrier rate difference from customer wallet & issued GST Debit Note.");
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      handleSaved(updated);
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to recover billing difference."));
-    } finally {
-      setSubmittingCharge(false);
-    }
+    await runCharge(async () => {
+      try {
+        const updated = await applyAdminShipmentCharge(
+          shipmentId,
+          {
+            amount: rawAmount,
+            includes_gst: useGross,
+            label: "Carrier rate difference recovery",
+          },
+          tenantSlug,
+        );
+        toast.success("Recovered carrier rate difference from customer wallet & issued GST Debit Note.");
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        handleSaved(updated);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to recover billing difference."));
+      }
+    });
   };
 
   const handleSubmitAdminCharge = async (e: React.FormEvent) => {
@@ -335,27 +335,26 @@ export function CarrierBillingPanel({
       return;
     }
     const trimmedLabel = chargeLabel.trim() || "Admin price override";
-    setSubmittingCharge(true);
-    try {
-      const updated = await applyAdminShipmentCharge(
-        shipmentId,
-        {
-          override_total_price: parsedAmount,
-          label: trimmedLabel,
-        },
-        tenantSlug,
-      );
-      toast.success(
-        `Shipment price updated to ${formatInr(parsedAmount)} — wallet settled & GST Credit/Debit Note issued.`,
-      );
-      window.dispatchEvent(new CustomEvent("wallet-updated"));
-      setChargeAmount("");
-      handleSaved(updated);
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to override shipment price."));
-    } finally {
-      setSubmittingCharge(false);
-    }
+    await runCharge(async () => {
+      try {
+        const updated = await applyAdminShipmentCharge(
+          shipmentId,
+          {
+            override_total_price: parsedAmount,
+            label: trimmedLabel,
+          },
+          tenantSlug,
+        );
+        toast.success(
+          `Shipment price updated to ${formatInr(parsedAmount)} — wallet settled & GST Credit/Debit Note issued.`,
+        );
+        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        setChargeAmount("");
+        handleSaved(updated);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to override shipment price."));
+      }
+    });
   };
 
   const openAddCharge = () => {

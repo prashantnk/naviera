@@ -1,7 +1,7 @@
 // frontend/src/app/[tenant_slug]/(app)/support/support-and-team.test.tsx
 import { UserRole } from "@/api_client";
 import { CLAIMS_FINANCE_CHIP } from "@/components/support/ticket-rules";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { USER_ROLES } from "../team/page";
 import SupportTicketsPage, {
@@ -196,6 +196,45 @@ describe("Support tickets D-19 & IST timestamps (F-02)", () => {
       sub_category: CLAIMS_FINANCE_CHIP,
       tracking_id: "LOGISMART-TEST-ZZZZ9999",
     });
+  });
+
+  it("raises one ticket for a fast double click and shows the pending state", async () => {
+    mockListSupportTickets.mockResolvedValue([]);
+    let resolveCreate!: (value: { ticket_number: string }) => void;
+    mockCreateSupportTicket.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      })
+    );
+    window.history.replaceState(
+      null,
+      "",
+      `/support?awb=LOGISMART-TEST-ZZZZ9999&category=${encodeURIComponent(CLAIMS_FINANCE_CHIP)}`
+    );
+    render(<SupportTicketsPage />);
+    await screen.findByTestId("support.raise.awb");
+    fireEvent.change(screen.getByLabelText(/Describe your issue/i), {
+      target: { value: "Charged twice for one AWB" },
+    });
+    const submit = screen.getByRole("button", { name: "Submit Ticket" });
+
+    act(() => {
+      fireEvent.click(submit);
+      fireEvent.click(submit);
+    });
+
+    expect(mockCreateSupportTicket).toHaveBeenCalledTimes(1);
+    const pending = screen.getByRole("button", { name: /Submitting/ });
+    expect(pending).toBeDisabled();
+    expect(pending.querySelector(".animate-spin")).not.toBeNull();
+
+    await act(async () => {
+      resolveCreate({ ticket_number: "TKT-20261105-0001" });
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Submitting/ })).not.toBeInTheDocument()
+    );
+    expect(mockCreateSupportTicket).toHaveBeenCalledTimes(1);
   });
 
   it("hides raise and reply for a read-only user", async () => {

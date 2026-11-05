@@ -1,9 +1,9 @@
 """
 The staff-only selling policy (`tenant.settings["pricing_policy"]`, DESIGN.md v4 §C.2).
 
-- Missing policy → defaults (Delhivery markup 0 %, Prime 20 %, COD OFF, all options on).
+- Missing policy → defaults (Delhivery markup 0 %, Prime 20 %, standard COD fee 2 % / min ₹20, all options on).
 - Invalid stored policy → `None`, and every option is shown as unavailable (fail closed).
-- COD is ON only when the admin set BOTH the COD fee minimum and percentage.
+- COD is ON when BOTH the COD fee minimum and percentage are non-null (admin can clear both to turn COD off).
 
 Pure reads (no settings writes) so quoting and re-pricing can import it without cycles;
 the staff editor lives in `policy_admin.py`.

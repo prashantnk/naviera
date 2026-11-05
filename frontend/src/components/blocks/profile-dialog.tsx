@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -51,7 +52,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const { user } = useUser();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [saving, setSaving] = useState(false);
+  const { pending: saving, run } = useSingleFlight();
 
   useEffect(() => {
     if (open) {
@@ -70,20 +71,19 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
       toast.error("Enter a valid 10-digit mobile number, or leave it blank");
       return;
     }
-    setSaving(true);
-    try {
-      await UsersService.updateMyProfile({
-        full_name: fullName.trim(),
-        phone: mobile || null,
-      });
-      window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
-      toast.success("Profile updated");
-      onOpenChange(false);
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Could not update your profile"));
-    } finally {
-      setSaving(false);
-    }
+    await run(async () => {
+      try {
+        await UsersService.updateMyProfile({
+          full_name: fullName.trim(),
+          phone: mobile || null,
+        });
+        window.dispatchEvent(new CustomEvent(PROFILE_UPDATED_EVENT));
+        toast.success("Profile updated");
+        onOpenChange(false);
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Could not update your profile"));
+      }
+    });
   };
 
   return (

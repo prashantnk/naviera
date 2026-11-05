@@ -185,6 +185,10 @@ class PickupDispatchIds:
     """Confirm-pickup dialog on `/pickup-requests` and `/b2b/pickup-requests`."""
 
     CONFIRM = "pickup-dispatch.actions.confirm"
+    OTP_INPUT = "pickup-dispatch.otp-input"
+    OVERRIDE_TOGGLE = "pickup-dispatch.override-toggle"
+    OVERRIDE_REASON = "pickup-dispatch.override-reason"
+    ERROR = "pickup-dispatch.error"
 
     @staticmethod
     def row(awb: str) -> str:
@@ -220,6 +224,10 @@ class OpsIds:
         """`ops.pickup-card.<pur>.confirm`."""
         return testid("ops", "pickup-card", pur, "confirm")
 
+    CONFIRM_OTP_INPUT = "ops.pickup-confirm.otp-input"
+    CONFIRM_OVERRIDE_TOGGLE = "ops.pickup-confirm.override-toggle"
+    CONFIRM_OVERRIDE_REASON = "ops.pickup-confirm.override-reason"
+    CONFIRM_ERROR = "ops.pickup-confirm.error"
     CONFIRM_SUBMIT = "ops.pickup-confirm.submit"
 
 

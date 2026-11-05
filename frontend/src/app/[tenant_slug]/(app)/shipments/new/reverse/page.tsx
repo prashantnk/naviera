@@ -20,6 +20,7 @@ import {
   WeightUnit,
 } from "@/api_client";
 import { getSupabaseClient } from "@/lib/supabase";
+import { extractApiErrorMessage } from "@/lib/utils";
 import { BOOKABLE_FREIGHT_PAYMENT_MODES } from "@/lib/form-options";
 import { ReverseFormStep } from "../_components/reverse-form-step";
 import type { BookingPayload, QuoteOption } from "@/components/booking/booking-api";
@@ -49,13 +50,14 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useForm, Resolver, useFieldArray } from "react-hook-form";
 import { toast } from "sonner";
 
 function ReverseBookingContent() {
   const { routeTo, tenantSlug } = useTenant();
-  const router = useRouter();
+  const router = useProgressRouter();
   const searchParams = useSearchParams();
   const fromShipmentId = searchParams.get("from_shipment_id");
   const DRAFT_KEY = `shipment-draft-reverse-${tenantSlug}`;
@@ -362,8 +364,7 @@ function ReverseBookingContent() {
       });
       toast.success("Return document uploaded");
     } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || "Failed to upload document");
+      toast.error(extractApiErrorMessage(error, "Failed to upload document"));
     } finally {
       setIsUploading(false);
     }

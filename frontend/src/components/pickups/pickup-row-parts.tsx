@@ -21,10 +21,14 @@ import { cn } from "@/lib/utils";
 import {
   CalendarClock,
   ChevronDown,
+  Copy,
   Download,
   Info,
+  KeyRound,
+  Loader2,
   MoreHorizontal,
   Printer,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,8 +66,10 @@ export interface PickupRowContext {
   /** Cancel a pickup request: `capabilities.canBook`. */
   canBook: boolean;
   handlers: PickupRowHandlers;
-  /** Id of the row whose action is in flight (disables its buttons). */
+  /** Id of the row whose action is in flight (shows spinner on that row). */
   busyId: string | null;
+  /** True while any row action is in flight (disables all row action buttons). */
+  rowBusy?: boolean;
 }
 
 /**
@@ -145,7 +151,42 @@ function CounterPill({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Status chip plus Delhivery sub-line (picked counter or failure reason). */
+/**
+ * Seller/Owner/Admin Pickup Handover OTP badge with one-click clipboard copy.
+ * Rendered only when the backend returns `manifest.pickup_otp` (never returned to ops/support/readonly).
+ */
+export function PickupOtpBadge({ manifest }: { manifest: ManifestResponse }) {
+  if (!manifest.pickup_otp || !isActivePickup(manifest.status)) return null;
+  const otp = manifest.pickup_otp;
+  return (
+    <div
+      data-testid={`pickups.otp.${manifest.id}`}
+      className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-foreground"
+    >
+      <KeyRound className="h-3 w-3 text-primary" />
+      <span className="text-muted-foreground">Pickup OTP:</span>
+      <span className="font-mono font-bold tracking-wider text-primary">{otp}</span>
+      <button
+        type="button"
+        data-testid={`pickups.copy-otp.${manifest.id}`}
+        title="Copy pickup handover OTP to share with pickup executive"
+        aria-label={`Copy pickup OTP ${otp}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          void navigator.clipboard
+            ?.writeText(otp)
+            .then(() => toast.success(`Pickup handover OTP ${otp} copied`))
+            .catch(() => undefined);
+        }}
+        className="ml-0.5 inline-flex items-center rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+      >
+        <Copy className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+/** Status chip plus Delhivery sub-line (picked counter, handover OTP or failure reason). */
 export function PickupStatusCell({
   manifest,
   flow,
@@ -174,6 +215,21 @@ export function PickupStatusCell({
             {picked}/{expected} {noun}s picked
           </CounterPill>
         )}
+        {manifest.status === ManifestStatus.PICKED &&
+          (manifest.pickup_otp_verified_at || manifest.pickup_otp_override_reason) && (
+            <span
+              data-testid={`pickups.otp-verified.${manifest.id}`}
+              title={
+                manifest.pickup_otp_override_reason
+                  ? `Admin override: ${manifest.pickup_otp_override_reason}`
+                  : "Pickup handover OTP verified"
+              }
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            >
+              <ShieldCheck className="h-3 w-3 text-primary" />
+              {manifest.pickup_otp_override_reason ? "OTP override" : "OTP verified"}
+            </span>
+          )}
         {isActivePickup(manifest.status) && (
           <CounterPill>
             {manifest.is_blind_pickup
@@ -182,6 +238,7 @@ export function PickupStatusCell({
           </CounterPill>
         )}
       </div>
+      <PickupOtpBadge manifest={manifest} />
       {isNotPicked && manifest.failure_reason && (
         <span className="max-w-[240px] text-xs text-muted-foreground">{manifest.failure_reason}</span>
       )}
@@ -197,17 +254,24 @@ function PrintLabelButton({
   manifest: ManifestResponse;
   context: PickupRowContext;
 }) {
+  const isThisRowBusy = context.busyId === manifest.id;
+  const isAnyRowBusy = Boolean(context.rowBusy) || isThisRowBusy;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
           size="sm"
-          disabled={context.busyId === manifest.id}
+          disabled={isAnyRowBusy}
           onClick={(event) => event.stopPropagation()}
           className="h-8 text-xs font-semibold"
         >
-          <Printer className="mr-1.5 h-3.5 w-3.5" /> Print label
+          {isThisRowBusy ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Printer className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Print label
           <ChevronDown className="ml-1 h-3 w-3" />
         </Button>
       </DropdownMenuTrigger>
@@ -232,6 +296,8 @@ function OpsMenu({ manifest, context }: { manifest: ManifestResponse; context: P
   const { handlers, canOperate, flow } = context;
   const showRunSheet = flow === ServiceFlow.B2B;
   if (!canOperate && !showRunSheet) return null;
+  const isThisRowBusy = context.busyId === manifest.id;
+  const isAnyRowBusy = Boolean(context.rowBusy) || isThisRowBusy;
 
   return (
     <DropdownMenu>
@@ -240,11 +306,15 @@ function OpsMenu({ manifest, context }: { manifest: ManifestResponse; context: P
           variant="ghost"
           size="icon"
           aria-label="More pickup actions"
-          disabled={context.busyId === manifest.id}
+          disabled={isAnyRowBusy}
           onClick={(event) => event.stopPropagation()}
           className="h-8 w-8"
         >
-          <MoreHorizontal className="h-4 w-4" />
+          {isThisRowBusy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="h-4 w-4" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
@@ -287,7 +357,8 @@ export function PickupRowActions({
   context: PickupRowContext;
 }) {
   const { handlers } = context;
-  const busy = context.busyId === manifest.id;
+  const isThisRowBusy = context.busyId === manifest.id;
+  const disabled = Boolean(context.rowBusy) || isThisRowBusy;
 
   if (isActivePickup(manifest.status)) {
     return (
@@ -297,13 +368,14 @@ export function PickupRowActions({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
+            disabled={disabled}
             onClick={(event) => {
               event.stopPropagation();
               handlers.onCancel(manifest);
             }}
             className="h-8 text-xs font-semibold text-destructive hover:text-destructive hover:bg-destructive/10"
           >
+            {isThisRowBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             Cancel pickup
           </Button>
         )}
@@ -317,14 +389,19 @@ export function PickupRowActions({
       <Button
         variant="outline"
         size="sm"
-        disabled={busy}
+        disabled={disabled}
         onClick={(event) => {
           event.stopPropagation();
           handlers.onManifestCopy(manifest);
         }}
         className="h-8 text-xs font-semibold"
       >
-        Manifest Copy <Download className="ml-1.5 h-3.5 w-3.5" />
+        Manifest Copy{" "}
+        {isThisRowBusy ? (
+          <Loader2 className="ml-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Download className="ml-1.5 h-3.5 w-3.5" />
+        )}
       </Button>
     );
   }
@@ -334,14 +411,19 @@ export function PickupRowActions({
       <Button
         variant="secondary"
         size="sm"
-        disabled={busy}
+        disabled={disabled}
         onClick={(event) => {
           event.stopPropagation();
           handlers.onReschedule(manifest);
         }}
         className="h-8 text-xs font-semibold"
       >
-        <CalendarClock className="mr-1.5 h-3.5 w-3.5" /> Reschedule
+        {isThisRowBusy ? (
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+        )}
+        Reschedule
       </Button>
     );
   }

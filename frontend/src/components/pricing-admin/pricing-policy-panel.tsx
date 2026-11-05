@@ -44,6 +44,7 @@ import {
   getCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import { NoticeBanner, NoticeTone } from "./notice-banner";
@@ -122,7 +123,7 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
     getCachedQuery<PricingPolicyRead>(cacheKey)
   );
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const { pending: isSaving, run } = useSingleFlight();
   const [pending, setPending] = useState<PricingPolicy | null>(null);
   const [changes, setChanges] = useState<PolicyChange[]>([]);
 
@@ -184,22 +185,20 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
     setPending(next);
   };
 
-  const confirmSave = async () => {
-    if (!pending) return;
-    setIsSaving(true);
-    try {
-      const updated = await updatePricingPolicy(pending, tenantSlug);
-      setCachedQuery(cacheKey, updated);
-      setSaved(updated);
-      form.reset(policyToFormValues(updated));
-      setPending(null);
-      toast.success(SAVED_TEXT);
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const confirmSave = () =>
+    run(async () => {
+      if (!pending) return;
+      try {
+        const updated = await updatePricingPolicy(pending, tenantSlug);
+        setCachedQuery(cacheKey, updated);
+        setSaved(updated);
+        form.reset(policyToFormValues(updated));
+        setPending(null);
+        toast.success(SAVED_TEXT);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
+      }
+    });
 
   const toggleOption = (option: ServiceOption, checked: boolean) => {
     const current = form.getValues("enabled_options");
@@ -313,8 +312,9 @@ export function PricingPolicyPanel({ tenantSlug, canEdit }: PricingPolicyPanelPr
               COD fee
             </CardTitle>
             <CardDescription>
-              Customers pay the higher of the minimum or the percentage of the goods value. Set it
-              high enough to cover Delhivery&apos;s own COD charge, which you pay. Prime has no COD.
+              Customers pay the higher of the minimum ₹ amount or the percentage of the goods value
+              (standard: ₹20 or 2%). Applies to Delhivery B2C Express and Delhivery B2B Cargo;
+              Logismart Prime has no COD.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 min-w-0 sm:grid-cols-2">

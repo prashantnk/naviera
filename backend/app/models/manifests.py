@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
@@ -127,6 +127,30 @@ class Manifest(SQLModel, table=True):
         default=None,
         sa_column=sa.Column(sa.String(255), nullable=True),
         description="Reason recorded when the pickup attempt is marked NOT_PICKED",
+    )
+    pickup_otp: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(6), nullable=True),
+        description="6-digit cryptographically random pickup handover OTP shared by the seller with the pickup executive",
+    )
+    pickup_otp_verified_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True),
+        description="UTC timestamp when pickup handover OTP was verified or overridden at dispatch",
+    )
+    pickup_otp_verified_by: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=sa.Column(
+            sa.Uuid,
+            sa.ForeignKey("user.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        description="User ID of the field executive or admin who verified or overrode the pickup OTP",
+    )
+    pickup_otp_override_reason: Optional[str] = Field(
+        default=None,
+        sa_column=sa.Column(sa.String(255), nullable=True),
+        description="Mandatory audit reason when an Owner/Admin overrides pickup OTP verification",
     )
 
     __table_args__ = (

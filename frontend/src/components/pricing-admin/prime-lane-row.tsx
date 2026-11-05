@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { InputAdornment } from "@/components/ui/form-extras";
 import { Input } from "@/components/ui/input";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 
 import { patchPrimeLane, type PrimeLaneRead } from "./pricing-admin-api";
@@ -60,7 +61,7 @@ function _formatCell(lane: PrimeLaneRead, column: EditableLaneColumn): string {
 export function PrimeLaneRow({ lane, tenantSlug, canEdit, onSaved, onActiveChanged }: PrimeLaneRowProps) {
   const [draft, setDraft] = useState<LaneDraft | null>(null);
   const [errors, setErrors] = useState<LaneDraftErrors>({});
-  const [saving, setSaving] = useState(false);
+  const { pending: saving, run } = useSingleFlight();
   const testId = `prime-lanes.row.${lane.id}`;
 
   const cancel = () => {
@@ -77,34 +78,32 @@ export function PrimeLaneRow({ lane, tenantSlug, canEdit, onSaved, onActiveChang
       cancel();
       return;
     }
-    setSaving(true);
-    try {
-      const updated = await patchPrimeLane(lane.id, result.patch, tenantSlug);
-      onSaved(updated);
-      cancel();
-      toast.success(`Lane ${lane.origin_zone} → ${lane.dest_zone} saved.`);
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
-    } finally {
-      setSaving(false);
-    }
+    await run(async () => {
+      try {
+        const updated = await patchPrimeLane(lane.id, result.patch, tenantSlug);
+        onSaved(updated);
+        cancel();
+        toast.success(`Lane ${lane.origin_zone} → ${lane.dest_zone} saved.`);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
+      }
+    });
   };
 
   const toggleActive = async (isActive: boolean) => {
-    setSaving(true);
-    try {
-      await patchPrimeLane(lane.id, { is_active: isActive }, tenantSlug);
-      toast.success(
-        isActive
-          ? `Lane switched on. Any other transporter on ${lane.origin_zone} → ${lane.dest_zone} was switched off.`
-          : "Lane switched off. Customers can no longer book it.",
-      );
-      onActiveChanged();
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
-    } finally {
-      setSaving(false);
-    }
+    await run(async () => {
+      try {
+        await patchPrimeLane(lane.id, { is_active: isActive }, tenantSlug);
+        toast.success(
+          isActive
+            ? `Lane switched on. Any other transporter on ${lane.origin_zone} → ${lane.dest_zone} was switched off.`
+            : "Lane switched off. Customers can no longer book it.",
+        );
+        onActiveChanged();
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, SAVE_ERROR_TEXT));
+      }
+    });
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -149,15 +148,20 @@ export function PrimeLaneRow({ lane, tenantSlug, canEdit, onSaved, onActiveChang
         </TableCell>
       ))}
       <TableCell>
-        <input
-          type="checkbox"
-          checked={lane.is_active}
-          disabled={!canEdit || saving || draft !== null}
-          onChange={(e) => toggleActive(e.target.checked)}
-          aria-label={`Active: ${lane.origin_zone} to ${lane.dest_zone} by ${lane.transporter_name}`}
-          data-testid={`${testId}.active`}
-          className="h-4 w-4 rounded border-slate-300 accent-primary"
-        />
+        <div className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={lane.is_active}
+            disabled={!canEdit || saving || draft !== null}
+            onChange={(e) => toggleActive(e.target.checked)}
+            aria-label={`Active: ${lane.origin_zone} to ${lane.dest_zone} by ${lane.transporter_name}`}
+            data-testid={`${testId}.active`}
+            className="h-4 w-4 rounded border-slate-300 accent-primary"
+          />
+          {saving && draft === null && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" data-testid={`${testId}.active.pending`} />
+          )}
+        </div>
       </TableCell>
       {canEdit && (
         <TableCell className="whitespace-nowrap text-right">

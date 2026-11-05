@@ -31,7 +31,7 @@ import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-ba
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
-import { toIstIsoString } from "@/lib/utils";
+import { extractApiErrorMessage, toIstIsoString } from "@/lib/utils";
 import { b2bForwardBookingSchema, B2BForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Sparkles, Building2 } from "lucide-react";
@@ -50,6 +50,7 @@ export default function B2BForwardBookingWizard() {
     () => getCachedAddresses(tenantSlug) ?? []
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [addShippingToCod, setAddShippingToCod] = useState(false);
   const hasRecoveredRef = useRef(false);
   const isSubmittedRef = useRef(false);
 
@@ -154,6 +155,10 @@ export default function B2BForwardBookingWizard() {
     if (handoff.boxCount) form.setValue("packages.0.box_count", handoff.boxCount, opts);
     if (handoff.description) form.setValue("packages.0.description", handoff.description, opts);
     if (handoff.shipmentValue) form.setValue("payment_details.shipment_value", handoff.shipmentValue, opts);
+    if (handoff.isCod) {
+      form.setValue("payment_details.is_cod", true, opts);
+      if (handoff.codAmount) form.setValue("payment_details.cod_amount", handoff.codAmount, opts);
+    }
     if (handoff.doorDelivery !== undefined) form.setValue("door_delivery", handoff.doorDelivery, opts);
     const missing = [
       !pickupId && handoff.originPincode ? `pickup (${handoff.originPincode})` : null,
@@ -187,6 +192,9 @@ export default function B2BForwardBookingWizard() {
         if (savedDraft) {
           hasRecoveredRef.current = true;
           const parsed = JSON.parse(savedDraft);
+          if (parsed.addShippingToCod !== undefined) {
+            setAddShippingToCod(parsed.addShippingToCod);
+          }
           if (parsed.values) {
             const vals = parsed.values;
             if (vals.service_type && !Object.values(ServiceType).includes(vals.service_type)) {
@@ -239,14 +247,14 @@ export default function B2BForwardBookingWizard() {
       try {
         localStorage.setItem(
           DRAFT_KEY,
-          JSON.stringify({ values })
+          JSON.stringify({ values, addShippingToCod })
         );
       } catch (error) {
         console.warn("LocalStorage autosave blocked:", error);
       }
     });
     return () => subscription.unsubscribe();
-  }, [form, DRAFT_KEY, isSubmitting]);
+  }, [form, DRAFT_KEY, addShippingToCod, isSubmitting]);
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -270,8 +278,7 @@ export default function B2BForwardBookingWizard() {
       });
       toast.success("Document safely uploaded and logged");
     } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || "Failed to upload document");
+      toast.error(extractApiErrorMessage(error, "Failed to upload document"));
     } finally {
       setIsUploading(false);
     }
@@ -287,9 +294,9 @@ export default function B2BForwardBookingWizard() {
       : values.new_delivery_address,
   });
 
-  /** Logismart Prime has no COD at launch (pricing Q9), so B2B LRs are always prepaid/postpaid. */
+  /** Delhivery B2B Cargo supports COD; Logismart Prime is Prepaid-only (enforced per option card). */
   const buildB2BPaymentInputs = (values: B2BForwardShipmentFormValues) =>
-    buildPaymentInputs({ ...values.payment_details, is_cod: false }, false);
+    buildPaymentInputs(values.payment_details, addShippingToCod);
 
   /** Blind pickups send no boxes (counted at pickup); otherwise the measured boxes. */
   const packagesFor = (values: B2BForwardShipmentFormValues): PackageCreate[] =>
@@ -498,6 +505,8 @@ export default function B2BForwardBookingWizard() {
                 <B2BForwardFormStep
                   control={form.control}
                   savedAddresses={savedAddresses}
+                  addShippingToCod={addShippingToCod}
+                  setAddShippingToCod={setAddShippingToCod}
                   docFields={docFields}
                   removeDoc={removeDoc}
                   isUploading={isUploading}
@@ -528,7 +537,7 @@ export default function B2BForwardBookingWizard() {
                 onBack={() => setCurrentStep(0)}
                 onSubmit={onConfirmBooking}
                 isSubmitting={isSubmitting}
-                isCod={false}
+                isCod={Boolean(form.watch("payment_details.is_cod"))}
                 pickup={routeAddresses.pickup}
                 delivery={routeAddresses.delivery}
                 doorDelivery={watchedDoorDelivery}

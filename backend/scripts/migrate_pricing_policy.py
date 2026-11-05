@@ -38,8 +38,8 @@ from scripts.tenant_data_core import (
 
 LEGACY_RATE_CARD_KEY = "pricing_config"
 TEST_TENANT_COD_FEE_PERCENT = 2.0
-TEST_TENANT_COD_FEE_MIN = 1.0
-"""Calibration of the pre-redesign engine (2 % of goods, no real minimum), board #348."""
+TEST_TENANT_COD_FEE_MIN = 20.0
+"""Standard Delhivery One COD charge (max(₹20, 2% of COD value))."""
 CHANGED_SECTIONS = [LEGACY_RATE_CARD_KEY, PRICING_POLICY_SETTINGS_KEY]
 EXIT_OK = 0
 EXIT_USAGE = 2

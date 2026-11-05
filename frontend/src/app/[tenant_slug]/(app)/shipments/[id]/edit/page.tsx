@@ -5,7 +5,6 @@ import {
   AddressCreate,
   AddressRead,
   AddressScope,
-  ApiError,
   FreightPaymentMode,
   ProductCategory,
   PickupUpdate,
@@ -49,6 +48,7 @@ import { AddressFieldset } from "@/components/forms/address-fieldset";
 import { addressSchema, ShipmentFormValues } from "@/lib/validations/shipment";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -66,7 +66,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Info, Loader2, Save } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Control, Resolver, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -310,13 +311,13 @@ function _isReadyForPreview(change: PickupUpdate): boolean {
 
 export default function EditShipmentPage() {
   const params = useParams();
-  const router = useRouter();
+  const router = useProgressRouter();
   const shipmentId = params.id as string;
   const { routeTo, tenant, tenantSlug } = useTenant();
   const formRef = useRef<HTMLFormElement>(null);
 
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { pending: isSubmitting, run: runSubmit } = useSingleFlight();
   const [shipmentType, setShipmentType] = useState<ShipmentType | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<AddressRead[]>(
     () => getCachedAddresses(tenantSlug) ?? []
@@ -532,28 +533,14 @@ export default function EditShipmentPage() {
    * @param change - PickupUpdate holding only the changed fields.
    */
   const saveChange = async (change: PickupUpdate) => {
-    setIsSubmitting(true);
     try {
       await ShipmentsService.updateShipment(shipmentId, change);
       window.dispatchEvent(new CustomEvent("wallet-updated"));
       toast.success("Shipment updated successfully!");
       router.push(routeTo(`/shipments/${shipmentId}`));
     } catch (error) {
-      const apiError = error as ApiError;
       // FastAPI 422 arrays become one readable line; H-7 / H-8 / H-12 refusals arrive as `detail`.
-      let msg = "Failed to update shipment.";
-      if (apiError.body?.detail) {
-        if (Array.isArray(apiError.body.detail)) {
-          msg = apiError.body.detail
-            .map((err: { loc: string[]; msg: string }) => `${err.loc.at(-1)}: ${err.msg}`)
-            .join(" | ");
-        } else if (typeof apiError.body.detail === "string") {
-          msg = apiError.body.detail;
-        }
-      }
-      toast.error(msg);
-    } finally {
-      setIsSubmitting(false);
+      toast.error(extractApiErrorMessage(error, "Failed to update shipment."));
     }
   };
 
@@ -571,7 +558,7 @@ export default function EditShipmentPage() {
     }
   };
 
-  const onSubmit = async (data: EditShipmentValues) => {
+  const checkAndSave = async (data: EditShipmentValues) => {
     if (!initialValues) return;
     const { change, changed } = _buildEditChange(initialValues, data);
     if (!changed) {
@@ -594,6 +581,9 @@ export default function EditShipmentPage() {
     }
     await saveChange(change);
   };
+
+  // One in-flight save: a second Enter / click while checking or saving is dropped.
+  const onSubmit = (data: EditShipmentValues) => runSubmit(() => checkAndSave(data));
 
   if (loading) {
     return (
@@ -1147,7 +1137,7 @@ export default function EditShipmentPage() {
                 {isSubmitting || isPreviewing ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isPreviewing ? "Checking charges" : "Saving"}
+                    {isPreviewing ? "Checking charges" : "Saving…"}
                   </>
                 ) : (
                   <>

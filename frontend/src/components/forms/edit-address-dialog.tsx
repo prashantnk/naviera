@@ -1,7 +1,7 @@
 // src/components/forms/edit-address-dialog.tsx
 "use client";
 
-import { AddressRead, AddressesService, AddressCategory, AddressScope, AddressUpdate, ApiError } from "@/api_client";
+import { AddressRead, AddressesService, AddressCategory, AddressScope, AddressUpdate } from "@/api_client";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/components/auth/auth-guard";
 import {
@@ -24,11 +24,13 @@ import { FormSection, RequiredMark } from "@/components/ui/form-extras";
 import { ADDRESS_CATEGORY_OPTIONS, ADDRESS_SCOPE_OPTIONS, toOptions } from "@/lib/form-options";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, User, Building2, Phone, Mail, MapPin, Tag, Eye, Contact } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { invalidateAddressesCache } from "@/hooks/use-addresses";
 import { usePincodeLocator } from "@/hooks/use-pincode-locator";
+import { useSingleFlight } from "@/hooks/use-single-flight";
+import { extractApiErrorMessage } from "@/lib/utils";
 import * as z from "zod";
 
 const addressSchema = z.object({
@@ -83,7 +85,7 @@ export function EditAddressDialog({
   setOpen: (o: boolean) => void;
   onSuccess: () => void;
 }) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { pending: isSubmitting, run } = useSingleFlight();
   const { isAdmin } = useUser();
 
   const form = useForm<z.infer<typeof addressSchema>>({
@@ -125,30 +127,28 @@ export function EditAddressDialog({
 
   const onSubmit = async (data: z.infer<typeof addressSchema>) => {
     if (!address) return;
-    setIsSubmitting(true);
-    try {
-      await AddressesService.updateSavedAddress(address.id, {
-        ...data,
-        email: data.email === "" ? undefined : data.email,
-        company_name: data.company_name === "" ? undefined : data.company_name,
-        alternate_phone: data.alternate_phone === "" ? undefined : data.alternate_phone,
-        address_line2:
-          data.address_line2 === "" ? undefined : data.address_line2,
-        landmark: data.landmark === "" ? undefined : data.landmark,
-        gstin: data.gstin === "" ? undefined : data.gstin,
-        // Force scope to PRIVATE for non-admins
-        scope: isAdmin ? data.scope : AddressScope.PRIVATE,
-      } as AddressUpdate);
-      invalidateAddressesCache();
-      toast.success("Address updated successfully!");
-      setOpen(false);
-      onSuccess();
-    } catch (error: unknown) {
-      const apiError = error as ApiError;
-      toast.error(apiError.body?.detail || "Failed to update address");
-    } finally {
-      setIsSubmitting(false);
-    }
+    await run(async () => {
+      try {
+        await AddressesService.updateSavedAddress(address.id, {
+          ...data,
+          email: data.email === "" ? undefined : data.email,
+          company_name: data.company_name === "" ? undefined : data.company_name,
+          alternate_phone: data.alternate_phone === "" ? undefined : data.alternate_phone,
+          address_line2:
+            data.address_line2 === "" ? undefined : data.address_line2,
+          landmark: data.landmark === "" ? undefined : data.landmark,
+          gstin: data.gstin === "" ? undefined : data.gstin,
+          // Force scope to PRIVATE for non-admins
+          scope: isAdmin ? data.scope : AddressScope.PRIVATE,
+        } as AddressUpdate);
+        invalidateAddressesCache();
+        toast.success("Address updated successfully!");
+        setOpen(false);
+        onSuccess();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Failed to update address"));
+      }
+    });
   };
 
   return (

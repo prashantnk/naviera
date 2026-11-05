@@ -85,11 +85,16 @@ from app.services.pricing.delhivery_client import (
     DelhiveryUnavailableError,
 )
 from app.services.pricing.fake_delhivery import FakeDelhiveryApi
-from app.services.pricing.policy import delhivery_b2b_configured, policy_of, to_read
+from app.services.pricing.policy import (
+    COD_DISABLED_DETAIL,
+    delhivery_b2b_configured,
+    policy_of,
+    to_read,
+)
 from app.services.pricing.prime import PrimeProvider
 from app.services.pricing.quote_service import (
-    B2B_COD_REASON,
     B2B_OPTIONS,
+    PRIME_COD_REASON,
     QuoteService,
     RequoteRequest,
     SellInputs,
@@ -317,6 +322,7 @@ async def test_pincode_serviceability_parsing_and_cache() -> None:
             "/pincode-service/122001": [(200, {"data": {"pincode": "122001"}})],
             "/pincode-service/100001": [(400, {"error": "pin: 100001 is not serviceable."})],
             "/pincode-service/560001": [(200, {"data": {"serviceable": False}})],
+            "/pincode-service/799001": [(200, {"data": {"serviceable": True, "cod": False}})],
         }
     )
     api = _api(recorder)
@@ -324,6 +330,9 @@ async def test_pincode_serviceability_parsing_and_cache() -> None:
     assert await api.pincode_serviceable("100001", 30000) is False
     assert await api.pincode_serviceable("560001", 30000) is False
     assert await api.pincode_serviceable("122001", 30000) is True  # cached
+    assert await api.pincode_serviceable("799001", 30000, is_cod=False) is True
+    assert await api.pincode_serviceable("799001", 30000, is_cod=True) is False
+    assert recorder.paths().count("/pincode-service/799001") == 1  # raw response reused across modes
     assert recorder.paths().count("/pincode-service/122001") == 1
     assert recorder.requests[1].url.params["weight"] == "30000"
     assert recorder.requests[1].headers["authorization"] == f"Bearer {JWT}"
@@ -483,7 +492,7 @@ async def test_fake_knobs() -> None:
 
 async def test_provider_quote_on_fake() -> None:
     quote = await _provider().quote(B2B, _spec(), freshness=PriceFreshness.QUOTE, include_rto=False)
-    assert quote.serviceable and quote.cod_supported is False and quote.rto is None
+    assert quote.serviceable and quote.cod_supported is True and quote.rto is None
     assert quote.forward is not None and quote.forward.cost == Decimal("400.00")
     assert quote.forward.transit_days == 4 and quote.forward.charged_weight_kg == Decimal("30.000")
     assert quote.snapshot["request"] == estimate_body(_spec())
@@ -518,6 +527,19 @@ async def test_provider_unavailable_reasons() -> None:
     pin_spec = ParcelSpec(pickup_pincode="122001", delivery_pincode="999999", packages=(_box(),))
     unserved = await _provider().quote(B2B, pin_spec, freshness=PriceFreshness.QUOTE, include_rto=False)
     assert unserved.unavailable_code == QuoteUnavailableCode.NOT_SERVICEABLE and "999999" in unserved.unavailable_reason  # type: ignore[operator]
+    no_cod_spec = ParcelSpec(pickup_pincode="122001", delivery_pincode="799001", packages=(_box(),))
+    prepaid_ok = await _provider().quote(
+        B2B, no_cod_spec, freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=False
+    )
+    assert prepaid_ok.serviceable is True
+    cod_refused = await _provider().quote(
+        B2B, no_cod_spec, freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=True
+    )
+    assert (
+        cod_refused.serviceable is False
+        and cod_refused.unavailable_code == QuoteUnavailableCode.COD_NOT_AVAILABLE
+        and "799001" in cod_refused.unavailable_reason  # type: ignore[operator]
+    )
 
 
 class _StubApi:
@@ -529,7 +551,7 @@ class _StubApi:
     async def estimate(self, body):
         return self._estimate()
 
-    async def pincode_serviceable(self, pin, grams):
+    async def pincode_serviceable(self, pin, grams, *, is_cod: bool = False, is_origin: bool = False):
         if isinstance(self._served, Exception):
             raise self._served
         return self._served
@@ -594,7 +616,7 @@ async def _priced_quote(policy: PricingPolicy, include_rto: bool = False):
 async def test_default_policy_is_delhivery_pre_gst_plus_18_percent() -> None:
     priced, terms = await _priced_quote(PricingPolicy())
     assert terms.markup_percent == Decimal("0") and terms.markup_flat == Decimal("0.00")
-    assert terms.cod_fee_percent is None  # B2B carries no COD
+    assert terms.cod_fee_percent == Decimal("2.0") and terms.cod_fee_min == Decimal("20.0")
     assert (priced.sell.forward_freight, priced.sell.gst, priced.sell.total) == (Decimal("400.00"), Decimal("72.00"), Decimal("472.00"))
     assert priced.breakdown["sell_lines"][0]["label"] == "Freight (Delhivery B2B Cargo)"
     assert priced.breakdown["service_option"] == B2B.value
@@ -666,7 +688,7 @@ async def test_quote_options_b2b_cards(offline_b2b: _MemoryCache, no_prime_lane:
     assert cards[ServiceOption.PRIME_SURFACE].serviceable is False
     b2b = cards[B2B]
     assert b2b.serviceable and b2b.total_amount == 586.46 and b2b.freight_amount == 497.0 and b2b.transit_days == 4
-    assert response.cod_available is False and response.cod_unavailable_reason == B2B_COD_REASON
+    assert response.cod_available is True and response.cod_unavailable_reason is None
     dumped = response.model_dump_json()
     assert "pre_tax" not in dumped and "gross" not in dumped and "carrier" not in dumped
 
@@ -676,8 +698,11 @@ async def test_disabled_option_and_cod_refusal(offline_b2b: _MemoryCache) -> Non
     off = PricingPolicy(enabled_options=[ServiceOption.PRIME_SURFACE])
     disabled = await service.carrier_quote(TEST_TENANT, off, B2B, _spec(), freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=False)
     assert disabled.unavailable_code == QuoteUnavailableCode.OPTION_DISABLED
-    cod = await service.carrier_quote(TEST_TENANT, PricingPolicy(), B2B, _spec(), freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=True)
-    assert cod.unavailable_code == QuoteUnavailableCode.COD_NOT_AVAILABLE and cod.unavailable_reason == B2B_COD_REASON
+    assert service._cod_availability(ServiceFlow.B2B, off) == (False, PRIME_COD_REASON)
+    prime_cod = await service.carrier_quote(TEST_TENANT, PricingPolicy(), ServiceOption.PRIME_SURFACE, _spec(), freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=True)
+    assert prime_cod.unavailable_code == QuoteUnavailableCode.COD_NOT_AVAILABLE and prime_cod.unavailable_reason == PRIME_COD_REASON
+    b2b_cod = await service.carrier_quote(TEST_TENANT, PricingPolicy(), B2B, _spec(), freshness=PriceFreshness.QUOTE, include_rto=False, is_cod=True)
+    assert b2b_cod.serviceable is True and b2b_cod.cod_supported is True
 
 
 ADDRESS = {"name": "Asha", "phone": "9876543210", "address_line1": "1 MG Road", "city": "Gurugram", "state": "Haryana", "pincode": "122001"}
@@ -714,10 +739,57 @@ async def test_booking_prices_fresh_with_rto_and_409_on_change(offline_b2b: _Mem
     assert err.value.detail["new_total"] == 472.0  # type: ignore[index]
 
 
-async def test_booking_refuses_cod_and_503_when_down_without_cache(offline_b2b: _MemoryCache) -> None:
-    with pytest.raises(HTTPException) as err:
-        await _book(_b2b_payload(payment_details={"shipment_value": 10000, "is_cod": True, "cod_amount": 100}))
-    assert err.value.status_code == 400 and err.value.detail == B2B_COD_REASON
+async def test_booking_b2b_cod_and_503_when_down_without_cache(offline_b2b: _MemoryCache) -> None:
+    # Delhivery B2B Cargo supports COD: min branch (₹500 -> ₹20 COD fee) & % branch (₹2,500 -> ₹50 COD fee)
+    cod_min = await _book(_b2b_payload(payment_details={"shipment_value": 10000, "is_cod": True, "cod_amount": 500}))
+    assert cod_min.priced.sell.forward_freight == Decimal("400.00")
+    assert cod_min.priced.sell.cod_fee == Decimal("20.00")
+    assert cod_min.priced.sell.gst == Decimal("75.60")
+    assert cod_min.priced.sell.total == Decimal("495.60")
+    assert cod_min.priced.door_collectible == Decimal("500.00")
+
+    cod_pct = await _book(
+        _b2b_payload(
+            payment_details={
+                "shipment_value": 10000,
+                "is_cod": True,
+                "cod_amount": 2500,
+                "add_shipping_to_cod": True,
+            }
+        )
+    )
+    assert cod_pct.priced.sell.cod_fee == Decimal("50.00")
+    assert cod_pct.priced.sell.total == Decimal("531.00")
+    assert cod_pct.priced.door_collectible == Decimal("3031.00")
+    assert cod_pct.priced.cod_remittance == Decimal("2500.00")
+
+    # Prime remains Prepaid-only
+    with pytest.raises(HTTPException) as prime_err:
+        await _book(
+            _b2b_payload(
+                service_option=ServiceOption.PRIME_SURFACE.value,
+                payment_details={"shipment_value": 10000, "is_cod": True, "cod_amount": 500},
+            )
+        )
+    assert prime_err.value.status_code == 400 and prime_err.value.detail == PRIME_COD_REASON
+
+    # Policy COD off refuses B2B COD too
+    cod_off_tenant = SimpleNamespace(
+        id=uuid.uuid4(),
+        slug="logismart-test",
+        settings={"pricing_policy": {"cod_fee_percent": None, "cod_fee_min": None}},
+    )
+    with pytest.raises(HTTPException) as off_err:
+        await price_booking(
+            None,  # type: ignore[arg-type]
+            cod_off_tenant,  # type: ignore[arg-type]
+            _b2b_payload(payment_details={"shipment_value": 10000, "is_cod": True, "cod_amount": 500}),
+            pickup_pincode="122001",
+            delivery_pincode="110001",
+        )
+    assert off_err.value.status_code == 400 and off_err.value.detail == COD_DISABLED_DETAIL
+
+    offline_b2b.rows.clear()
     fake_delhivery_b2b.FAKE_B2B_DOWN = True
     with pytest.raises(HTTPException) as down:
         await _book(_b2b_payload())

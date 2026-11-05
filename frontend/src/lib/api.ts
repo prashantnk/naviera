@@ -7,8 +7,25 @@ import { saveBlobAsFile } from "./download-blob";
 /** How long the tenant-config request may take before the page shows an error. */
 const TENANT_CONFIG_TIMEOUT_MS = 10000;
 
-/** Server-side in-memory TTL for tenant public config so RSC layout transitions resolve in <1ms. */
-export const TENANT_MEM_CACHE_TTL_MS = 300_000;
+/**
+ * Server-side in-memory TTL for tenant public config, so the layout, metadata
+ * and page of one render (and bursts of renders) share one lookup.
+ *
+ * Kept short on purpose: on Vercel each serverless instance has its own copy,
+ * and `/api/revalidate` can only clear the copy of the instance it runs on.
+ * Cross-instance freshness comes from `revalidateTag` on the fetch Data Cache,
+ * which this layer would otherwise mask for the whole TTL.
+ */
+export const TENANT_MEM_CACHE_TTL_MS = 15_000;
+
+/** TTL for "workspace does not exist" answers. */
+const TENANT_NOT_FOUND_TTL_MS = 15_000;
+
+/**
+ * Upper bound on remembered slugs. Anyone can request `/<random-slug>`, so the
+ * map must not grow with every unknown slug; the oldest entry is evicted first.
+ */
+export const MAX_TENANT_CACHE_ENTRIES = 100;
 
 interface CachedTenantEntry {
   tenant: Tenant | null;
@@ -19,8 +36,37 @@ const tenantMemoryCache = new Map<string, CachedTenantEntry>();
 const tenantInFlight = new Map<string, Promise<Tenant | null>>();
 
 /**
+ * Remembers a lookup result, evicting expired and then oldest entries beyond
+ * `MAX_TENANT_CACHE_ENTRIES`.
+ *
+ * @param slug - Normalized tenant slug.
+ * @param tenant - Tenant config, or null for "not found".
+ * @param ttlMs - How long the answer stays valid.
+ */
+function _rememberTenant(slug: string, tenant: Tenant | null, ttlMs: number): void {
+  const now = Date.now();
+  tenantMemoryCache.delete(slug);
+  tenantMemoryCache.set(slug, { tenant, expiresAt: now + ttlMs });
+  if (tenantMemoryCache.size <= MAX_TENANT_CACHE_ENTRIES) return;
+  for (const [key, entry] of tenantMemoryCache) {
+    if (entry.expiresAt <= now) tenantMemoryCache.delete(key);
+  }
+  while (tenantMemoryCache.size > MAX_TENANT_CACHE_ENTRIES) {
+    const oldest = tenantMemoryCache.keys().next().value;
+    if (oldest === undefined) break;
+    tenantMemoryCache.delete(oldest);
+  }
+}
+
+/** Number of remembered slugs (test hook). */
+export function getTenantMemoryCacheSize(): number {
+  return tenantMemoryCache.size;
+}
+
+/**
  * Purges the in-memory tenant config cache for one tenant or all tenants.
- * Called by `/api/revalidate` when tenant settings are updated.
+ * Called by `/api/revalidate` when tenant settings are updated (this clears
+ * only the instance handling that request; see `TENANT_MEM_CACHE_TTL_MS`).
  */
 export function invalidateTenantMemoryCache(slug?: string): void {
   if (slug && slug.trim()) {
@@ -90,10 +136,9 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   }
 
   const requestPromise = (async (): Promise<Tenant | null> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TENANT_CONFIG_TIMEOUT_MS);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TENANT_CONFIG_TIMEOUT_MS);
-
       const res = await fetch(
         `${getBackendUrl()}/api/v1/tenants/${encodeURIComponent(normalizedSlug)}/public`,
         {
@@ -102,14 +147,9 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
         }
       );
 
-      clearTimeout(timeoutId);
-
       // 1. Valid 404 (Workspace doesn't exist)
       if (res.status === 404) {
-        tenantMemoryCache.set(normalizedSlug, {
-          tenant: null,
-          expiresAt: Date.now() + 30_000,
-        });
+        _rememberTenant(normalizedSlug, null, TENANT_NOT_FOUND_TTL_MS);
         return null;
       }
 
@@ -119,10 +159,7 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
       }
 
       const tenant: Tenant = await res.json();
-      tenantMemoryCache.set(normalizedSlug, {
-        tenant,
-        expiresAt: Date.now() + TENANT_MEM_CACHE_TTL_MS,
-      });
+      _rememberTenant(normalizedSlug, tenant, TENANT_MEM_CACHE_TTL_MS);
       return tenant;
     } catch (error: unknown) {
       // 3. Slow / unreachable backend: log it and let the error boundary show a
@@ -136,6 +173,7 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
       console.error(`[tenant-config] failed to load slug "${slug}"`, error);
       throw error;
     } finally {
+      clearTimeout(timeoutId);
       tenantInFlight.delete(normalizedSlug);
     }
   })();

@@ -119,7 +119,6 @@ function LrCell({ row }: { row: AppointmentRow }) {
     <div className="flex flex-col">
       <Link
         href={routeTo(`/b2b/shipments/${row.shipment_id}`)}
-        prefetch={true}
         className="font-mono text-sm font-semibold text-primary hover:underline"
       >
         {row.tracking_id || row.order_reference_id || "Pending"}
@@ -174,7 +173,7 @@ function RowActions({ row, canBook, isBookedTab, onBook }: RowActionsProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
           <DropdownMenuItem asChild>
-            <Link href={routeTo(`/b2b/shipments/${row.shipment_id}`)} prefetch={true}>
+            <Link href={routeTo(`/b2b/shipments/${row.shipment_id}`)}>
               <Eye className="mr-2 h-4 w-4 text-slate-500" />
               View LR
             </Link>

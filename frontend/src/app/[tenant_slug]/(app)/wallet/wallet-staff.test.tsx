@@ -2,6 +2,7 @@
 import { UserRole, WalletTxnStatus, WalletTxnType } from "@/api_client";
 import { resolveCapabilities } from "@/components/auth/capabilities";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import UnifiedWalletPage from "./page";
@@ -67,6 +68,8 @@ describe("Wallet page — staff views", () => {
     mockPending.mockReset();
     mockApprove.mockReset();
     mockOfflineCredit.mockReset();
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
     mockList.mockImplementation((tab: string) =>
       Promise.resolve(
         tab === "recharges"
@@ -106,6 +109,56 @@ describe("Wallet page — staff views", () => {
 
     fireEvent.click(screen.getByTestId("wallet.approve-dialog.confirm"));
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith("txn-1", "t"));
+  });
+
+  it("owner: approve shows a spinner, disables every review button, and credits exactly once", async () => {
+    state.role = UserRole.OWNER;
+    let resolveApprove: (value: { balance: number }) => void = () => {};
+    mockApprove.mockReturnValue(
+      new Promise((resolve) => {
+        resolveApprove = resolve;
+      })
+    );
+    render(<UnifiedWalletPage />);
+    await screen.findByText(/Pending UPI Recharges Requiring Admin Approval/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Approve & Merge/ })[0]);
+    const confirm = await screen.findByTestId("wallet.approve-dialog.confirm");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    const approveButtons = screen.getAllByRole("button", { name: /Approve & Merge/ });
+    approveButtons.forEach((btn) => {
+      expect(btn).toBeDisabled();
+      expect(btn.querySelector(".animate-spin")).not.toBeNull();
+    });
+    screen.getAllByRole("button", { name: /Reject/ }).forEach((btn) => expect(btn).toBeDisabled());
+    fireEvent.click(approveButtons[0]);
+    expect(mockApprove).toHaveBeenCalledTimes(1);
+
+    resolveApprove({ balance: 433 });
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(mockApprove).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      screen
+        .getAllByRole("button", { name: /Approve & Merge/ })
+        .forEach((btn) => expect(btn).toBeEnabled())
+    );
+  });
+
+  it("owner: a failed approve shows the API error toast and re-enables the buttons", async () => {
+    state.role = UserRole.OWNER;
+    mockApprove.mockRejectedValue({ body: { detail: "Recharge already approved." } });
+    render(<UnifiedWalletPage />);
+    await screen.findByText(/Pending UPI Recharges Requiring Admin Approval/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Approve & Merge/ })[0]);
+    fireEvent.click(await screen.findByTestId("wallet.approve-dialog.confirm"));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Recharge already approved."));
+    screen
+      .getAllByRole("button", { name: /Approve & Merge/ })
+      .forEach((btn) => expect(btn).toBeEnabled());
   });
 
   it("operations: own wallet cards but no Recharge button (backend refuses staff recharges)", async () => {

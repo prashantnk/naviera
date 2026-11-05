@@ -22,9 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { Loader2, Plus, Truck, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -57,51 +58,48 @@ function _candidateLabel(manifest: ManifestResponse): string {
 }
 
 export function AddToPickupBar({ selectedIds, onClear, onAdded }: AddToPickupBarProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const { tenantSlug, routeTo } = useTenant();
-  const [checking, setChecking] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const { pending: checking, run: runCheck } = useSingleFlight();
+  const { pending: adding, run: runAdd } = useSingleFlight();
   const [candidates, setCandidates] = useState<PickupCandidatesResponse | null>(null);
   const [chosenId, setChosenId] = useState<string>("");
 
   if (selectedIds.length === 0) return null;
   const count = selectedIds.length;
 
-  const handleAddToPickup = async () => {
-    setChecking(true);
-    try {
-      const response = await ManifestsService.getPickupCandidates(Array.from(selectedIds), tenantSlug);
-      setCandidates(response);
-      setChosenId(response.candidates[0]?.id ?? "");
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "These shipments cannot be added to a pickup."));
-    } finally {
-      setChecking(false);
-    }
-  };
+  const handleAddToPickup = () =>
+    runCheck(async () => {
+      try {
+        const response = await ManifestsService.getPickupCandidates(Array.from(selectedIds), tenantSlug);
+        setCandidates(response);
+        setChosenId(response.candidates[0]?.id ?? "");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "These shipments cannot be added to a pickup."));
+      }
+    });
 
   const handleAddToExisting = async () => {
     if (!candidates || !chosenId) return;
     const target = candidates.candidates.find((m) => m.id === chosenId);
-    setAdding(true);
-    try {
-      const updated = await ManifestsService.addShipmentsToManifest(
-        chosenId,
-        { shipment_ids: Array.from(selectedIds) },
-        tenantSlug
-      );
-      toast.success(
-        `Added ${count} shipment${count === 1 ? "" : "s"} to pickup ${getPickupDisplayId(updated)}.`,
-        { description: target ? _candidateLabel(target) : undefined }
-      );
-      setCandidates(null);
-      onClear();
-      onAdded();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to add shipments to the pickup."));
-    } finally {
-      setAdding(false);
-    }
+    await runAdd(async () => {
+      try {
+        const updated = await ManifestsService.addShipmentsToManifest(
+          chosenId,
+          { shipment_ids: Array.from(selectedIds) },
+          tenantSlug
+        );
+        toast.success(
+          `Added ${count} shipment${count === 1 ? "" : "s"} to pickup ${getPickupDisplayId(updated)}.`,
+          { description: target ? _candidateLabel(target) : undefined }
+        );
+        setCandidates(null);
+        onClear();
+        onAdded();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to add shipments to the pickup."));
+      }
+    });
   };
 
   const handleCreateNew = () => {

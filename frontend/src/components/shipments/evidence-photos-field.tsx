@@ -8,10 +8,10 @@
  * short-lived signed URL.
  */
 import { Camera, Loader2, X } from "lucide-react";
-import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { documentReferenceUrl, openDocument, uploadTenantDocument } from "@/lib/document-storage";
 import { extractApiErrorMessage } from "@/lib/utils";
 
@@ -49,12 +49,18 @@ export function EvidencePhotosField({
   testIdPrefix,
   disabled = false,
 }: EvidencePhotosFieldProps) {
-  const [uploading, setUploading] = useState(false);
+  const { pending: uploading, run: runUpload } = useSingleFlight();
+  const { pendingKey: openingUrl, run: runView } = useSingleFlight();
   const isFull = value.length >= MAX_EVIDENCE_PHOTOS;
 
-  const handleView = async (url: string) => {
-    if (!(await openDocument(tenantSlug, url))) toast.error("Could not open this photo.");
-  };
+  const handleView = (url: string) =>
+    runView(async () => {
+      try {
+        if (!(await openDocument(tenantSlug, url))) toast.error("Could not open this photo.");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Could not open this photo."));
+      }
+    }, url);
 
   const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -64,15 +70,15 @@ export function EvidencePhotosField({
       toast.error("Photo must be under 5 MB.");
       return;
     }
-    setUploading(true);
-    try {
-      const url = await _uploadPhoto(tenantSlug, file);
-      onChange([...value, url]);
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Photo upload failed."));
-    } finally {
-      setUploading(false);
-    }
+    await runUpload(async () => {
+      try {
+        const url = await _uploadPhoto(tenantSlug, file);
+        onChange([...value, url]);
+        toast.success("Photo added.");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Photo upload failed."));
+      }
+    });
   };
 
   return (
@@ -88,8 +94,11 @@ export function EvidencePhotosField({
               type="button"
               data-testid={`${testIdPrefix}.view-${index}`}
               onClick={() => void handleView(url)}
-              className="text-primary hover:underline"
+              disabled={openingUrl !== null}
+              aria-busy={openingUrl === url}
+              className="inline-flex items-center text-primary hover:underline"
             >
+              {openingUrl === url && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
               Photo {index + 1}
             </button>
             <button

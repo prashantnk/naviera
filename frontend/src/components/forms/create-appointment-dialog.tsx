@@ -18,6 +18,7 @@ import { ShipmentsService } from "@/api_client";
 import { extractApiErrorMessage, toIstIsoString } from "@/lib/utils";
 import { MAX_PO_NUMBERS, splitPoNumbers } from "@/lib/validations/shipment";
 import { useTenant } from "@/components/providers/tenant-provider";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { toast } from "sonner";
 import { IconSelect } from "@/components/ui/icon-select";
 import { RequiredMark } from "@/components/ui/form-extras";
@@ -34,7 +35,7 @@ interface CreateAppointmentDialogProps {
 
 export function CreateAppointmentDialog({ shipmentId, onSuccess, trigger }: CreateAppointmentDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { pending: loading, run } = useSingleFlight();
   const { tenantSlug } = useTenant();
 
   const [date, setDate] = useState("");
@@ -42,7 +43,7 @@ export function CreateAppointmentDialog({ shipmentId, onSuccess, trigger }: Crea
   const [poNumber, setPoNumber] = useState("");
   const [poExpiry, setPoExpiry] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!date || !slot) {
       toast.error("Date and Time Slot are required.");
@@ -57,35 +58,34 @@ export function CreateAppointmentDialog({ shipmentId, onSuccess, trigger }: Crea
       return;
     }
 
-    setLoading(true);
-    try {
-      const [startStr, endStr] = slot.split(" - ");
-      const startIso = toIstIsoString(`${date}T${startStr}:00`);
-      const endIso = toIstIsoString(`${date}T${endStr}:00`);
-      if (!startIso || !endIso) {
-        toast.error("Invalid appointment date or time slot.");
-        return;
-      }
-
-      await ShipmentsService.updateAppointment(
-        shipmentId,
-        {
-          appointment_start: startIso,
-          appointment_end: endIso,
-          po_number: poNumber || undefined,
-          po_expiry_date: poExpiry || undefined,
-        },
-        tenantSlug
-      );
-      toast.success("Appointment scheduled successfully");
-      setOpen(false);
-      onSuccess?.();
-    } catch (error: unknown) {
-      console.error(error);
-      toast.error(extractApiErrorMessage(error, "Failed to schedule appointment"));
-    } finally {
-      setLoading(false);
+    const [startStr, endStr] = slot.split(" - ");
+    const startIso = toIstIsoString(`${date}T${startStr}:00`);
+    const endIso = toIstIsoString(`${date}T${endStr}:00`);
+    if (!startIso || !endIso) {
+      toast.error("Invalid appointment date or time slot.");
+      return;
     }
+
+    void run(async () => {
+      try {
+        await ShipmentsService.updateAppointment(
+          shipmentId,
+          {
+            appointment_start: startIso,
+            appointment_end: endIso,
+            po_number: poNumber || undefined,
+            po_expiry_date: poExpiry || undefined,
+          },
+          tenantSlug
+        );
+        toast.success("Appointment scheduled successfully");
+        setOpen(false);
+        onSuccess?.();
+      } catch (error: unknown) {
+        console.error(error);
+        toast.error(extractApiErrorMessage(error, "Failed to schedule appointment"));
+      }
+    });
   };
 
   return (
@@ -156,7 +156,7 @@ export function CreateAppointmentDialog({ shipmentId, onSuccess, trigger }: Crea
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Appointment
+              {loading ? "Saving…" : "Save Appointment"}
             </Button>
           </DialogFooter>
         </form>

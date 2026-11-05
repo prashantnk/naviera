@@ -9,12 +9,12 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PackageSearch } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useState } from "react";
 
 export default function TrackIndexPage() {
     const [trackingId, setTrackingId] = useState("");
-    const router = useRouter();
+    const router = useProgressRouter();
     const { routeTo } = useTenant();
 
     const handleSubmit = (e: React.FormEvent) => {

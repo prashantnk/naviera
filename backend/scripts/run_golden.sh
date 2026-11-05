@@ -126,6 +126,9 @@ PURE_UNIT_SUITES=(  # no app, no DB connection (conftest skips the DB for pure m
   scripts/tests/test_wp10_batch3_unit.py
   scripts/tests/test_temporal_hooks_worker.py  # in-memory SQLite, not the shared database
   scripts/tests/test_supabase_lockdown_migrations.py
+  scripts/tests/test_ttl_cache_unit.py  # in-memory SQLite, not the shared database
+  scripts/tests/test_pickup_otp_unit.py  # in-memory SQLite, not the shared database
+  scripts/tests/test_cod_enablement_unit.py
 )
 FULL_UNIT_SUITES=(  # every pure suite plus the DB-backed ones (savepoint session on logismart-test)
   "${PURE_UNIT_SUITES[@]}"

@@ -15,7 +15,6 @@
  */
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Save } from "lucide-react";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
@@ -32,6 +31,7 @@ import {
 } from "@/components/ui/form";
 import { InputAdornment, RequiredMark } from "@/components/ui/form-extras";
 import { Input } from "@/components/ui/input";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import {
@@ -134,7 +134,7 @@ export function CarrierBillingForm({
   onSaved,
   onCancel,
 }: CarrierBillingFormProps) {
-  const [submitting, setSubmitting] = useState(false);
+  const { pending: submitting, run: runSubmit } = useSingleFlight();
   const awbCopy = awbFieldCopy(initial?.service_option);
   const form = useForm<CarrierBillingFormValues>({
     resolver: zodResolver(carrierBillingSchema),
@@ -146,20 +146,19 @@ export function CarrierBillingForm({
   });
 
   const onSubmit = async (values: CarrierBillingFormValues) => {
-    setSubmitting(true);
-    try {
-      const saved = await saveCarrierBilling(shipmentId, _toPayload(values), tenantSlug);
-      toast.success("Carrier booking saved.");
-      onSaved(saved);
-    } catch (err) {
-      const message = extractApiErrorMessage(err, "Could not save the carrier booking.");
-      if (isDuplicateAwbError(err)) {
-        form.setError("carrier_awb", { type: "server", message });
+    await runSubmit(async () => {
+      try {
+        const saved = await saveCarrierBilling(shipmentId, _toPayload(values), tenantSlug);
+        toast.success("Carrier booking saved.");
+        onSaved(saved);
+      } catch (err) {
+        const message = extractApiErrorMessage(err, "Could not save the carrier booking.");
+        if (isDuplicateAwbError(err)) {
+          form.setError("carrier_awb", { type: "server", message });
+        }
+        toast.error(message);
       }
-      toast.error(message);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   return (

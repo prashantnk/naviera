@@ -22,7 +22,7 @@ from app.core.permissions import (
     is_tenant_staff,
 )
 from app.models.delhivery_modules import InvoiceNoteType, WeightDispute
-from app.models.manifests import ManifestStatus, ServiceFlow
+from app.models.manifests import Manifest, ManifestStatus, ServiceFlow
 from app.models.pickups import (
     ActivityType,
     Address,
@@ -1095,6 +1095,29 @@ class ShipmentService:
         if payload.status:
             self._validate_status_transition(current.status, payload.status)
             self._assert_status_change_role(user, payload.status, current.status, cancel_converted)
+            if (
+                current.status == PickupStatus.ASSIGNED
+                and payload.status == PickupStatus.IN_TRANSIT
+                and current.manifest_id is not None
+            ):
+                repo_session = getattr(self.shipment_repo, "session", None)
+                linked_manifest = (
+                    await repo_session.get(Manifest, current.manifest_id)
+                    if repo_session is not None
+                    else None
+                )
+                if linked_manifest is None or linked_manifest.status in (
+                    ManifestStatus.SCHEDULED,
+                    ManifestStatus.OUT_FOR_PICKUP,
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Cannot mark a manifested shipment In Transit directly. "
+                            "Confirm the Pickup Request with the seller's 6-digit pickup handover OTP "
+                            "(or Owner/Admin override reason)."
+                        ),
+                    )
             if current.status == PickupStatus.EXCEPTION and payload.status != PickupStatus.EXCEPTION:
                 self._assert_exception_exit(current, payload.status, held_from)
             if payload.status == PickupStatus.COMPLETED and not current.delivery_otp:

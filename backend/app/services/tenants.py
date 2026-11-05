@@ -13,13 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.db import get_session
-from app.core.dependencies import (
-    cache_tenant,
-    cache_user,
-    get_cached_tenant_by_id,
-    get_cached_tenant_by_slug,
-    invalidate_auth_cache,
-)
+from app.core.dependencies import load_tenant_by_id, load_tenant_by_slug
 from app.core.permissions import STAFF_USER_ROLES, is_tenant_admin, is_tenant_staff
 from app.core.security import TokenPayload
 from app.exceptions.definitions import TenantNotFoundException
@@ -255,16 +249,18 @@ class TenantService:
         object.__setattr__(user, "company_details_locked", company_details_locked(source_entry))
         return user
 
+    async def _get_tenant(self, tenant_id: uuid.UUID) -> Optional[Tenant]:
+        """Read-only tenant (cached detached copy). Writes must lock the row instead."""
+        return await load_tenant_by_id(
+            tenant_id, lambda: self.tenant_repo.get_tenant_by_id(tenant_id)
+        )
+
     async def enrich_user_profile(
         self, user: User, tenant: Optional[Tenant] = None
     ) -> User:
         """Loads the user's tenant settings and enriches transient B2B & org fields."""
         if tenant is None:
-            tenant = get_cached_tenant_by_id(user.tenant_id)
-        if tenant is None:
-            tenant = await self.tenant_repo.get_tenant_by_id(user.tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
+            tenant = await self._get_tenant(user.tenant_id)
         settings = tenant.settings if tenant else {}
         return self._enrich_user_with_b2b_metadata(user, settings)
 
@@ -360,7 +356,6 @@ class TenantService:
             is_active=True,
         )
         created = await self.tenant_repo.create_user(new_user)
-        cache_user(created)
         return self._enrich_user_with_b2b_metadata(created, tenant.settings)
 
     def _mint_supabase_session(
@@ -531,13 +526,9 @@ class TenantService:
         """
         Retrieves a tenant by slug for public-facing endpoints.
         """
-        cached = get_cached_tenant_by_slug(slug)
-        if cached is not None:
-            return cached
-        tenant = await self.tenant_repo.get_tenant_by_slug(slug)
-        if tenant is not None:
-            cache_tenant(tenant)
-        return tenant
+        return await load_tenant_by_slug(
+            slug, lambda: self.tenant_repo.get_tenant_by_slug(slug)
+        )
 
     @staticmethod
     def _public_wallet_config(wallet_config: Any) -> dict:
@@ -600,11 +591,7 @@ class TenantService:
                 status_code=403, detail="Only Admins or Owners can view workspace details."
             )
         if tenant is None or tenant.id != user.tenant_id:
-            tenant = get_cached_tenant_by_id(user.tenant_id)
-        if tenant is None:
-            tenant = await self.tenant_repo.get_tenant_by_id(user.tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
+            tenant = await self._get_tenant(user.tenant_id)
         return [tenant] if tenant else []
 
     async def list_users_for_tenant(
@@ -624,11 +611,7 @@ class TenantService:
             )
 
         if tenant is None or tenant.id != tenant_id:
-            tenant = get_cached_tenant_by_id(tenant_id)
-        if tenant is None:
-            tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
+            tenant = await self._get_tenant(tenant_id)
         if not tenant:
             raise TenantNotFoundException()
         users = await self.tenant_repo.list_users_for_tenant(tenant_id=tenant_id)
@@ -788,10 +771,7 @@ class TenantService:
         tenant.settings = new_settings
         flag_modified(tenant, "settings")
         await self.tenant_repo.save_tenant(tenant)
-        saved = await self.tenant_repo.commit_and_refresh(tenant)
-        invalidate_auth_cache(tenant_id=saved.id, slug=saved.slug)
-        cache_tenant(saved)
-        return saved
+        return await self.tenant_repo.commit_and_refresh(tenant)
 
     async def get_admin_tenant_settings(
         self,
@@ -806,11 +786,7 @@ class TenantService:
         """
         self._assert_settings_admin(user, tenant_id, action="view")
         if tenant is None or tenant.id != tenant_id:
-            tenant = get_cached_tenant_by_id(tenant_id)
-        if tenant is None:
             tenant = await self.tenant_repo.get_tenant_by_id(tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
         if not tenant:
             raise TenantNotFoundException()
         return tenant
@@ -1014,8 +990,6 @@ class TenantService:
         flag_modified(tenant, "settings")
         await self.tenant_repo.save_tenant(tenant)
         await self.tenant_repo.commit_and_refresh(tenant)
-        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
-        cache_tenant(tenant)
         return settings
 
     async def request_b2b_access(
@@ -1034,11 +1008,7 @@ class TenantService:
             if current_user.service_scope in (ServiceScope.B2B, ServiceScope.BOTH)
             else "PENDING"
         )
-        tenant = get_cached_tenant_by_id(current_user.tenant_id)
-        if tenant is None:
-            tenant = await self.tenant_repo.get_tenant_by_id(current_user.tenant_id)
-            if tenant is not None:
-                cache_tenant(tenant)
+        tenant = await self._get_tenant(current_user.tenant_id)
         tenant_gstin = None
         if tenant and tenant.settings:
             tenant_gstin = tenant.settings.get("gstin")
@@ -1193,8 +1163,6 @@ class TenantService:
                 )
 
         saved_user = await self.tenant_repo.create_user(target_user)
-        invalidate_auth_cache(tenant_id=tenant_id)
-        cache_user(saved_user)
         new_b2b_status = (
             "APPROVED"
             if saved_user.service_scope in (ServiceScope.B2B, ServiceScope.BOTH)
@@ -1244,11 +1212,6 @@ class TenantService:
         if "phone" in update_data:
             target_user.phone = self._normalize_profile_phone(update_data["phone"])
         saved_user = await self.tenant_repo.create_user(target_user)
-        invalidate_auth_cache(
-            tenant_id=getattr(saved_user, "tenant_id", None),
-            supabase_user_id=getattr(saved_user, "supabase_user_id", None),
-        )
-        cache_user(saved_user)
         return await self.enrich_user_profile(saved_user)
 
     @staticmethod
@@ -1326,8 +1289,6 @@ class TenantService:
         flag_modified(tenant, "settings")
         await self.tenant_repo.save_tenant(tenant)
         await self.tenant_repo.commit_and_refresh(tenant)
-        invalidate_auth_cache(tenant_id=tenant.id, slug=tenant.slug)
-        cache_tenant(tenant)
 
     @staticmethod
     def _normalize_profile_phone(raw_phone: Optional[str]) -> Optional[str]:

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   buildQueryCacheKey,
   getCachedQuery,
@@ -58,8 +59,8 @@ export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps)
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [importOpen, setImportOpen] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const { pending: downloading, run: runDownload } = useSingleFlight();
+  const { pending: downloadingTemplate, run: runTemplateDownload } = useSingleFlight();
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -103,25 +104,25 @@ export function PrimeLanesEditor({ tenantSlug, canEdit }: PrimeLanesEditorProps)
   };
 
   const download = async () => {
-    setDownloading(true);
-    try {
-      await downloadPrimeLanesCsv();
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "The CSV could not be downloaded."));
-    } finally {
-      setDownloading(false);
-    }
+    await runDownload(async () => {
+      try {
+        await downloadPrimeLanesCsv();
+        toast.success("Downloaded Prime lanes CSV.");
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "The CSV could not be downloaded."));
+      }
+    });
   };
 
   const downloadTemplate = async () => {
-    setDownloadingTemplate(true);
-    try {
-      await downloadPrimeLanesTemplateCsv();
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "The template CSV could not be downloaded."));
-    } finally {
-      setDownloadingTemplate(false);
-    }
+    await runTemplateDownload(async () => {
+      try {
+        await downloadPrimeLanesTemplateCsv();
+        toast.success("Downloaded Prime lanes template CSV.");
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "The template CSV could not be downloaded."));
+      }
+    });
   };
 
   return (

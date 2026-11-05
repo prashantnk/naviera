@@ -11,6 +11,7 @@ import {
   PickupStatus,
   ShipmentType,
   ShipmentsService,
+  UserRole,
 } from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { CarrierBookingDialog } from "@/components/carrier/carrier-booking-dialog";
@@ -45,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { downloadManifestRunsheetPdf } from "@/lib/api";
 import {
   buildQueryCacheKey,
@@ -242,7 +244,9 @@ function _formatInr(val?: number | null): string {
 
 export default function OperationsControlTowerPage() {
   const { tenant, tenantSlug, routeTo } = useTenant();
-  const { capabilities } = useUser();
+  const { user, capabilities } = useUser();
+  const canOverridePickupOtp =
+    user?.role === UserRole.OWNER || user?.role === UserRole.ADMIN;
 
   const [workspaceMode, setWorkspaceMode] =
     useState<OpsWorkspaceMode>("CONTROL_TOWER");
@@ -267,19 +271,23 @@ export default function OperationsControlTowerPage() {
   const [loading, setLoading] = useState<boolean>(
     () => !hasCachedQuery(opsCacheKey)
   );
-  const [busyActionId, setBusyActionId] = useState<string | null>(null);
+  const {
+    pending: opsBusy,
+    pendingKey: busyActionId,
+    run: runOpsAction,
+  } = useSingleFlight();
 
   // Tab 1 filters, Dispatch checklist dialog, & Not-Picked dialog state
   const [pickupSearch, setPickupSearch] = useState<string>("");
   const [pickupStatusFilter, setPickupStatusFilter] = useState<string>(PICKUP_FILTER_ACTIVE);
   const [dispatchTarget, setDispatchTarget] =
     useState<ManifestResponse | null>(null);
-  const [submittingDispatch, setSubmittingDispatch] = useState<boolean>(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const { pending: submittingDispatch, run: runDispatch } = useSingleFlight();
   const [notPickedTarget, setNotPickedTarget] =
     useState<ManifestResponse | null>(null);
   const [failureReasonInput, setFailureReasonInput] = useState<string>("");
-  const [submittingNotPicked, setSubmittingNotPicked] =
-    useState<boolean>(false);
+  const { pending: submittingNotPicked, run: runNotPicked } = useSingleFlight();
 
   // Tab 2 filters, inline POD inputs, NDR dialog, & Doorstep QC dialog state
   const [deliverySearch, setDeliverySearch] = useState<string>("");
@@ -302,14 +310,21 @@ export default function OperationsControlTowerPage() {
   const [selectedNdrReason, setSelectedNdrReason] =
     useState<NdrExceptionReason>(NdrExceptionReason.CONSIGNEE_UNAVAILABLE);
   const [ndrRemarkInput, setNdrRemarkInput] = useState<string>("");
-  const [submittingNdr, setSubmittingNdr] = useState<boolean>(false);
+  const { pending: submittingNdr, run: runNdr } = useSingleFlight();
   const [qcFailTarget, setQcFailTarget] = useState<PickupRead | null>(null);
   const [qcFailRemarkInput, setQcFailRemarkInput] = useState<string>("");
-  const [submittingQcFail, setSubmittingQcFail] = useState<boolean>(false);
-  // E-01: one-tap "Confirm Picked Up" first asks "Picked N of M from <warehouse>?"
+  const { pending: submittingQcFail, run: runQcFail } = useSingleFlight();
+  // E-01: one-tap "Confirm Picked Up" first asks "Picked N of M from <warehouse>?" + 6-digit Pickup Handover OTP
   const [pickupConfirmTarget, setPickupConfirmTarget] =
     useState<ManifestResponse | null>(null);
   const [qcPassedConfirmed, setQcPassedConfirmed] = useState<boolean>(false);
+  const [pickupConfirmOtp, setPickupConfirmOtp] = useState<string>("");
+  const [pickupConfirmUseOverride, setPickupConfirmUseOverride] =
+    useState<boolean>(false);
+  const [pickupConfirmOverrideReason, setPickupConfirmOverrideReason] =
+    useState<string>("");
+  const [pickupConfirmError, setPickupConfirmError] =
+    useState<string | null>(null);
   const lastFetchAtRef = useRef<number>(0);
 
   // Tab 3 Hub Sorter Audit state
@@ -554,22 +569,22 @@ export default function OperationsControlTowerPage() {
 
   // Tab 1 Handlers: First-Mile Pickups
   const handleMarkOutForPickup = async (manifest: ManifestResponse) => {
-    setBusyActionId(manifest.id);
-    try {
-      await ManifestsService.markManifestOutForPickup(manifest.id, tenantSlug);
-      const label = manifest.pickup_request_number || manifest.id.slice(0, 8);
-      toast.success(`PUR ${label} marked Out for Pickup!`);
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to mark Out for Pickup.")
-      );
-    } finally {
-      setBusyActionId(null);
-    }
+    await runOpsAction(async () => {
+      try {
+        await ManifestsService.markManifestOutForPickup(manifest.id, tenantSlug);
+        const label = manifest.pickup_request_number || manifest.id.slice(0, 8);
+        toast.success(`PUR ${label} marked Out for Pickup!`);
+        await fetchOpsData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to mark Out for Pickup.")
+        );
+      }
+    }, manifest.id);
   };
 
   const handleConfirmPickedUp = (manifest: ManifestResponse) => {
+    setDispatchError(null);
     setDispatchTarget(manifest);
   };
 
@@ -591,103 +606,126 @@ export default function OperationsControlTowerPage() {
 
   const handleOpenPickupConfirm = (manifest: ManifestResponse) => {
     setQcPassedConfirmed(false);
+    setPickupConfirmOtp("");
+    setPickupConfirmUseOverride(false);
+    setPickupConfirmOverrideReason("");
+    setPickupConfirmError(null);
     setPickupConfirmTarget(manifest);
   };
 
   const handleSubmitPickupConfirm = async () => {
     if (!pickupConfirmTarget) return;
-    const target = pickupConfirmTarget;
-    setPickupConfirmTarget(null);
-    await handleConfirmCardPickup(target);
+    if (pickupConfirmUseOverride && canOverridePickupOtp) {
+      if (!pickupConfirmOverrideReason.trim()) {
+        setPickupConfirmError(
+          "Please enter a mandatory audit reason to override the Pickup Handover OTP."
+        );
+        return;
+      }
+    } else {
+      const cleanedOtp = pickupConfirmOtp.replace(/\D/g, "").slice(0, 6);
+      if (cleanedOtp.length !== 6) {
+        setPickupConfirmError(
+          "Please enter the 6-digit Pickup Handover OTP from the seller."
+        );
+        return;
+      }
+    }
+    setPickupConfirmError(null);
+    await handleConfirmCardPickup(
+      pickupConfirmTarget,
+      pickupConfirmUseOverride ? undefined : pickupConfirmOtp.trim(),
+      pickupConfirmUseOverride ? pickupConfirmOverrideReason.trim() : undefined
+    );
   };
 
-  const handleConfirmCardPickup = async (manifest: ManifestResponse) => {
-    setBusyActionId(manifest.id);
-    try {
-      const linked = manifest.shipments ?? [];
-      const pickedIds = linked.map((s) => s.id);
-      const piecesMap = cardActualPieces[manifest.id] ?? {};
-      const measurements: DispatchMeasurement[] = [];
+  const handleConfirmCardPickup = async (
+    manifest: ManifestResponse,
+    pickupOtp?: string,
+    overrideReason?: string
+  ) => {
+    await runOpsAction(async () => {
+      try {
+        const linked = manifest.shipments ?? [];
+        const pickedIds = linked.map((s) => s.id);
+        const piecesMap = cardActualPieces[manifest.id] ?? {};
+        const measurements: DispatchMeasurement[] = [];
 
-      for (const s of linked) {
-        const awb = s.tracking_id || s.id.slice(0, 8).toUpperCase();
-        const count = parseActualPieces(piecesMap[awb]);
-        if (count !== null) {
-          const known = shipments.find((item) => item.id === s.id);
-          const m = await buildMeasurementForPieceCount(
-            s.id,
-            count,
-            tenantSlug,
-            known
-          );
-          measurements.push(m);
+        for (const s of linked) {
+          const awb = s.tracking_id || s.id.slice(0, 8).toUpperCase();
+          const count = parseActualPieces(piecesMap[awb]);
+          if (count !== null) {
+            const known = shipments.find((item) => item.id === s.id);
+            const m = await buildMeasurementForPieceCount(
+              s.id,
+              count,
+              tenantSlug,
+              known
+            );
+            measurements.push(m);
+          }
         }
-      }
 
-      await ManifestsService.dispatchManifest(
-        manifest.id,
-        tenantSlug,
-        pickedIds.length > 0
-          ? {
-              picked_shipment_ids: pickedIds,
-              measurements: measurements.length > 0 ? measurements : undefined,
-            }
-          : undefined
-      );
-      const label =
-        manifest.pickup_request_number || manifest.id.slice(0, 8);
-      toast.success(
-        measurements.length > 0
-          ? `PUR ${label} dispatched with actual pieces for ${measurements.length} AWB(s). Charges updated where the pieces differ.`
-          : `PUR ${label} dispatched! Picked shipments are now In Transit and have their delivery OTPs.`
-      );
-      if (measurements.length > 0) {
-        window.dispatchEvent(new CustomEvent("wallet-updated"));
+        await ManifestsService.dispatchManifest(manifest.id, tenantSlug, {
+          picked_shipment_ids: pickedIds.length > 0 ? pickedIds : undefined,
+          measurements: measurements.length > 0 ? measurements : undefined,
+          pickup_otp: pickupOtp ?? null,
+          pickup_otp_override_reason: overrideReason ?? null,
+        });
+        const label =
+          manifest.pickup_request_number || manifest.id.slice(0, 8);
+        toast.success(
+          measurements.length > 0
+            ? `PUR ${label} dispatched with actual pieces for ${measurements.length} AWB(s). Charges updated where the pieces differ.`
+            : `PUR ${label} dispatched! Picked shipments are now In Transit and have their delivery OTPs.`
+        );
+        if (measurements.length > 0) {
+          window.dispatchEvent(new CustomEvent("wallet-updated"));
+        }
+        setPickupConfirmTarget(null);
+        await fetchOpsData();
+      } catch (err: unknown) {
+        const msg = extractApiErrorMessage(err, "Failed to dispatch pickup.");
+        setPickupConfirmError(msg);
+        toast.error(msg);
       }
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to dispatch pickup."));
-    } finally {
-      setBusyActionId(null);
-    }
+    }, manifest.id);
   };
 
   const handleSubmitDispatch = async (
     pickedIds: string[],
-    measurements: DispatchMeasurement[]
+    measurements: DispatchMeasurement[],
+    pickupOtp?: string,
+    overrideReason?: string
   ) => {
     if (!dispatchTarget) return;
-    setSubmittingDispatch(true);
-    setBusyActionId(dispatchTarget.id);
-    try {
-      await ManifestsService.dispatchManifest(
-        dispatchTarget.id,
-        tenantSlug,
-        pickedIds.length > 0
-          ? {
-              picked_shipment_ids: pickedIds,
-              measurements: measurements.length > 0 ? measurements : undefined,
-            }
-          : undefined
-      );
-      const label =
-        dispatchTarget.pickup_request_number || dispatchTarget.id.slice(0, 8);
-      toast.success(
-        measurements.length > 0
-          ? `PUR ${label} dispatched with actual pieces for ${measurements.length} AWB(s). Charges updated where the pieces differ.`
-          : `PUR ${label} dispatched! Picked shipments are now In Transit and have their delivery OTPs.`
-      );
-      if (measurements.length > 0) {
-        window.dispatchEvent(new CustomEvent("wallet-updated"));
+    await runDispatch(async () => {
+      setDispatchError(null);
+      try {
+        await ManifestsService.dispatchManifest(dispatchTarget.id, tenantSlug, {
+          picked_shipment_ids: pickedIds.length > 0 ? pickedIds : undefined,
+          measurements: measurements.length > 0 ? measurements : undefined,
+          pickup_otp: pickupOtp ?? null,
+          pickup_otp_override_reason: overrideReason ?? null,
+        });
+        const label =
+          dispatchTarget.pickup_request_number || dispatchTarget.id.slice(0, 8);
+        toast.success(
+          measurements.length > 0
+            ? `PUR ${label} dispatched with actual pieces for ${measurements.length} AWB(s). Charges updated where the pieces differ.`
+            : `PUR ${label} dispatched! Picked shipments are now In Transit and have their delivery OTPs.`
+        );
+        if (measurements.length > 0) {
+          window.dispatchEvent(new CustomEvent("wallet-updated"));
+        }
+        setDispatchTarget(null);
+        await fetchOpsData();
+      } catch (err: unknown) {
+        const msg = extractApiErrorMessage(err, "Failed to dispatch pickup.");
+        setDispatchError(msg);
+        toast.error(msg);
       }
-      setDispatchTarget(null);
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to dispatch pickup."));
-    } finally {
-      setSubmittingDispatch(false);
-      setBusyActionId(null);
-    }
+    }, dispatchTarget.id);
   };
 
   const handleOpenNotPickedDialog = (manifest: ManifestResponse) => {
@@ -702,39 +740,39 @@ export default function OperationsControlTowerPage() {
       toast.error("Please enter or select a pickup failure reason.");
       return;
     }
-    setSubmittingNotPicked(true);
-    try {
-      await ManifestsService.markManifestNotPicked(
-        notPickedTarget.id,
-        { failure_reason: trimmedReason },
-        tenantSlug
-      );
-      const label =
-        notPickedTarget.pickup_request_number ||
-        notPickedTarget.id.slice(0, 8);
-      toast.success(
-        `PUR ${label} marked Not Picked. Linked shipments released back to Ready to Ship.`
-      );
-      setNotPickedTarget(null);
-      setFailureReasonInput("");
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to mark Not Picked."));
-    } finally {
-      setSubmittingNotPicked(false);
-    }
+    await runNotPicked(async () => {
+      try {
+        await ManifestsService.markManifestNotPicked(
+          notPickedTarget.id,
+          { failure_reason: trimmedReason },
+          tenantSlug
+        );
+        const label =
+          notPickedTarget.pickup_request_number ||
+          notPickedTarget.id.slice(0, 8);
+        toast.success(
+          `PUR ${label} marked Not Picked. Linked shipments released back to Ready to Ship.`
+        );
+        setNotPickedTarget(null);
+        setFailureReasonInput("");
+        await fetchOpsData();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to mark Not Picked."));
+      }
+    }, notPickedTarget.id);
   };
 
   const handleDownloadRunsheet = async (manifestId: string) => {
-    setBusyActionId(`pdf-${manifestId}`);
-    try {
-      await downloadManifestRunsheetPdf(manifestId);
-      toast.success("Driver Run-Sheet PDF downloaded!");
-    } catch {
-      toast.error("Failed to download Driver Run-Sheet PDF.");
-    } finally {
-      setBusyActionId(null);
-    }
+    await runOpsAction(async () => {
+      try {
+        await downloadManifestRunsheetPdf(manifestId);
+        toast.success("Driver Run-Sheet PDF downloaded!");
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to download Driver Run-Sheet PDF.")
+        );
+      }
+    }, `pdf-${manifestId}`);
   };
 
   // Tab 2 Handlers: Last-Mile Deliveries & 6-Digit OTP POD
@@ -794,43 +832,42 @@ export default function OperationsControlTowerPage() {
     }
 
     const awbLabel = shipment.tracking_id || shipment.id.slice(0, 8);
-    setBusyActionId(shipment.id);
-    try {
-      await ShipmentsService.updateShipment(
-        shipment.id,
-        {
-          status: PickupStatus.COMPLETED,
-          delivery_otp: enteredOtp,
-          pod_received_by: enteredReceiver,
-          expected_cod_amount: shipment.payment_details?.is_cod
-            ? Number(shipment.payment_details?.cod_amount ?? 0)
-            : 0,
-          is_public: true,
-          comment: "Doorstep 6-digit OTP verified by field executive",
-        } as unknown as Parameters<typeof ShipmentsService.updateShipment>[1],
-        tenantSlug
-      );
-      toast.success(
-        `AWB ${awbLabel} verified via 6-digit OTP and marked Delivered!`
-      );
-      clearDoorstepInputs(shipment.id);
-      await fetchOpsData();
-    } catch (err: unknown) {
-      if (await isAlreadyInStatus(shipment.id, PickupStatus.COMPLETED)) {
-        toast.success(`AWB ${awbLabel} is already marked Delivered.`);
+    await runOpsAction(async () => {
+      try {
+        await ShipmentsService.updateShipment(
+          shipment.id,
+          {
+            status: PickupStatus.COMPLETED,
+            delivery_otp: enteredOtp,
+            pod_received_by: enteredReceiver,
+            expected_cod_amount: shipment.payment_details?.is_cod
+              ? Number(shipment.payment_details?.cod_amount ?? 0)
+              : 0,
+            is_public: true,
+            comment: "Doorstep 6-digit OTP verified by field executive",
+          } as unknown as Parameters<typeof ShipmentsService.updateShipment>[1],
+          tenantSlug
+        );
+        toast.success(
+          `AWB ${awbLabel} verified via 6-digit OTP and marked Delivered!`
+        );
         clearDoorstepInputs(shipment.id);
         await fetchOpsData();
-        return;
+      } catch (err: unknown) {
+        if (await isAlreadyInStatus(shipment.id, PickupStatus.COMPLETED)) {
+          toast.success(`AWB ${awbLabel} is already marked Delivered.`);
+          clearDoorstepInputs(shipment.id);
+          await fetchOpsData();
+          return;
+        }
+        toast.error(
+          extractApiErrorMessage(
+            err,
+            "OTP verification failed. Please check the 6-digit OTP."
+          )
+        );
       }
-      toast.error(
-        extractApiErrorMessage(
-          err,
-          "OTP verification failed. Please check the 6-digit OTP."
-        )
-      );
-    } finally {
-      setBusyActionId(null);
-    }
+    }, shipment.id);
   };
 
   /**
@@ -847,65 +884,63 @@ export default function OperationsControlTowerPage() {
       toast.error("Enter who received the return at the seller's location.");
       return;
     }
-    setBusyActionId(shipment.id);
-    try {
-      await ShipmentsService.updateShipment(
-        shipment.id,
-        {
-          status: target,
-          pod_received_by: isHandover ? receiver : undefined,
-          is_public: true,
-          comment: isHandover
-            ? `Return handed over to the seller (received by ${receiver})`
-            : "Return (RTO) on its way back to the seller",
-        },
-        tenantSlug
-      );
-      toast.success(
-        isHandover
-          ? `AWB ${awbLabel} returned to the seller.`
-          : `AWB ${awbLabel} marked RTO in transit.`
-      );
-      clearDoorstepInputs(shipment.id);
-      await fetchOpsData();
-    } catch (err: unknown) {
-      if (await isAlreadyInStatus(shipment.id, target)) {
-        toast.success(`AWB ${awbLabel} was already updated.`);
+    await runOpsAction(async () => {
+      try {
+        await ShipmentsService.updateShipment(
+          shipment.id,
+          {
+            status: target,
+            pod_received_by: isHandover ? receiver : undefined,
+            is_public: true,
+            comment: isHandover
+              ? `Return handed over to the seller (received by ${receiver})`
+              : "Return (RTO) on its way back to the seller",
+          },
+          tenantSlug
+        );
+        toast.success(
+          isHandover
+            ? `AWB ${awbLabel} returned to the seller.`
+            : `AWB ${awbLabel} marked RTO in transit.`
+        );
+        clearDoorstepInputs(shipment.id);
         await fetchOpsData();
-        return;
+      } catch (err: unknown) {
+        if (await isAlreadyInStatus(shipment.id, target)) {
+          toast.success(`AWB ${awbLabel} was already updated.`);
+          await fetchOpsData();
+          return;
+        }
+        toast.error(extractApiErrorMessage(err, "Failed to update the return."));
       }
-      toast.error(extractApiErrorMessage(err, "Failed to update the return."));
-    } finally {
-      setBusyActionId(null);
-    }
+    }, shipment.id);
   };
 
   const handleMarkOutForDelivery = async (shipment: PickupRead) => {
-    setBusyActionId(shipment.id);
-    try {
-      await ShipmentsService.updateShipment(
-        shipment.id,
-        {
-          status: PickupStatus.OUT_FOR_DELIVERY,
-          is_public: true,
-          comment: "Shipment is out for delivery",
-        },
-        tenantSlug
-      );
-      toast.success(
-        `AWB ${shipment.tracking_id || shipment.id.slice(0, 8)} marked Out for Delivery!`
-      );
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(
-          err,
-          "Failed to mark out for delivery."
-        )
-      );
-    } finally {
-      setBusyActionId(null);
-    }
+    await runOpsAction(async () => {
+      try {
+        await ShipmentsService.updateShipment(
+          shipment.id,
+          {
+            status: PickupStatus.OUT_FOR_DELIVERY,
+            is_public: true,
+            comment: "Shipment is out for delivery",
+          },
+          tenantSlug
+        );
+        toast.success(
+          `AWB ${shipment.tracking_id || shipment.id.slice(0, 8)} marked Out for Delivery!`
+        );
+        await fetchOpsData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(
+            err,
+            "Failed to mark out for delivery."
+          )
+        );
+      }
+    }, shipment.id);
   };
 
   const handleOpenNdrDialog = (shipment: PickupRead) => {
@@ -926,30 +961,29 @@ export default function OperationsControlTowerPage() {
       toast.error("Please enter the doorstep QC failure reason.");
       return;
     }
-    setSubmittingQcFail(true);
-    try {
-      await ShipmentsService.updateShipment(
-        qcFailTarget.id,
-        {
-          status: PickupStatus.QC_FAILED,
-          comment: remark,
-          is_public: true,
-        },
-        tenantSlug
-      );
-      toast.success(
-        `Doorstep QC failed for Return AWB ${qcFailTarget.tracking_id || qcFailTarget.id.slice(0, 8)}: return not picked up.`
-      );
-      setQcFailTarget(null);
-      setQcFailRemarkInput("");
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to record Doorstep QC failure.")
-      );
-    } finally {
-      setSubmittingQcFail(false);
-    }
+    await runQcFail(async () => {
+      try {
+        await ShipmentsService.updateShipment(
+          qcFailTarget.id,
+          {
+            status: PickupStatus.QC_FAILED,
+            comment: remark,
+            is_public: true,
+          },
+          tenantSlug
+        );
+        toast.success(
+          `Doorstep QC failed for Return AWB ${qcFailTarget.tracking_id || qcFailTarget.id.slice(0, 8)}: return not picked up.`
+        );
+        setQcFailTarget(null);
+        setQcFailRemarkInput("");
+        await fetchOpsData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to record Doorstep QC failure.")
+        );
+      }
+    }, qcFailTarget.id);
   };
 
   const activeNdrLabel = useMemo(
@@ -969,31 +1003,30 @@ export default function OperationsControlTowerPage() {
       return;
     }
 
-    setSubmittingNdr(true);
-    try {
-      await ShipmentsService.updateShipment(
-        ndrTarget.id,
-        {
-          status: PickupStatus.EXCEPTION,
-          ndr_reason: selectedNdrReason,
-          ndr_remark: remark,
-          is_public: true,
-          comment: `Field NDR (${activeNdrLabel}): ${remark}`,
-        },
-        tenantSlug
-      );
-      toast.success(
-        `NDR (${activeNdrLabel}) logged on AWB ${ndrTarget.tracking_id || ndrTarget.id.slice(0, 8)}.`
-      );
-      setNdrTarget(null);
-      await fetchOpsData();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to raise NDR exception.")
-      );
-    } finally {
-      setSubmittingNdr(false);
-    }
+    await runNdr(async () => {
+      try {
+        await ShipmentsService.updateShipment(
+          ndrTarget.id,
+          {
+            status: PickupStatus.EXCEPTION,
+            ndr_reason: selectedNdrReason,
+            ndr_remark: remark,
+            is_public: true,
+            comment: `Field NDR (${activeNdrLabel}): ${remark}`,
+          },
+          tenantSlug
+        );
+        toast.success(
+          `NDR (${activeNdrLabel}) logged on AWB ${ndrTarget.tracking_id || ndrTarget.id.slice(0, 8)}.`
+        );
+        setNdrTarget(null);
+        await fetchOpsData();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to raise NDR exception.")
+        );
+      }
+    }, ndrTarget.id);
   };
 
   // Tab 3 Handler: open the Record measurement dialog for one AWB
@@ -1477,6 +1510,49 @@ export default function OperationsControlTowerPage() {
                           <span>{m.failure_reason}</span>
                         </div>
                       )}
+
+                      {/* Pickup Handover OTP Indicator */}
+                      {(m.status === ManifestStatus.SCHEDULED ||
+                        m.status === ManifestStatus.OUT_FOR_PICKUP) &&
+                        (m.pickup_otp ? (
+                          <div
+                            data-testid={`ops.pickup-card.${purDisplayId}.otp`}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+                          >
+                            <span className="flex items-center gap-1.5 font-semibold text-amber-900">
+                              <KeyRound className="h-3.5 w-3.5 shrink-0 text-amber-800" />
+                              Pickup Handover OTP (Owner/Admin View):
+                            </span>
+                            <span className="font-mono text-sm font-extrabold tracking-widest text-amber-950 bg-white px-2 py-0.5 rounded border border-amber-300">
+                              {m.pickup_otp}
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            data-testid={`ops.pickup-card.${purDisplayId}.otp-required`}
+                            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground"
+                          >
+                            <KeyRound className="h-3.5 w-3.5 shrink-0 text-primary" />
+                            <span>
+                              Ask the seller for their 6-digit Pickup Handover OTP before confirming pickup.
+                            </span>
+                          </div>
+                        ))}
+
+                      {m.status === ManifestStatus.PICKED &&
+                        (m.pickup_otp_verified_at || m.pickup_otp_override_reason) && (
+                          <div
+                            data-testid={`ops.pickup-card.${purDisplayId}.otp-verified`}
+                            className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-900"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+                            <span>
+                              {m.pickup_otp_override_reason
+                                ? `Pickup OTP overridden by Admin (${m.pickup_otp_override_reason})`
+                                : "Seller Pickup Handover OTP verified"}
+                            </span>
+                          </div>
+                        )}
                     </div>
 
                     {/* Action Buttons */}
@@ -1486,7 +1562,7 @@ export default function OperationsControlTowerPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={isBusy}
+                          disabled={opsBusy}
                           data-testid={`ops.pickup-card.${purDisplayId}.out-for-pickup`}
                           onClick={() => handleMarkOutForPickup(m)}
                           className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-bold"
@@ -1506,7 +1582,7 @@ export default function OperationsControlTowerPage() {
                           <Button
                             type="button"
                             size="sm"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             data-testid={`ops.pickup-card.${purDisplayId}.confirm`}
                             onClick={() => handleOpenPickupConfirm(m)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
@@ -1523,7 +1599,7 @@ export default function OperationsControlTowerPage() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             data-testid={`ops.pickup-card.${purDisplayId}.checklist`}
                             onClick={() => handleConfirmPickedUp(m)}
                             className="font-bold"
@@ -1536,7 +1612,7 @@ export default function OperationsControlTowerPage() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             data-testid={`ops.pickup-card.${purDisplayId}.not-picked`}
                             onClick={() => handleOpenNotPickedDialog(m)}
                             className="border-rose-300 text-rose-700 hover:bg-rose-50 font-bold"
@@ -1551,7 +1627,7 @@ export default function OperationsControlTowerPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={isPdfBusy}
+                        disabled={opsBusy}
                         onClick={() => handleDownloadRunsheet(m.id)}
                         className="ml-auto font-semibold"
                       >
@@ -1694,11 +1770,15 @@ export default function OperationsControlTowerPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={isBusy}
+                          disabled={opsBusy}
                           onClick={() => handleMarkOutForDelivery(s)}
                           className="font-bold text-primary border-primary/20 bg-primary/5 hover:bg-primary/10"
                         >
-                          <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                          {isBusy ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <MapPin className="mr-1.5 h-3.5 w-3.5" />
+                          )}
                           Mark out for delivery
                         </Button>
                       </div>
@@ -1803,7 +1883,7 @@ export default function OperationsControlTowerPage() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             onClick={() => handleOpenQcFailDialog(s)}
                             className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50 font-bold shrink-0"
                           >
@@ -2069,7 +2149,7 @@ export default function OperationsControlTowerPage() {
                           <div className="min-w-0 sm:col-span-3 flex flex-col justify-end gap-2">
                             <Button
                               type="button"
-                              disabled={isBusy}
+                              disabled={opsBusy}
                               onClick={() => handleVerifyPodAndDeliver(s)}
                               className="h-auto min-h-10 py-2 w-full max-w-full whitespace-normal bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                             >
@@ -2092,7 +2172,7 @@ export default function OperationsControlTowerPage() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             onClick={() => handleOpenNdrDialog(s)}
                             className="border-rose-300 bg-white text-rose-700 hover:bg-rose-50 font-bold"
                           >
@@ -2123,14 +2203,18 @@ export default function OperationsControlTowerPage() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={isBusy}
+                            disabled={opsBusy}
                             data-testid={`ops.delivery-card.${awb}.rto-in-transit`}
                             onClick={() =>
                               void handleRtoMove(s, PickupStatus.RTO_IN_TRANSIT)
                             }
                             className="font-bold"
                           >
-                            <Truck className="mr-1.5 h-3.5 w-3.5" />
+                            {isBusy ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Truck className="mr-1.5 h-3.5 w-3.5" />
+                            )}
                             Mark RTO in transit
                           </Button>
                         )}
@@ -2153,14 +2237,18 @@ export default function OperationsControlTowerPage() {
                             </div>
                             <Button
                               type="button"
-                              disabled={isBusy}
+                              disabled={opsBusy}
                               data-testid={`ops.delivery-card.${awb}.rto-delivered`}
                               onClick={() =>
                                 void handleRtoMove(s, PickupStatus.RTO_DELIVERED)
                               }
                               className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                             >
-                              <PackageCheck className="mr-1.5 h-4 w-4" />
+                              {isBusy ? (
+                                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                              ) : (
+                                <PackageCheck className="mr-1.5 h-4 w-4" />
+                              )}
                               Returned to seller
                             </Button>
                           </div>
@@ -2690,24 +2778,117 @@ export default function OperationsControlTowerPage() {
                       </span>
                     </label>
                   )}
+
+                  {/* Pickup Handover OTP Verification Block */}
+                  <div className="space-y-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label
+                        htmlFor="ops-pickup-confirm-otp-input"
+                        className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-foreground"
+                      >
+                        <KeyRound className="h-3.5 w-3.5 text-primary" />
+                        <span>6-Digit Seller Pickup Handover OTP</span>
+                      </label>
+                      {canOverridePickupOtp && (
+                        <button
+                          type="button"
+                          data-testid="ops.pickup-confirm.override-toggle"
+                          onClick={() => {
+                            setPickupConfirmUseOverride((prev) => !prev);
+                            setPickupConfirmError(null);
+                          }}
+                          className="text-[11px] font-bold text-primary hover:underline"
+                        >
+                          {pickupConfirmUseOverride
+                            ? "Use 6-Digit OTP Instead"
+                            : "Admin Override (No OTP)"}
+                        </button>
+                      )}
+                    </div>
+
+                    {!pickupConfirmUseOverride ? (
+                      <div className="space-y-1">
+                        <Input
+                          id="ops-pickup-confirm-otp-input"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          disabled={opsBusy}
+                          data-testid="ops.pickup-confirm.otp-input"
+                          value={pickupConfirmOtp}
+                          onChange={(e) => {
+                            setPickupConfirmOtp(
+                              e.target.value.replace(/\D/g, "").slice(0, 6)
+                            );
+                            setPickupConfirmError(null);
+                          }}
+                          placeholder="Enter 6-digit OTP from seller"
+                          className="h-10 bg-background font-mono text-base font-extrabold tracking-widest"
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Ask the seller/warehouse staff for the 6-digit Pickup Handover OTP shown on their Pickup Requests page.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Input
+                          id="ops-pickup-confirm-override-reason"
+                          type="text"
+                          disabled={opsBusy}
+                          data-testid="ops.pickup-confirm.override-reason"
+                          value={pickupConfirmOverrideReason}
+                          onChange={(e) => {
+                            setPickupConfirmOverrideReason(e.target.value);
+                            setPickupConfirmError(null);
+                          }}
+                          placeholder="Mandatory reason (e.g. Seller unreachable at dock, verified via call)"
+                          className="h-10 bg-background text-xs"
+                        />
+                        <p className="text-[11px] text-amber-800">
+                          Owner/Admin override is recorded in the immutable audit log.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {pickupConfirmError && (
+                    <div
+                      data-testid="ops.pickup-confirm.error"
+                      className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-900"
+                    >
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />
+                      <span>{pickupConfirmError}</span>
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={opsBusy}
                     onClick={() => setPickupConfirmTarget(null)}
                   >
                     Cancel
                   </Button>
                   <Button
                     type="button"
-                    disabled={needsQcConfirm && !qcPassedConfirmed}
+                    disabled={
+                      opsBusy ||
+                      (needsQcConfirm && !qcPassedConfirmed) ||
+                      (pickupConfirmUseOverride && canOverridePickupOtp
+                        ? pickupConfirmOverrideReason.trim().length === 0
+                        : pickupConfirmOtp.replace(/\D/g, "").length !== 6)
+                    }
                     data-testid="ops.pickup-confirm.submit"
                     onClick={() => void handleSubmitPickupConfirm()}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                   >
-                    <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                    {opsBusy && busyActionId === pickupConfirmTarget.id ? (
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                    )}
                     Yes, all picked up
                   </Button>
                 </DialogFooter>
@@ -2733,9 +2914,14 @@ export default function OperationsControlTowerPage() {
         }
         shipments={dispatchTarget?.shipments ?? []}
         submitting={submittingDispatch}
+        canOverrideOtp={canOverridePickupOtp}
+        errorMessage={dispatchError}
         onSubmit={handleSubmitDispatch}
         onOpenChange={(open) => {
-          if (!open) setDispatchTarget(null);
+          if (!open) {
+            setDispatchTarget(null);
+            setDispatchError(null);
+          }
         }}
       />
 

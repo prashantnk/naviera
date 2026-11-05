@@ -5,6 +5,7 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { getSupabaseClient } from "@/lib/supabase";
 import { KeyRound, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -38,7 +39,7 @@ export function ChangePasswordSection() {
   const [expanded, setExpanded] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [saving, setSaving] = useState(false);
+  const { pending: saving, run } = useSingleFlight();
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
@@ -51,23 +52,25 @@ export function ChangePasswordSection() {
     const validationError = newPasswordError(password, confirmation);
     setError(validationError);
     if (validationError) return;
-    setSaving(true);
-    try {
-      const { error: updateError } = await getSupabaseClient(tenantSlug).auth.updateUser({
-        password,
-      });
-      if (updateError) {
-        setError(updateError.message);
-        return;
+    await run(async () => {
+      try {
+        const { error: updateError } = await getSupabaseClient(tenantSlug).auth.updateUser({
+          password,
+        });
+        if (updateError) {
+          setError(updateError.message);
+          toast.error(updateError.message);
+          return;
+        }
+        toast.success("Password changed. Use the new password next time you sign in.");
+        reset();
+        setExpanded(false);
+      } catch {
+        const message = "Could not change your password. Please try again.";
+        setError(message);
+        toast.error(message);
       }
-      toast.success("Password changed. Use the new password next time you sign in.");
-      reset();
-      setExpanded(false);
-    } catch {
-      setError("Could not change your password. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   if (!expanded) {

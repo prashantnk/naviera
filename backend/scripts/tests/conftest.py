@@ -162,7 +162,7 @@ async def init_db_cache(request):
                     "delhivery_markup_percent": 0.0,
                     "prime_default_markup_percent": 20.0,
                     "cod_fee_percent": 2.0,
-                    "cod_fee_min": 1.0,
+                    "cod_fee_min": 20.0,
                     "enabled_options": [
                         "DELHIVERY_SURFACE",
                         "DELHIVERY_EXPRESS",

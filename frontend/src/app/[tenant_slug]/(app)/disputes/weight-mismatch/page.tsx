@@ -43,6 +43,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { useSignedDocumentUrl } from "@/lib/document-storage";
 import {
   buildQueryCacheKey,
@@ -252,7 +253,7 @@ export default function WeightMismatchDisputesPage() {
     () => getCachedQuery<WeightDisputeRead[]>(cacheKey) === null
   );
   const [sortAsc, setSortAsc] = useState<boolean>(false);
-  const [downloadingCsv, setDownloadingCsv] = useState<boolean>(false);
+  const { pending: downloadingCsv, run: runCsvExport } = useSingleFlight();
 
   const [sorterPreviewRow, setSorterPreviewRow] =
     useState<WeightDisputeRead | null>(null);
@@ -263,9 +264,9 @@ export default function WeightMismatchDisputesPage() {
   const [showClaimInput, setShowClaimInput] = useState<boolean>(false);
   const [claimedGramsInput, setClaimedGramsInput] = useState<string>("");
   const [claimRemarksInput, setClaimRemarksInput] = useState<string>("");
-  const [submittingClaim, setSubmittingClaim] = useState<boolean>(false);
+  const { pending: submittingClaim, run: runClaimSubmit } = useSingleFlight();
 
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const { pendingKey: resolvingId, run: runResolve } = useSingleFlight();
   const [resolveTarget, setResolveTarget] = useState<{
     row: WeightDisputeRead;
     decision: "ACCEPTED" | "REJECTED";
@@ -426,27 +427,26 @@ export default function WeightMismatchDisputesPage() {
       return;
     }
 
-    setSubmittingClaim(true);
-    try {
-      const payload: WeightDisputeClaimCreate = {
-        tracking_ids: targetIds,
-        claimed_weight_g: parsedGrams,
-        claim_remarks:
-          claimRemarksInput.trim() ||
-          "Weight discrepancy claim raised by seller",
-      };
+    await runClaimSubmit(async () => {
+      try {
+        const payload: WeightDisputeClaimCreate = {
+          tracking_ids: targetIds,
+          claimed_weight_g: parsedGrams,
+          claim_remarks:
+            claimRemarksInput.trim() ||
+            "Weight discrepancy claim raised by seller",
+        };
 
-      await DisputesService.raiseWeightMismatchClaims(payload, tenantSlug);
-      toast.success(
-        ["Submitted claim for AWB ", targetIds[0], "."].join("")
-      );
-      setViewMode("list");
-      await fetchDisputes();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to submit claim."));
-    } finally {
-      setSubmittingClaim(false);
-    }
+        await DisputesService.raiseWeightMismatchClaims(payload, tenantSlug);
+        toast.success(
+          ["Submitted claim for AWB ", targetIds[0], "."].join("")
+        );
+        setViewMode("list");
+        await fetchDisputes();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to submit claim."));
+      }
+    });
   };
 
   const handleOpenAdminResolve = (
@@ -460,54 +460,52 @@ export default function WeightMismatchDisputesPage() {
   const handleConfirmAdminResolve = async () => {
     if (!resolveTarget) return;
     const { row, decision } = resolveTarget;
-    setResolvingId(row.id);
-    try {
-      const expectedClaimed =
-        getClaimedGrams(row) ?? getManifestedGrams(row);
-      const payload: WeightDisputeResolveRequest & {
-        expected_claimed_weight_g?: number;
-      } = {
-        claim_status: decision,
-        claim_remarks:
-          adminResolveRemarks.trim() ||
-          (decision === "ACCEPTED"
-            ? "Claim accepted after weight verification"
-            : "Claim rejected after weight verification"),
-        expected_claimed_weight_g: expectedClaimed,
-      };
-      await DisputesService.resolveWeightMismatchDispute(
-        row.id,
-        payload,
-        tenantSlug
-      );
-      toast.success(
-        [
-          "Claim for AWB ",
-          row.tracking_id,
-          " marked as ",
-          decision,
-          ".",
-        ].join("")
-      );
-      setResolveTarget(null);
-      await fetchDisputes();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Unable to resolve claim."));
-    } finally {
-      setResolvingId(null);
-    }
+    await runResolve(async () => {
+      try {
+        const expectedClaimed =
+          getClaimedGrams(row) ?? getManifestedGrams(row);
+        const payload: WeightDisputeResolveRequest & {
+          expected_claimed_weight_g?: number;
+        } = {
+          claim_status: decision,
+          claim_remarks:
+            adminResolveRemarks.trim() ||
+            (decision === "ACCEPTED"
+              ? "Claim accepted after weight verification"
+              : "Claim rejected after weight verification"),
+          expected_claimed_weight_g: expectedClaimed,
+        };
+        await DisputesService.resolveWeightMismatchDispute(
+          row.id,
+          payload,
+          tenantSlug
+        );
+        toast.success(
+          [
+            "Claim for AWB ",
+            row.tracking_id,
+            " marked as ",
+            decision,
+            ".",
+          ].join("")
+        );
+        setResolveTarget(null);
+        await fetchDisputes();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Unable to resolve claim."));
+      }
+    }, row.id);
   };
 
   const handleExportCsv = async () => {
-    setDownloadingCsv(true);
-    try {
-      await downloadMismatchCsvBlob(searchQuery);
-      toast.success("Downloaded mismatch disputes CSV.");
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to export CSV."));
-    } finally {
-      setDownloadingCsv(false);
-    }
+    await runCsvExport(async () => {
+      try {
+        await downloadMismatchCsvBlob(searchQuery);
+        toast.success("Downloaded mismatch disputes CSV.");
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to export CSV."));
+      }
+    });
   };
 
   if (viewMode === "create") {

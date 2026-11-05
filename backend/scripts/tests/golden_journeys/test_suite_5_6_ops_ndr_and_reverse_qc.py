@@ -379,7 +379,10 @@ async def test_j20_hub_weight_audit_auto_debit_note_customer_claim_accept_and_re
         disp4_resp = await client.post(
             f"/api/v1/manifests/{pur4_id}/dispatch",
             headers=_headers(accounts, OPERATIONS_EMAIL),
-            json={"picked_shipment_ids": [order5_id]},
+            json={
+                "picked_shipment_ids": [order5_id],
+                "pickup_otp": pur4_resp.json()["pickup_otp"],
+            },
         )
         assert disp4_resp.status_code == 200, disp4_resp.text
 
@@ -1132,7 +1135,10 @@ async def test_j26_reverse_doorstep_qc_fail_g3_vs_pass_to_completed_and_audit_in
         disp_rev_resp = await client.post(
             f"/api/v1/manifests/{pur_rev_id}/dispatch",
             headers=_headers(accounts, OPERATIONS_EMAIL),
-            json={"picked_shipment_ids": [return2_id]},
+            json={
+                "picked_shipment_ids": [return2_id],
+                "pickup_otp": pur_rev["pickup_otp"],
+            },
         )
         assert disp_rev_resp.status_code == 200, disp_rev_resp.text
         assert disp_rev_resp.json()["status"] == "PICKED"

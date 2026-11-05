@@ -1147,15 +1147,20 @@ async def test_j18_ops_executes_g1_partial_pickup_2_of_3_awbs_and_merged_pdfs():
             assert lbl_resp.status_code == 200, lbl_resp.text
             assert lbl_resp.content.startswith(b"%PDF-")
 
-        # 3. Ops executes G1 partial pickup: only Order #1 and Order #3 handed over
+        # 3. Ops executes G1 partial pickup: only Order #1 and Order #3 handed over (with seller's 6-digit pickup_otp)
+        assert pur3.get("pickup_otp") and len(pur3["pickup_otp"]) == 6 and pur3["pickup_otp"].isdigit()
         disp_resp = await client.post(
             f"/api/v1/manifests/{pur3_id}/dispatch",
             headers=_headers(accounts, OPERATIONS_EMAIL),
-            json={"picked_shipment_ids": [order1_id, order3_id]},
+            json={
+                "picked_shipment_ids": [order1_id, order3_id],
+                "pickup_otp": pur3["pickup_otp"],
+            },
         )
         assert disp_resp.status_code == 200, disp_resp.text
         dispatched = disp_resp.json()
         assert dispatched["status"] == "PICKED"
+        assert dispatched.get("pickup_otp") is None
         assert dispatched["expected_awbs"] == 2
         assert dispatched["picked_awbs"] == 2
 

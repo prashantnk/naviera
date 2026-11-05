@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { extractApiErrorMessage, formatIstDateTime } from "@/lib/utils";
 import { getSupabaseClient } from "@/lib/supabase";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { History, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -92,7 +93,7 @@ export function SettingsHistoryDialog({
 }: SettingsHistoryDialogProps) {
   const [items, setItems] = useState<TenantSettingsHistoryRead[]>([]);
   const [loading, setLoading] = useState(false);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const { pending: restoring, pendingKey: restoringId, run } = useSingleFlight();
   const [confirmEntry, setConfirmEntry] = useState<TenantSettingsHistoryRead | null>(null);
 
   useEffect(() => {
@@ -109,21 +110,19 @@ export function SettingsHistoryDialog({
       .finally(() => setLoading(false));
   }, [open, tenantSlug]);
 
-  const handleRestore = async (entry: TenantSettingsHistoryRead) => {
-    setRestoringId(entry.id);
-    try {
-      await TenantsService.restoreSettingsVersion(entry.id, tenantSlug);
-      await revalidateTenantSettingsCache(tenantSlug);
-      toast.success(`Restored settings snapshot #${entry.version}.`);
-      setConfirmEntry(null);
-      await onRestored();
-      onOpenChange(false);
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err, "Failed to restore settings snapshot."));
-    } finally {
-      setRestoringId(null);
-    }
-  };
+  const handleRestore = (entry: TenantSettingsHistoryRead) =>
+    run(async () => {
+      try {
+        await TenantsService.restoreSettingsVersion(entry.id, tenantSlug);
+        await revalidateTenantSettingsCache(tenantSlug);
+        toast.success(`Restored settings snapshot #${entry.version}.`);
+        setConfirmEntry(null);
+        await onRestored();
+        onOpenChange(false);
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to restore settings snapshot."));
+      }
+    }, entry.id);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,7 +189,7 @@ export function SettingsHistoryDialog({
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={restoringId !== null}
+                      disabled={restoring}
                       onClick={() => setConfirmEntry(null)}
                       className="h-8 px-2.5 text-xs bg-white"
                     >
@@ -199,7 +198,7 @@ export function SettingsHistoryDialog({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={restoringId !== null}
+                      disabled={restoring}
                       onClick={() => handleRestore(item)}
                       className="h-8 px-2.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                     >
@@ -216,7 +215,7 @@ export function SettingsHistoryDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={restoringId !== null}
+                    disabled={restoring}
                     onClick={() => setConfirmEntry(item)}
                     className="shrink-0 bg-white"
                   >

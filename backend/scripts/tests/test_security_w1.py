@@ -254,7 +254,8 @@ async def test_public_tenant_endpoints_hide_private_settings(db_session):
 
 @pytest.mark.asyncio
 async def test_admin_settings_endpoint_is_owner_admin_only(db_session):
-    await _seed_private_settings(db_session, _kyc_request("W1 Admin View Co"))
+    tenant = await _seed_private_settings(db_session, _kyc_request("W1 Admin View Co"))
+    _serve_tenant(tenant)
 
     async with _client() as client:
         for role in STAFF_ROLES_DENIED:

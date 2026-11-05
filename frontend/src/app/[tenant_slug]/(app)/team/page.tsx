@@ -42,6 +42,7 @@ import {
   hasCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage, formatIstDate } from "@/lib/utils";
 import {
   Building2,
@@ -245,9 +246,14 @@ export default function TeamManagementPage() {
   const [isActiveInput, setIsActiveInput] = useState(true);
   const [scopeInput, setScopeInput] = useState<ServiceScope>(ServiceScope.BOTH);
   const [selectedRoleKey, setSelectedRoleKey] = useState<UserRole>(UserRole.ADMIN);
-  const [savingUser, setSavingUser] = useState(false);
+  const { pending: savingUser, run: runSaveUser } = useSingleFlight();
   const [transferConfirmed, setTransferConfirmed] = useState(false);
-  const [reviewingUserId, setReviewingUserId] = useState<string | null>(null);
+  // One row mutation (B2B review, scope change, (de)activate) at a time; the key is the user id.
+  const {
+    pending: rowActionPending,
+    pendingKey: busyUserId,
+    run: runRowAction,
+  } = useSingleFlight();
 
   const fetchUsers = useCallback(async () => {
     const cached = getCachedQuery<UserRead[]>(cacheKey);
@@ -310,25 +316,23 @@ export default function TeamManagementPage() {
     setPanInput(cleaned);
   };
 
-  const handleReviewB2bRequest = async (targetUser: UserRead, approve: boolean) => {
-    setReviewingUserId(targetUser.id);
-    try {
-      await UsersService.reviewUserB2BAccessRequest(targetUser.id, {
-        approve,
-        service_scope: approve ? ServiceScope.BOTH : ServiceScope.B2C,
-      });
-      toast.success(
-        approve
-          ? `Approved B2B Cargo access for ${targetUser.email}`
-          : `Declined B2B Cargo request for ${targetUser.email}`
-      );
-      await fetchUsers();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Could not review B2B request"));
-    } finally {
-      setReviewingUserId(null);
-    }
-  };
+  const handleReviewB2bRequest = (targetUser: UserRead, approve: boolean) =>
+    runRowAction(async () => {
+      try {
+        await UsersService.reviewUserB2BAccessRequest(targetUser.id, {
+          approve,
+          service_scope: approve ? ServiceScope.BOTH : ServiceScope.B2C,
+        });
+        toast.success(
+          approve
+            ? `Approved B2B Cargo access for ${targetUser.email}`
+            : `Declined B2B Cargo request for ${targetUser.email}`
+        );
+        await fetchUsers();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Could not review B2B request"));
+      }
+    }, targetUser.id);
 
   const handleSaveUserModal = async () => {
     if (!editingUser) return;
@@ -338,65 +342,66 @@ export default function TeamManagementPage() {
       return;
     }
 
-    setSavingUser(true);
     const isCustomerRole = selectedRoleKey === UserRole.CUSTOMER;
-    try {
-      const updatePayload: UserUpdate = {
-        phone: phoneInput.trim() || null,
-        is_active: isActiveInput,
-        account_type: isCustomerRole ? "CUSTOMER" : "TENANT_STAFF",
-        role: selectedRoleKey,
-        service_scope: isCustomerRole ? scopeInput : ServiceScope.BOTH,
-        company_name: companyNameInput.trim() || null,
-        gstin: gstinInput.trim() || null,
-        pan: panInput.trim() || null,
-      };
-      if (fullNameInput.trim()) {
-        updatePayload.full_name = fullNameInput.trim();
-      }
-      await UsersService.updateUserRole(editingUser.id, updatePayload);
-      if (transfersOwnership) {
+    await runSaveUser(async () => {
+      try {
+        const updatePayload: UserUpdate = {
+          phone: phoneInput.trim() || null,
+          is_active: isActiveInput,
+          account_type: isCustomerRole ? "CUSTOMER" : "TENANT_STAFF",
+          role: selectedRoleKey,
+          service_scope: isCustomerRole ? scopeInput : ServiceScope.BOTH,
+          company_name: companyNameInput.trim() || null,
+          gstin: gstinInput.trim() || null,
+          pan: panInput.trim() || null,
+        };
+        if (fullNameInput.trim()) {
+          updatePayload.full_name = fullNameInput.trim();
+        }
+        await UsersService.updateUserRole(editingUser.id, updatePayload);
+        if (transfersOwnership) {
+          toast.success(
+            `${editingUser.email} is now the Owner. You are now an Admin; reloading your access.`
+          );
+          window.location.reload();
+          return;
+        }
         toast.success(
-          `${editingUser.email} is now the Owner. You are now an Admin; reloading your access.`
+          `Updated ${editingUser.email} (${ROLE_LABEL_BY_KEY[selectedRoleKey]})`
         );
-        window.location.reload();
-        return;
+        setModalOpen(false);
+        fetchUsers();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Could not save user changes"));
       }
-      toast.success(
-        `Updated ${editingUser.email} (${ROLE_LABEL_BY_KEY[selectedRoleKey]})`
-      );
-      setModalOpen(false);
-      fetchUsers();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Could not save user changes"));
-    } finally {
-      setSavingUser(false);
-    }
+    });
   };
 
-  const changeScopeQuick = async (userId: string, newScope: ServiceScope) => {
-    try {
-      await UsersService.updateUserRole(userId, {
-        service_scope: newScope,
-      });
-      toast.success(`Service scope updated to ${newScope}`);
-      fetchUsers();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Scope update failed"));
-    }
-  };
+  const changeScopeQuick = (userId: string, newScope: ServiceScope) =>
+    runRowAction(async () => {
+      try {
+        await UsersService.updateUserRole(userId, {
+          service_scope: newScope,
+        });
+        toast.success(`Service scope updated to ${newScope}`);
+        fetchUsers();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Scope update failed"));
+      }
+    }, userId);
 
-  const toggleActiveQuick = async (userId: string, currentActive: boolean) => {
-    try {
-      await UsersService.updateUserRole(userId, {
-        is_active: !currentActive,
-      });
-      toast.success(currentActive ? "User deactivated" : "User activated");
-      fetchUsers();
-    } catch (error: unknown) {
-      toast.error(extractApiErrorMessage(error, "Status update failed"));
-    }
-  };
+  const toggleActiveQuick = (userId: string, currentActive: boolean) =>
+    runRowAction(async () => {
+      try {
+        await UsersService.updateUserRole(userId, {
+          is_active: !currentActive,
+        });
+        toast.success(currentActive ? "User deactivated" : "User activated");
+        fetchUsers();
+      } catch (error: unknown) {
+        toast.error(extractApiErrorMessage(error, "Status update failed"));
+      }
+    }, userId);
 
   const filteredUsers = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
@@ -497,7 +502,7 @@ export default function TeamManagementPage() {
             {pendingB2bRequests.map((reqUser) => {
               const displayName =
                 reqUser.full_name || reqUser.email.split("@")[0].toUpperCase();
-              const isBusy = reviewingUserId === reqUser.id;
+              const isBusy = busyUserId === reqUser.id;
               return (
                 <div
                   key={reqUser.id}
@@ -545,7 +550,7 @@ export default function TeamManagementPage() {
                     <Button
                       type="button"
                       size="sm"
-                      disabled={isBusy}
+                      disabled={rowActionPending}
                       onClick={() => handleReviewB2bRequest(reqUser, true)}
                       className="h-8 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
                     >
@@ -560,7 +565,7 @@ export default function TeamManagementPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={isBusy}
+                      disabled={rowActionPending}
                       onClick={() => handleReviewB2bRequest(reqUser, false)}
                       className="h-8 px-3 text-xs font-semibold border-rose-200 text-rose-700 hover:bg-rose-50 gap-1"
                     >
@@ -740,11 +745,15 @@ export default function TeamManagementPage() {
                             <Button
                               type="button"
                               size="sm"
-                              disabled={reviewingUserId === u.id}
+                              disabled={rowActionPending}
                               onClick={() => handleReviewB2bRequest(u, true)}
                               className="h-8 px-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
                             >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              {busyUserId === u.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              )}
                               Approve B2B
                             </Button>
                           )}
@@ -767,8 +776,13 @@ export default function TeamManagementPage() {
                                 variant="ghost"
                                 className="h-8 w-8 p-0"
                                 aria-label={`More actions for ${u.email}`}
+                                disabled={rowActionPending}
                               >
-                                <MoreHorizontal className="h-4 w-4 text-slate-500" />
+                                {busyUserId === u.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                                ) : (
+                                  <MoreHorizontal className="h-4 w-4 text-slate-500" />
+                                )}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">

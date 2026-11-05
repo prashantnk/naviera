@@ -32,10 +32,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 import type { ServiceFlow } from "@/lib/workspace-flow";
 import { CheckCircle2, Loader2, Plus, Truck, X } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
@@ -64,15 +66,15 @@ interface NextAddToPickupBannerProps {
 
 function NextAddToPickupBannerContent({ shipment, flow, onAdded }: NextAddToPickupBannerProps) {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const router = useProgressRouter();
   const { routeTo, tenantSlug } = useTenant();
   const { capabilities } = useUser();
   const [dismissed, setDismissed] = useState(false);
-  const [checkingCandidates, setCheckingCandidates] = useState(false);
+  const { pending: checkingCandidates, run: runCheck } = useSingleFlight();
   const [candidatesData, setCandidatesData] = useState<PickupCandidatesResponse | null>(null);
   const [chosenCandidateId, setChosenCandidateId] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const { pending: adding, run: runAdd } = useSingleFlight();
 
   const justBooked = searchParams.get(BOOKED_QUERY_PARAM) === BOOKED_QUERY_VALUE;
   const isReadyToShip =
@@ -90,52 +92,49 @@ function NextAddToPickupBannerContent({ shipment, flow, onAdded }: NextAddToPick
       }),
     );
 
-  const handleAddToPickupClick = async () => {
-    setCheckingCandidates(true);
-    try {
-      const response = await ManifestsService.getPickupCandidates(
-        [shipment.id],
-        tenantSlug,
-      );
-      if (response.candidates.length === 0) {
-        router.push(
-          buildCreateHref(
-            response.pickup_address_id,
-            response.pickup_location_name,
-          ),
+  const handleAddToPickupClick = () =>
+    runCheck(async () => {
+      try {
+        const response = await ManifestsService.getPickupCandidates(
+          [shipment.id],
+          tenantSlug,
         );
-        return;
+        if (response.candidates.length === 0) {
+          router.push(
+            buildCreateHref(
+              response.pickup_address_id,
+              response.pickup_location_name,
+            ),
+          );
+          return;
+        }
+        setCandidatesData(response);
+        setChosenCandidateId(response.candidates[0].id);
+        setDialogOpen(true);
+      } catch {
+        router.push(buildCreateHref());
       }
-      setCandidatesData(response);
-      setChosenCandidateId(response.candidates[0].id);
-      setDialogOpen(true);
-    } catch {
-      router.push(buildCreateHref());
-    } finally {
-      setCheckingCandidates(false);
-    }
-  };
+    });
 
   const handleConfirmExisting = async () => {
     if (!chosenCandidateId) return;
-    setAdding(true);
-    try {
-      const updated = await ManifestsService.addShipmentsToManifest(
-        chosenCandidateId,
-        { shipment_ids: [shipment.id] },
-        tenantSlug,
-      );
-      toast.success(
-        `Added ${flowConfig.shipmentNoun} to pickup ${getPickupDisplayId(updated)}`,
-      );
-      setDialogOpen(false);
-      setDismissed(true);
-      onAdded?.();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to add to pickup."));
-    } finally {
-      setAdding(false);
-    }
+    await runAdd(async () => {
+      try {
+        const updated = await ManifestsService.addShipmentsToManifest(
+          chosenCandidateId,
+          { shipment_ids: [shipment.id] },
+          tenantSlug,
+        );
+        toast.success(
+          `Added ${flowConfig.shipmentNoun} to pickup ${getPickupDisplayId(updated)}`,
+        );
+        setDialogOpen(false);
+        setDismissed(true);
+        onAdded?.();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to add to pickup."));
+      }
+    });
   };
 
   return (

@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 import { Building2, CheckCircle2, Clock, FileText, Loader2, Truck } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -40,7 +41,7 @@ export function RequestB2bAccessDialog({
   const [gstin, setGstin] = useState("");
   const [pan, setPan] = useState("");
   const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { pending: submitting, run } = useSingleFlight();
 
   const isPending = user?.b2b_request_status === "PENDING";
 
@@ -67,30 +68,29 @@ export function RequestB2bAccessDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
-    try {
-      const payload: B2BAccessRequestCreate = {
-        company_name: companyName.trim() || null,
-        gstin: gstin.trim() || null,
-        pan: pan.trim() || null,
-        notes: notes.trim() || null,
-      };
-      await UsersService.requestB2BAccessForCurrentUser(payload);
-      await refreshUser();
-      window.dispatchEvent(new CustomEvent("user-profile-updated"));
-      toast.success(
-        isPending
-          ? "Updated your B2B Cargo access request details."
-          : "B2B Cargo access request submitted for Admin approval."
-      );
-      onOpenChange(false);
-    } catch (error) {
-      toast.error(
-        extractApiErrorMessage(error, "Could not submit B2B access request.")
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    await run(async () => {
+      try {
+        const payload: B2BAccessRequestCreate = {
+          company_name: companyName.trim() || null,
+          gstin: gstin.trim() || null,
+          pan: pan.trim() || null,
+          notes: notes.trim() || null,
+        };
+        await UsersService.requestB2BAccessForCurrentUser(payload);
+        await refreshUser();
+        window.dispatchEvent(new CustomEvent("user-profile-updated"));
+        toast.success(
+          isPending
+            ? "Updated your B2B Cargo access request details."
+            : "B2B Cargo access request submitted for Admin approval."
+        );
+        onOpenChange(false);
+      } catch (error) {
+        toast.error(
+          extractApiErrorMessage(error, "Could not submit B2B access request.")
+        );
+      }
+    });
   };
 
   return (

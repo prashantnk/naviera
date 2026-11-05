@@ -38,6 +38,8 @@ import {
   getCachedAddresses,
   hasCachedAddresses,
 } from "@/hooks/use-addresses";
+import { useProgressRouter } from "@/hooks/use-progress-router";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { PICKUP_TIME_SLOT_OPTIONS } from "@/lib/form-options";
 import {
   buildQueryCacheKey,
@@ -59,7 +61,6 @@ import {
   Truck,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -174,7 +175,7 @@ export function CreatePickupRequestForm({
   initialShipmentIds,
   initialDate,
 }: CreatePickupRequestFormProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const { tenantSlug, routeTo } = useTenant();
   const flowConfig = PICKUP_FLOW_CONFIG[serviceFlow];
 
@@ -223,7 +224,7 @@ export function CreatePickupRequestForm({
   });
   const pendingPreselect = useRef<Set<string>>(new Set(initialShipmentIds ?? []));
 
-  const [submitting, setSubmitting] = useState(false);
+  const { pending: submitting, run: runCreateManifest } = useSingleFlight();
   const [error, setError] = useState("");
 
   const isBlind = flowConfig.allowBlindPickup && mode === PickupMode.BLIND;
@@ -370,37 +371,40 @@ export function CreatePickupRequestForm({
     const declaredExpected = Number.parseInt(expectedBoxes, 10);
     const fallbackBoxes = Number.isInteger(declaredExpected) && declaredExpected >= MIN_BLIND_BOXES ? declaredExpected : 1;
 
-    setSubmitting(true);
-    try {
-      const created = await ManifestsService.createManifest(
-        {
-          pickup_address_id: locationId,
-          scheduled_date: scheduledDate,
-          time_slot: timeSlot,
-          service_flow: serviceFlow,
-          is_blind_pickup: isBlind,
-          total_boxes: isBlind ? Number.parseInt(blindBoxes, 10) : selectedIds.size > 0 ? 0 : fallbackBoxes,
-          shipment_ids: Array.from(selectedIds),
-        },
-        tenantSlug
-      );
-      invalidateQueryCache("manifests-list");
-      invalidateQueryCache("eligible-shipments");
-      invalidateQueryCache("shipments-list");
-      const slotNotice = (created as { notice?: string | null }).notice;
-      toast.success(`Pickup request ${created.pickup_request_number ?? ""} created`, {
-        description: slotNotice
-          ? `${formatPickupDate(created.scheduled_date)} · ${getPickupSlotLabel(created.time_slot)} — ${slotNotice}`
-          : `${formatPickupDate(created.scheduled_date)} · ${getPickupSlotLabel(created.time_slot)}`,
-      });
-      if (slotNotice) {
-        toast.info(slotNotice);
+    await runCreateManifest(async () => {
+      try {
+        const created = await ManifestsService.createManifest(
+          {
+            pickup_address_id: locationId,
+            scheduled_date: scheduledDate,
+            time_slot: timeSlot,
+            service_flow: serviceFlow,
+            is_blind_pickup: isBlind,
+            total_boxes: isBlind ? Number.parseInt(blindBoxes, 10) : selectedIds.size > 0 ? 0 : fallbackBoxes,
+            shipment_ids: Array.from(selectedIds),
+          },
+          tenantSlug
+        );
+        invalidateQueryCache("manifests-list");
+        invalidateQueryCache("eligible-shipments");
+        invalidateQueryCache("shipments-list");
+        const slotNotice = (created as { notice?: string | null }).notice;
+        const otpSuffix = created.pickup_otp ? ` · Handover OTP: ${created.pickup_otp}` : "";
+        toast.success(`Pickup request ${created.pickup_request_number ?? ""} created`, {
+          description: slotNotice
+            ? `${formatPickupDate(created.scheduled_date)} · ${getPickupSlotLabel(created.time_slot)}${otpSuffix} — ${slotNotice}`
+            : `${formatPickupDate(created.scheduled_date)} · ${getPickupSlotLabel(created.time_slot)}${otpSuffix}`,
+        });
+        if (slotNotice) {
+          toast.info(slotNotice);
+        }
+        router.push(routeTo(flowConfig.listHref));
+      } catch (err: unknown) {
+        const msg = extractApiErrorMessage(err, "Failed to create the pickup request.");
+        setError(msg);
+        toast.error(msg);
       }
-      router.push(routeTo(flowConfig.listHref));
-    } catch (err: unknown) {
-      setError(extractApiErrorMessage(err, "Failed to create the pickup request."));
-      setSubmitting(false);
-    }
+    });
   };
 
   return (

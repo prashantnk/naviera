@@ -13,12 +13,13 @@ import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, PackageSearch, RefreshCw, Search, WifiOff } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import { useCallback, useEffect, useState } from "react";
 
 export default function PublicTrackingPage() {
   const params = useParams();
-  const router = useRouter();
+  const router = useProgressRouter();
   const rawTrackingId = decodeURIComponent((params.tracking_id as string) || "");
   const trackingId = normalizeTrackingId(rawTrackingId);
   const { routeTo, tenantSlug } = useTenant();

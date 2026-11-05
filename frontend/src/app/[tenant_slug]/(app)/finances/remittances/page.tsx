@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   buildQueryCacheKey,
   getCachedQuery,
@@ -128,7 +129,7 @@ export default function RemittancesListPage() {
   );
 
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [submitting, setSubmitting] = useState<boolean>(false);
+  const { pending: submitting, run: runCreateBatch } = useSingleFlight();
   const [bankUtr, setBankUtr] = useState<string>("");
   const [customNumber, setCustomNumber] = useState<string>("");
   const [batchDate, setBatchDate] = useState<string>(todayIstDate);
@@ -264,7 +265,7 @@ export default function RemittancesListPage() {
     }
   }, [dialogOpen, canManageFinance, fetchMerchants]);
 
-  const handleCreateBatch = async (e: React.FormEvent) => {
+  const handleCreateBatch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!merchantId) {
       toast.error("Please select the merchant being paid.");
@@ -286,45 +287,44 @@ export default function RemittancesListPage() {
       toast.error("Please enter the Bank Transaction ID (UTR).");
       return;
     }
-    setSubmitting(true);
-    try {
-      const payload: CodRemittanceCreate = {
-        merchant_user_id: merchantId,
-        bank_utr: bankUtr.trim(),
-        remittance_number: customNumber.trim() || null,
-        processed_date: batchDate || null,
-        state: "COMPLETED",
-        shipment_ids: selectedShipmentIds,
-        expected_total: preview.total,
-      };
+    void runCreateBatch(async () => {
+      try {
+        const payload: CodRemittanceCreate = {
+          merchant_user_id: merchantId,
+          bank_utr: bankUtr.trim(),
+          remittance_number: customNumber.trim() || null,
+          processed_date: batchDate || null,
+          state: "COMPLETED",
+          shipment_ids: selectedShipmentIds,
+          expected_total: preview.total,
+        };
 
-      const created = await RemittancesService.createRemittance(
-        payload,
-        tenantSlug
-      );
-      toast.success(
-        [
-          "Remittance batch ",
-          created.remittance_number,
-          " processed for ",
-          String(created.total_orders),
-          " order(s).",
-        ].join("")
-      );
-      setDialogOpen(false);
-      setBankUtr("");
-      setCustomNumber("");
-      setMerchantId("");
-      setPreview(null);
-      setSelectedShipmentIds([]);
-      await fetchRemittances();
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Unable to process remittance batch.")
-      );
-    } finally {
-      setSubmitting(false);
-    }
+        const created = await RemittancesService.createRemittance(
+          payload,
+          tenantSlug
+        );
+        toast.success(
+          [
+            "Remittance batch ",
+            created.remittance_number,
+            " processed for ",
+            String(created.total_orders),
+            " order(s).",
+          ].join("")
+        );
+        setDialogOpen(false);
+        setBankUtr("");
+        setCustomNumber("");
+        setMerchantId("");
+        setPreview(null);
+        setSelectedShipmentIds([]);
+        await fetchRemittances();
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Unable to process remittance batch.")
+        );
+      }
+    });
   };
 
   return (

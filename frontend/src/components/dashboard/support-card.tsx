@@ -46,7 +46,6 @@ function SupportTile({ label, count, linkLabel, href, needsAction = false }: Sup
       </div>
       <Link
         href={href}
-        prefetch={true}
         className="mt-2 inline-flex items-center justify-end gap-0.5 self-end rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         {linkLabel}
@@ -112,7 +111,6 @@ export function DashboardSupportCard() {
         </h2>
         <Link
           href={routeTo(SUPPORT_HREF)}
-          prefetch={true}
           className="rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           All tickets

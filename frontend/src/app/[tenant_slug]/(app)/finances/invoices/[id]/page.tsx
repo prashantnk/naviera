@@ -13,6 +13,7 @@ import { CLAIMS_FINANCE_CHIP } from "@/components/support/ticket-rules";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   cn,
   extractApiErrorMessage,
@@ -95,8 +96,8 @@ export default function InvoiceDetailPage() {
 
   const [invoice, setInvoice] = useState<BillingInvoiceRead | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
-  const [downloadingCsv, setDownloadingCsv] = useState<boolean>(false);
+  const { pending: downloadingPdf, run: runPdfDownload } = useSingleFlight();
+  const { pending: downloadingCsv, run: runCsvDownload } = useSingleFlight();
 
   const fetchInvoice = useCallback(async () => {
     if (!tenantSlug || !identifier) return;
@@ -120,48 +121,46 @@ export default function InvoiceDetailPage() {
     fetchInvoice();
   }, [fetchInvoice]);
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = () => {
     if (!invoice) return;
-    setDownloadingPdf(true);
-    try {
-      const url = ["/api/v1/invoices/", invoice.invoice_number, "/pdf"].join(
-        ""
-      );
-      const filename = ["invoice_", invoice.invoice_number, ".pdf"].join("");
-      await downloadInvoiceBlob(url, filename);
-      toast.success(`Downloaded ${invoice.document_title} PDF.`);
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to download invoice PDF.")
-      );
-    } finally {
-      setDownloadingPdf(false);
-    }
+    void runPdfDownload(async () => {
+      try {
+        const url = ["/api/v1/invoices/", invoice.invoice_number, "/pdf"].join(
+          ""
+        );
+        const filename = ["invoice_", invoice.invoice_number, ".pdf"].join("");
+        await downloadInvoiceBlob(url, filename);
+        toast.success(`Downloaded ${invoice.document_title} PDF.`);
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to download invoice PDF.")
+        );
+      }
+    });
   };
 
-  const handleDownloadTransactionsCsv = async () => {
+  const handleDownloadTransactionsCsv = () => {
     if (!invoice) return;
-    setDownloadingCsv(true);
-    try {
-      const url = [
-        "/api/v1/invoices/",
-        invoice.invoice_number,
-        "/transactions-csv",
-      ].join("");
-      const filename = [
-        "invoice_",
-        invoice.invoice_number,
-        "_transactions.csv",
-      ].join("");
-      await downloadInvoiceBlob(url, filename);
-      toast.success("Downloaded invoice transactions CSV.");
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Failed to download transactions CSV.")
-      );
-    } finally {
-      setDownloadingCsv(false);
-    }
+    void runCsvDownload(async () => {
+      try {
+        const url = [
+          "/api/v1/invoices/",
+          invoice.invoice_number,
+          "/transactions-csv",
+        ].join("");
+        const filename = [
+          "invoice_",
+          invoice.invoice_number,
+          "_transactions.csv",
+        ].join("");
+        await downloadInvoiceBlob(url, filename);
+        toast.success("Downloaded invoice transactions CSV.");
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Failed to download transactions CSV.")
+        );
+      }
+    });
   };
 
   if (loading) {

@@ -46,6 +46,8 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useSingleFlight } from "@/hooks/use-single-flight";
+import { extractApiErrorMessage } from "@/lib/utils";
 import { columns } from "./columns";
 
 /** Filter-bar options with friendly labels and icons instead of raw enum values. */
@@ -68,7 +70,7 @@ export default function AddressBookPage() {
     null
   );
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const { pending: isDeleting, run: runDelete } = useSingleFlight();
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState("");
@@ -84,23 +86,22 @@ export default function AddressBookPage() {
   }, [refresh]);
 
   const executeDelete = async () => {
-    if (!deleteConfirmId || isDeleting) return;
-    setIsDeleting(true);
+    if (!deleteConfirmId) return;
     const idToRemove = deleteConfirmId;
-    try {
-      await AddressesService.deleteSavedAddress(idToRemove);
-      const next = data.filter((addr) => addr.id !== idToRemove);
-      setData(next);
-      invalidateAddressesCache(tenantSlug);
-      setCachedAddresses(tenantSlug, next);
-      toast.success("Address removed successfully");
-      setDeleteConfirmId(null);
-      void fetchAddresses();
-    } catch {
-      toast.error("Failed to delete address");
-    } finally {
-      setIsDeleting(false);
-    }
+    await runDelete(async () => {
+      try {
+        await AddressesService.deleteSavedAddress(idToRemove);
+        const next = data.filter((addr) => addr.id !== idToRemove);
+        setData(next);
+        invalidateAddressesCache(tenantSlug);
+        setCachedAddresses(tenantSlug, next);
+        toast.success("Address removed successfully");
+        setDeleteConfirmId(null);
+        void fetchAddresses();
+      } catch (err) {
+        toast.error(extractApiErrorMessage(err, "Failed to delete address"));
+      }
+    });
   };
 
 

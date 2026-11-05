@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useProgressRouter } from "@/hooks/use-progress-router";
 import {
   CalendarCheck,
   CheckCircle2,
@@ -61,6 +62,7 @@ import {
   getCachedQuery,
   setCachedQuery,
 } from "@/lib/query-cache";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { cn, extractApiErrorMessage, safeFormatDate } from "@/lib/utils";
 import {
   ExceptionActionDialog,
@@ -129,7 +131,7 @@ function _agingLabel(days: number): string {
 }
 
 export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { tenantSlug, routeTo } = useTenant();
@@ -193,7 +195,11 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkBusy, setBulkBusy] = useState<boolean>(false);
+  const {
+    pending: bulkBusy,
+    pendingKey: bulkPendingKey,
+    run: runBulk,
+  } = useSingleFlight();
 
   // Dialog state for single or bulk action
   const [dialogAction, setDialogAction] = useState<NdrAction | null>(null);
@@ -368,7 +374,7 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
     setDialogAction(action);
   };
 
-  const handleBulkActionClick = async (action: NdrAction) => {
+  const handleBulkActionClick = (action: NdrAction) => {
     const eligibleIds = selectedRows
       .filter((r) => (r.allowed_actions || []).includes(action))
       .map((r) => r.shipment_id);
@@ -387,36 +393,35 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
 
     if (!BULK_ENDPOINT_ACTIONS.has(action)) return;
 
-    setBulkBusy(true);
-    try {
-      const res = await ExceptionsService.applyBulkExceptionAction(
-        {
-          action,
-          shipment_ids: eligibleIds,
-        },
-        tenantSlug,
-      );
-      if (action === NdrAction.CANCEL_PICKUP) {
-        window.dispatchEvent(new CustomEvent("wallet-updated"));
-      }
-      const okCount = res.succeeded.length;
-      const failCount = res.failed.length;
-      const label = NDR_ACTION_META[action].label;
-      if (okCount > 0) {
-        toast.success(`${label} applied to ${okCount} shipment(s).`);
-      }
-      if (failCount > 0) {
-        toast.error(
-          `${failCount} shipment(s) could not be processed: ${res.failed[0]?.reason || "Validation error"}`,
+    void runBulk(async () => {
+      try {
+        const res = await ExceptionsService.applyBulkExceptionAction(
+          {
+            action,
+            shipment_ids: eligibleIds,
+          },
+          tenantSlug,
         );
+        if (action === NdrAction.CANCEL_PICKUP) {
+          window.dispatchEvent(new CustomEvent("wallet-updated"));
+        }
+        const okCount = res.succeeded.length;
+        const failCount = res.failed.length;
+        const label = NDR_ACTION_META[action].label;
+        if (okCount > 0) {
+          toast.success(`${label} applied to ${okCount} shipment(s).`);
+        }
+        if (failCount > 0) {
+          toast.error(
+            `${failCount} shipment(s) could not be processed: ${res.failed[0]?.reason || "Validation error"}`,
+          );
+        }
+        setSelectedIds(new Set());
+        refresh();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Bulk action failed."));
       }
-      setSelectedIds(new Set());
-      refresh();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Bulk action failed."));
-    } finally {
-      setBulkBusy(false);
-    }
+    }, action);
   };
 
   const handleBulkAppointmentHeaderButton = () => {
@@ -803,7 +808,7 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
             disabled={loading}
             className="h-9 bg-white text-xs font-semibold"
           >
-            <RefreshCw className="mr-1.5 size-3.5" />
+            <RefreshCw className={cn("mr-1.5 size-3.5", loading && "animate-spin")} />
             Refresh
           </Button>
         </div>
@@ -832,9 +837,10 @@ export function ExceptionsWorkspace({ serviceFlow }: ExceptionsWorkspaceProps) {
                   variant="outline"
                   disabled={bulkBusy}
                   onClick={() => handleBulkActionClick(bulkAction)}
+                  data-testid={`exceptions.bulk.${bulkAction}`}
                   className="h-8 bg-white text-xs font-semibold shadow-2xs"
                 >
-                  {bulkBusy ? (
+                  {bulkPendingKey === bulkAction ? (
                     <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                   ) : (
                     <BulkIcon className="mr-1.5 size-3.5 text-primary" />

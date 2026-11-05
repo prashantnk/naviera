@@ -12,7 +12,13 @@
  * Spring Boot analogy: a Thymeleaf fragment parameterised by `serviceFlow`
  * that renders the same view for two `@RequestMapping`s.
  */
-import { ManifestResponse, ManifestsService, ManifestStatus, ServiceFlow } from "@/api_client";
+import {
+  ManifestResponse,
+  ManifestsService,
+  ManifestStatus,
+  ServiceFlow,
+  UserRole,
+} from "@/api_client";
 import { useUser } from "@/components/auth/auth-guard";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { Button } from "@/components/ui/button";
@@ -30,6 +36,8 @@ import {
 } from "@/components/ui/select";
 import { ALL_FILTER_VALUE } from "@/lib/form-options";
 import { prefetchAddresses } from "@/hooks/use-addresses";
+import { useProgressRouter } from "@/hooks/use-progress-router";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   buildQueryCacheKey,
   fetchWithCache,
@@ -39,9 +47,8 @@ import {
 } from "@/lib/query-cache";
 import { cn, extractApiErrorMessage } from "@/lib/utils";
 import { format } from "date-fns";
-import { CalendarRange, ChevronDown, Plus, Printer, Search, Truck, X } from "lucide-react";
+import { CalendarRange, ChevronDown, Loader2, Plus, Printer, Search, Truck, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
@@ -219,10 +226,12 @@ export interface PickupRequestsListProps {
 }
 
 export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
-  const router = useRouter();
+  const router = useProgressRouter();
   const { tenantSlug, routeTo } = useTenant();
-  const { capabilities } = useUser();
+  const { user, capabilities } = useUser();
   const flowConfig = PICKUP_FLOW_CONFIG[serviceFlow];
+  const canOverrideOtp =
+    user?.role === UserRole.OWNER || user?.role === UserRole.ADMIN;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL_VALUE);
@@ -245,11 +254,13 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const { pending: rowBusy, pendingKey: busyId, run: runRowAction } = useSingleFlight();
+  const { pending: dialogSubmitting, run: runDialogAction } = useSingleFlight();
+  const { pending: bulkPrinting, run: runBulkPrint } = useSingleFlight();
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [notPickedTarget, setNotPickedTarget] = useState<ManifestResponse | null>(null);
   const [dispatchTarget, setDispatchTarget] = useState<ManifestResponse | null>(null);
-  const [dialogSubmitting, setDialogSubmitting] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
@@ -321,22 +332,31 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
   const handlers: PickupRowHandlers = useMemo(
     () => ({
       onPrintLabel: (manifest, labelFormat) => {
-        setBusyId(manifest.id);
-        downloadPickupLabels(manifest, labelFormat)
-          .then(() => toast.success(`Labels for pickup ${getPickupDisplayId(manifest)} downloaded.`))
-          .catch(() => toast.error("Failed to download labels."))
-          .finally(() => setBusyId(null));
+        void runRowAction(async () => {
+          try {
+            await downloadPickupLabels(manifest, labelFormat);
+            toast.success(`Labels for pickup ${getPickupDisplayId(manifest)} downloaded.`);
+          } catch (err: unknown) {
+            toast.error(extractApiErrorMessage(err, "Failed to download labels."));
+          }
+        }, manifest.id);
       },
       onManifestCopy: (manifest) => {
-        setBusyId(manifest.id);
-        downloadPickupManifestCopy(manifest)
-          .then(() => toast.success(`Manifest copy for ${getPickupDisplayId(manifest)} downloaded.`))
-          .catch(() => toast.error("Failed to download the manifest copy."))
-          .finally(() => setBusyId(null));
+        void runRowAction(async () => {
+          try {
+            await downloadPickupManifestCopy(manifest);
+            toast.success(`Manifest copy for ${getPickupDisplayId(manifest)} downloaded.`);
+          } catch (err: unknown) {
+            toast.error(extractApiErrorMessage(err, "Failed to download the manifest copy."));
+          }
+        }, manifest.id);
       },
       onCancel: (manifest) => setPendingConfirm({ kind: ConfirmKind.CANCEL, manifest }),
       onOutForPickup: (manifest) => setPendingConfirm({ kind: ConfirmKind.OUT_FOR_PICKUP, manifest }),
-      onMarkPicked: (manifest) => setDispatchTarget(manifest),
+      onMarkPicked: (manifest) => {
+        setDispatchError(null);
+        setDispatchTarget(manifest);
+      },
       onNotPicked: (manifest) => setNotPickedTarget(manifest),
       onReschedule: (manifest) =>
         router.push(
@@ -349,7 +369,7 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
           )
         ),
     }),
-    [router, routeTo, serviceFlow]
+    [router, routeTo, runRowAction, serviceFlow]
   );
 
   const rowContext: PickupRowContext = useMemo(
@@ -359,8 +379,9 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
       canBook: capabilities.canBook,
       handlers,
       busyId,
+      rowBusy,
     }),
-    [serviceFlow, capabilities.canOperate, capabilities.canBook, handlers, busyId]
+    [serviceFlow, capabilities.canOperate, capabilities.canBook, handlers, busyId, rowBusy]
   );
 
   const toggleOne = useCallback((id: string) => {
@@ -412,10 +433,11 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={busyId === manifest.id}
+                    disabled={rowBusy}
                     data-testid={`pickup-requests.row.${purId}.confirm-picked`}
                     onClick={(event) => {
                       event.stopPropagation();
+                      setDispatchError(null);
                       setDispatchTarget(manifest);
                     }}
                     className="h-8 text-xs font-semibold"
@@ -429,7 +451,7 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
           },
         };
       }),
-    [rowContext, selectedIds, toggleOne, toggleMany, capabilities.canOperate, busyId]
+    [rowContext, selectedIds, toggleOne, toggleMany, capabilities.canOperate, rowBusy]
   );
 
   const selectedWithLabels = useMemo(
@@ -440,51 +462,54 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
     [visibleManifests, selectedIds]
   );
 
-  const handleBulkPrint = async () => {
-    for (const manifest of selectedWithLabels) {
-      try {
-        await downloadPickupLabels(manifest, PickupLabelFormat.A4);
-      } catch {
-        toast.error(`Failed to download labels for ${getPickupDisplayId(manifest)}.`);
+  const handleBulkPrint = () => {
+    void runBulkPrint(async () => {
+      for (const manifest of selectedWithLabels) {
+        try {
+          await downloadPickupLabels(manifest, PickupLabelFormat.A4);
+          toast.success(`Labels for pickup ${getPickupDisplayId(manifest)} downloaded.`);
+        } catch (err: unknown) {
+          toast.error(
+            extractApiErrorMessage(err, `Failed to download labels for ${getPickupDisplayId(manifest)}.`)
+          );
+        }
       }
-    }
+    });
   };
 
   const handleConfirm = async () => {
     if (!pendingConfirm) return;
     const { kind, manifest } = pendingConfirm;
     const pickupId = getPickupDisplayId(manifest);
-    setDialogSubmitting(true);
-    try {
-      await _runConfirmedAction(kind, manifest.id, tenantSlug);
-      toast.success(CONFIRM_COPY[kind].success(pickupId));
-      setPendingConfirm(null);
-      refresh();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Action failed. Please try again."));
-    } finally {
-      setDialogSubmitting(false);
-    }
+    await runDialogAction(async () => {
+      try {
+        await _runConfirmedAction(kind, manifest.id, tenantSlug);
+        toast.success(CONFIRM_COPY[kind].success(pickupId));
+        setPendingConfirm(null);
+        refresh();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Action failed. Please try again."));
+      }
+    });
   };
 
   const handleNotPicked = async (reason: string) => {
     if (!notPickedTarget) return;
     const pickupId = getPickupDisplayId(notPickedTarget);
-    setDialogSubmitting(true);
-    try {
-      await ManifestsService.markManifestNotPicked(
-        notPickedTarget.id,
-        { failure_reason: reason },
-        tenantSlug
-      );
-      toast.success(`Pickup ${pickupId} marked as Not Picked.`);
-      setNotPickedTarget(null);
-      refresh();
-    } catch (err: unknown) {
-      toast.error(extractApiErrorMessage(err, "Failed to mark the pickup as not picked."));
-    } finally {
-      setDialogSubmitting(false);
-    }
+    await runDialogAction(async () => {
+      try {
+        await ManifestsService.markManifestNotPicked(
+          notPickedTarget.id,
+          { failure_reason: reason },
+          tenantSlug
+        );
+        toast.success(`Pickup ${pickupId} marked as Not Picked.`);
+        setNotPickedTarget(null);
+        refresh();
+      } catch (err: unknown) {
+        toast.error(extractApiErrorMessage(err, "Failed to mark the pickup as not picked."));
+      }
+    });
   };
 
   const hasFilters =
@@ -609,11 +634,16 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={selectedWithLabels.length === 0}
+            disabled={bulkPrinting || selectedWithLabels.length === 0}
             onClick={handleBulkPrint}
             className="h-8 text-xs font-semibold"
           >
-            <Printer className="mr-1.5 h-3.5 w-3.5" /> Print labels
+            {bulkPrinting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Printer className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Print labels
           </Button>
           <Button
             size="sm"
@@ -735,33 +765,36 @@ export function PickupRequestsList({ serviceFlow }: PickupRequestsListProps) {
         pickupLabel={dispatchTarget ? getPickupDisplayId(dispatchTarget) : ""}
         shipments={dispatchTarget?.shipments ?? []}
         submitting={dialogSubmitting}
-        onSubmit={async (pickedIds, measurements) => {
+        canOverrideOtp={canOverrideOtp}
+        errorMessage={dispatchError}
+        onSubmit={async (pickedIds, measurements, pickupOtp, overrideReason) => {
           if (!dispatchTarget) return;
           const pickupId = getPickupDisplayId(dispatchTarget);
-          setDialogSubmitting(true);
-          try {
-            await ManifestsService.dispatchManifest(
-              dispatchTarget.id,
-              tenantSlug,
-              pickedIds.length > 0
-                ? {
-                    picked_shipment_ids: pickedIds,
-                    measurements: measurements.length > 0 ? measurements : undefined,
-                  }
-                : undefined
-            );
-            if (measurements.length > 0) window.dispatchEvent(new CustomEvent("wallet-updated"));
-            toast.success(`Pickup ${pickupId} marked as picked.`);
-            setDispatchTarget(null);
-            refresh();
-          } catch (err: unknown) {
-            toast.error(extractApiErrorMessage(err, "Failed to confirm pickup."));
-          } finally {
-            setDialogSubmitting(false);
-          }
+          setDispatchError(null);
+          await runDialogAction(async () => {
+            try {
+              await ManifestsService.dispatchManifest(dispatchTarget.id, tenantSlug, {
+                picked_shipment_ids: pickedIds.length > 0 ? pickedIds : undefined,
+                measurements: measurements.length > 0 ? measurements : undefined,
+                pickup_otp: pickupOtp || undefined,
+                pickup_otp_override_reason: overrideReason || undefined,
+              });
+              if (measurements.length > 0) window.dispatchEvent(new CustomEvent("wallet-updated"));
+              toast.success(`Pickup ${pickupId} marked as picked.`);
+              setDispatchTarget(null);
+              refresh();
+            } catch (err: unknown) {
+              const msg = extractApiErrorMessage(err, "Failed to confirm pickup.");
+              setDispatchError(msg);
+              toast.error(msg);
+            }
+          });
         }}
         onOpenChange={(open) => {
-          if (!open) setDispatchTarget(null);
+          if (!open) {
+            setDispatchError(null);
+            setDispatchTarget(null);
+          }
         }}
       />
     </div>

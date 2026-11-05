@@ -33,6 +33,7 @@ import { buildBookedOrderHref } from "@/components/pickups/next-add-to-pickup-ba
 import { todayApiDate } from "@/components/pickups/pickup-constants";
 import { useTenant } from "@/components/providers/tenant-provider";
 import { fetchAddressesCached, getCachedAddresses } from "@/hooks/use-addresses";
+import { extractApiErrorMessage } from "@/lib/utils";
 import { forwardShipmentSchema, ForwardShipmentFormValues } from "@/lib/validations/shipment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
@@ -305,8 +306,7 @@ export default function ForwardBookingSandbox() {
       });
       toast.success(`${file.name} uploaded and attached to this shipment.`);
     } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || "Failed to upload document");
+      toast.error(extractApiErrorMessage(error, "Failed to upload document"));
     } finally {
       setIsUploading(false);
     }

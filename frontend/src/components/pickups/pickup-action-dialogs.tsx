@@ -48,7 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, KeyRound, Loader2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 
 import { NOT_PICKED_REASONS, OTHER_REASON_VALUE } from "./pickup-constants";
@@ -191,11 +191,19 @@ export interface DispatchPickupDialogProps {
   pickupLabel: string;
   shipments: ManifestShipmentItem[];
   submitting: boolean;
+  /** True when the caller is Owner or Admin (may override OTP verification with a mandatory reason). */
+  canOverrideOtp?: boolean;
+  /** Server-side OTP verification or lockout error message to display inside the dialog. */
+  errorMessage?: string | null;
   /**
-   * Called with the handed-over AWB ids and the optional "Actual pieces" per AWB.
-   * Callers that ignore the second argument keep the old behaviour (billed on declared boxes).
+   * Called with the handed-over AWB ids, optional "Actual pieces" per AWB, and Pickup OTP / override reason.
    */
-  onSubmit: (pickedShipmentIds: string[], measurements: DispatchMeasurement[]) => void;
+  onSubmit: (
+    pickedShipmentIds: string[],
+    measurements: DispatchMeasurement[],
+    pickupOtp?: string,
+    overrideReason?: string,
+  ) => void;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -285,11 +293,17 @@ export function DispatchPickupDialog({
   pickupLabel,
   shipments,
   submitting,
+  canOverrideOtp = false,
+  errorMessage = null,
   onSubmit,
   onOpenChange,
 }: DispatchPickupDialogProps) {
   const { tenantSlug } = useTenant();
   const [resolvingPieces, setResolvingPieces] = useState(false);
+  const [pickupOtp, setPickupOtp] = useState("");
+  const [useOverride, setUseOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
   const form = useForm<DispatchFormValues>({
     resolver: dispatchResolver,
     defaultValues: {
@@ -310,6 +324,7 @@ export function DispatchPickupDialog({
   const allPicked = pickedCount === shipments.length;
   const allUnchecked = hasShipments && pickedCount === 0;
   const busy = submitting || resolvingPieces;
+  const displayedError = localError || errorMessage;
 
   const setPicked = (index: number, picked: boolean) => {
     form.setValue(`entries.${index}.picked`, picked);
@@ -321,10 +336,28 @@ export function DispatchPickupDialog({
   };
 
   const submit = form.handleSubmit(async (values) => {
+    setLocalError(null);
+    const trimmedOtp = pickupOtp.trim();
+    const trimmedReason = overrideReason.trim();
+    if (useOverride && canOverrideOtp) {
+      if (!trimmedReason) {
+        setLocalError("A mandatory override reason is required to bypass pickup OTP verification.");
+        return;
+      }
+    } else if (!/^\d{6}$/.test(trimmedOtp)) {
+      setLocalError("Enter the 6-digit pickup handover OTP shared by the seller.");
+      return;
+    }
+
     setResolvingPieces(true);
     try {
       const { pickedIds, measurements } = await _toDispatchPayload(values.entries, tenantSlug);
-      onSubmit(pickedIds, measurements);
+      onSubmit(
+        pickedIds,
+        measurements,
+        useOverride && canOverrideOtp ? undefined : trimmedOtp,
+        useOverride && canOverrideOtp ? trimmedReason : undefined,
+      );
     } finally {
       setResolvingPieces(false);
     }
@@ -481,6 +514,92 @@ export function DispatchPickupDialog({
                 )}
               </div>
             )}
+
+            <div className="space-y-2.5 rounded-lg border border-border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label
+                  htmlFor="pickup-dispatch-otp"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-foreground"
+                >
+                  <KeyRound className="h-3.5 w-3.5 text-primary" />
+                  Pickup Handover OTP (shared by seller)
+                </Label>
+                {canOverrideOtp && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+                    <input
+                      type="checkbox"
+                      data-testid="pickup-dispatch.override-toggle"
+                      className="h-3.5 w-3.5 rounded border-input accent-primary"
+                      checked={useOverride}
+                      disabled={busy}
+                      onChange={(event) => {
+                        setUseOverride(event.target.checked);
+                        setLocalError(null);
+                      }}
+                    />
+                    Override without OTP (Owner/Admin)
+                  </label>
+                )}
+              </div>
+
+              {useOverride && canOverrideOtp ? (
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="pickup-dispatch-override-reason"
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground"
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5 text-primary" />
+                    Mandatory audit reason for overriding OTP
+                  </Label>
+                  <Input
+                    id="pickup-dispatch-override-reason"
+                    data-testid="pickup-dispatch.override-reason"
+                    disabled={busy}
+                    maxLength={FAILURE_REASON_MAX_LENGTH}
+                    value={overrideReason}
+                    onChange={(event) => {
+                      setOverrideReason(event.target.value);
+                      setLocalError(null);
+                    }}
+                    placeholder="e.g. Seller unreachable at dock; handover verified via hub phone call"
+                    className="h-9 bg-background text-xs"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                  <Input
+                    id="pickup-dispatch-otp"
+                    data-testid="pickup-dispatch.otp-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    disabled={busy}
+                    value={pickupOtp}
+                    onChange={(event) => {
+                      setPickupOtp(event.target.value.replace(/\D/g, "").slice(0, 6));
+                      setLocalError(null);
+                    }}
+                    placeholder="6-digit OTP (e.g. 482910)"
+                    className="h-9 w-full bg-background font-mono text-sm tracking-widest sm:w-52"
+                  />
+                  <span className="text-[11px] text-muted-foreground">
+                    Ask the seller/warehouse staff for the 6-digit pickup OTP before loading cartons.
+                  </span>
+                </div>
+              )}
+
+              {displayedError && (
+                <div
+                  data-testid="pickup-dispatch.error"
+                  role="alert"
+                  className="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive"
+                >
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{displayedError}</span>
+                </div>
+              )}
+            </div>
 
             <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
               <Button

@@ -18,6 +18,10 @@ export type ManifestResponse = {
     service_flow?: ServiceFlow;
     pickup_request_number?: (string | null);
     failure_reason?: (string | null);
+    pickup_otp?: (string | null);
+    pickup_otp_verified_at?: (string | null);
+    pickup_otp_verified_by?: (string | null);
+    pickup_otp_override_reason?: (string | null);
     pickup_location_name?: string;
     pickup_location_address?: string;
     expected_awbs?: number;

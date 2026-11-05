@@ -142,11 +142,12 @@ export function ChargesHistoryCard({
           variant="ghost"
           size="icon"
           onClick={() => void load()}
+          disabled={loading}
           aria-label="Refresh charges history"
           data-testid={`${prefix}.refresh`}
           className="h-8 w-8 shrink-0"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </Button>
       </CardHeader>
       <CardContent className="min-w-0">

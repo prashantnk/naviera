@@ -33,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import {
   buildQueryCacheKey,
   getCachedQuery,
@@ -211,7 +212,11 @@ export default function InvoicesListPage() {
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const {
+    pending: downloadPending,
+    pendingKey: downloadingKey,
+    run: runDownload,
+  } = useSingleFlight();
   const columns = NOTE_TAB_COLUMNS[activeTab];
 
   const fetchInvoices = useCallback(async () => {
@@ -267,48 +272,46 @@ export default function InvoicesListPage() {
     });
   }, [invoices, searchQuery, sortAsc, dateFrom, dateTo]);
 
-  const handleDownloadPdf = async (inv: BillingInvoiceRead) => {
+  const handleDownloadPdf = (inv: BillingInvoiceRead) => {
     const key = ["pdf", inv.invoice_number].join("-");
-    setDownloadingKey(key);
-    try {
-      const url = ["/api/v1/invoices/", inv.invoice_number, "/pdf"].join("");
-      const filename = ["invoice_", inv.invoice_number, ".pdf"].join("");
-      await downloadInvoiceFileBlob(url, filename);
-      toast.success(["Downloaded PDF for ", inv.invoice_number].join(""));
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Unable to download invoice PDF.")
-      );
-    } finally {
-      setDownloadingKey(null);
-    }
+    void runDownload(async () => {
+      try {
+        const url = ["/api/v1/invoices/", inv.invoice_number, "/pdf"].join("");
+        const filename = ["invoice_", inv.invoice_number, ".pdf"].join("");
+        await downloadInvoiceFileBlob(url, filename);
+        toast.success(["Downloaded PDF for ", inv.invoice_number].join(""));
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Unable to download invoice PDF.")
+        );
+      }
+    }, key);
   };
 
-  const handleDownloadCsv = async (inv: BillingInvoiceRead) => {
+  const handleDownloadCsv = (inv: BillingInvoiceRead) => {
     const key = ["csv", inv.invoice_number].join("-");
-    setDownloadingKey(key);
-    try {
-      const url = [
-        "/api/v1/invoices/",
-        inv.invoice_number,
-        "/transactions-csv",
-      ].join("");
-      const filename = [
-        "invoice_",
-        inv.invoice_number,
-        "_transactions.csv",
-      ].join("");
-      await downloadInvoiceFileBlob(url, filename);
-      toast.success(
-        ["Downloaded transaction CSV for ", inv.invoice_number].join("")
-      );
-    } catch (err: unknown) {
-      toast.error(
-        extractApiErrorMessage(err, "Unable to download transactions CSV.")
-      );
-    } finally {
-      setDownloadingKey(null);
-    }
+    void runDownload(async () => {
+      try {
+        const url = [
+          "/api/v1/invoices/",
+          inv.invoice_number,
+          "/transactions-csv",
+        ].join("");
+        const filename = [
+          "invoice_",
+          inv.invoice_number,
+          "_transactions.csv",
+        ].join("");
+        await downloadInvoiceFileBlob(url, filename);
+        toast.success(
+          ["Downloaded transaction CSV for ", inv.invoice_number].join("")
+        );
+      } catch (err: unknown) {
+        toast.error(
+          extractApiErrorMessage(err, "Unable to download transactions CSV.")
+        );
+      }
+    }, key);
   };
 
   return (
@@ -545,7 +548,7 @@ export default function InvoicesListPage() {
                               <DropdownMenuTrigger asChild>
                                 <button
                                   type="button"
-                                  disabled={isDownloading}
+                                  disabled={downloadPending}
                                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
                                 >
                                   {isDownloading ? (
@@ -644,16 +647,24 @@ export default function InvoicesListPage() {
                           <button
                             type="button"
                             onClick={() => handleDownloadPdf(inv)}
-                            className="font-semibold text-primary hover:underline"
+                            disabled={downloadPending}
+                            className="inline-flex items-center gap-1 font-semibold text-primary hover:underline disabled:opacity-50"
                             data-testid="invoice-detail.actions.download-pdf"
                           >
+                            {downloadingKey === ["pdf", inv.invoice_number].join("-") && (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            )}
                             PDF
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDownloadCsv(inv)}
-                            className="font-semibold text-primary hover:underline"
+                            disabled={downloadPending}
+                            className="inline-flex items-center gap-1 font-semibold text-primary hover:underline disabled:opacity-50"
                           >
+                            {downloadingKey === ["csv", inv.invoice_number].join("-") && (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            )}
                             CSV
                           </button>
                         </div>

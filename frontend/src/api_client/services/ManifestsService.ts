@@ -131,6 +131,32 @@ export class ManifestsService {
         });
     }
     /**
+     * Get Manifest
+     * Get a single Pickup Request detail (customer-scoped; `pickup_otp` stripped for ops/support/readonly).
+     * @param manifestId
+     * @param xTenantSlug
+     * @returns ManifestResponse Successful Response
+     * @throws ApiError
+     */
+    public static getManifest(
+        manifestId: string,
+        xTenantSlug?: (string | null),
+    ): CancelablePromise<ManifestResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/manifests/{manifest_id}',
+            path: {
+                'manifest_id': manifestId,
+            },
+            headers: {
+                'x-tenant-slug': xTenantSlug,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Add Shipments To Manifest
      * Add OPEN shipments to an existing SCHEDULED pickup (same flow + pickup location).
      * @param manifestId

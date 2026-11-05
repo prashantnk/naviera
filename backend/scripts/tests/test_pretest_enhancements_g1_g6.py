@@ -154,15 +154,21 @@ async def test_g1_partial_pickup_manifest_dispatch_detaches_unpicked_awbs():
         # 4. Empty picked_shipment_ids list must be rejected with HTTP 400
         empty_res = await client.post(
             f"{MANIFESTS_URL}/{manifest_id}/dispatch",
-            json={"picked_shipment_ids": []},
+            json={
+                "picked_shipment_ids": [],
+                "pickup_otp": manifest["pickup_otp"],
+            },
             headers=HEADERS,
         )
         assert empty_res.status_code == 400
 
-        # 5. Dispatch with ONLY s1_id picked (partial pickup)
+        # 5. Dispatch with ONLY s1_id picked (partial pickup) and seller's 6-digit pickup_otp
         dispatch_res = await client.post(
             f"{MANIFESTS_URL}/{manifest_id}/dispatch",
-            json={"picked_shipment_ids": [s1_id]},
+            json={
+                "picked_shipment_ids": [s1_id],
+                "pickup_otp": manifest["pickup_otp"],
+            },
             headers=HEADERS,
         )
         assert dispatch_res.status_code == 200, dispatch_res.text

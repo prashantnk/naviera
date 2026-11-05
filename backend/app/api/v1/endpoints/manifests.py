@@ -120,6 +120,23 @@ async def get_pickup_candidates(
     )
 
 
+@router.get("/{manifest_id}", response_model=ManifestResponse)
+async def get_manifest(
+    *,
+    manifest_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    current_tenant: Tenant = Depends(get_tenant_from_header),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Get a single Pickup Request detail (customer-scoped; `pickup_otp` stripped for ops/support/readonly).
+    """
+    service = ManifestService(session)
+    return await service.get_manifest(
+        manifest_id, current_tenant.id, current_user=current_user
+    )
+
+
 @router.post("/{manifest_id}/shipments", response_model=ManifestResponse)
 async def add_shipments_to_manifest(
     *,
@@ -234,6 +251,8 @@ async def dispatch_manifest(
         user_id=current_user.id,
         current_user=current_user,
         picked_shipment_ids=payload.picked_shipment_ids if payload else None,
+        pickup_otp=payload.pickup_otp if payload else None,
+        pickup_otp_override_reason=payload.pickup_otp_override_reason if payload else None,
         **dispatch_kwargs,
     )
     body = ManifestResponse.model_validate(result)

@@ -32,6 +32,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useSingleFlight } from "@/hooks/use-single-flight";
 import { extractApiErrorMessage } from "@/lib/utils";
 
 import {
@@ -194,7 +195,7 @@ export function MeasurementDialog({
   const { capabilities } = useUser();
   // One Idempotency-Key per dialog instance: a double tap replays, never double-bills (H-4).
   const [idempotencyKey] = useState(newIdempotencyKey);
-  const [submitting, setSubmitting] = useState(false);
+  const { pending: submitting, run: runSubmit } = useSingleFlight();
   const form = useForm<MeasurementFormValues>({
     resolver: measurementResolver,
     defaultValues: {
@@ -208,8 +209,7 @@ export function MeasurementDialog({
   });
   const mode = form.watch("mode");
 
-  const onSubmit = async (values: MeasurementFormValues) => {
-    setSubmitting(true);
+  const submitMeasurement = async (values: MeasurementFormValues) => {
     try {
       const outcome = await recordShipmentMeasurement(
         shipmentId,
@@ -223,10 +223,11 @@ export function MeasurementDialog({
       onOpenChange(false);
     } catch (err: unknown) {
       toast.error(extractApiErrorMessage(err, "Could not record the measurement."));
-    } finally {
-      setSubmitting(false);
     }
   };
+
+  // The key makes a replay harmless server-side; the single flight stops the replay being sent.
+  const onSubmit = (values: MeasurementFormValues) => runSubmit(() => submitMeasurement(values));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -392,7 +393,7 @@ export function MeasurementDialog({
                 className="w-full sm:w-auto"
               >
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save measurement
+                {submitting ? "Saving…" : "Save measurement"}
               </Button>
             </DialogFooter>
           </form>

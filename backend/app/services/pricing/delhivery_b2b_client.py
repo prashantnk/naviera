@@ -60,6 +60,8 @@ PRICING_FILE_MARKER = "pricing file"
 NOT_SERVICEABLE_MARKERS = ("not serviceable", "invalid pincode", "not valid pin", "not found in database")
 ERROR_KEYS = ("error", "errors", "message", "detail", "msg")
 SERVICEABLE_FLAG_KEYS = ("serviceable", "is_serviceable")
+COD_FLAG_KEYS = ("cod", "is_cod", "cod_serviceable", "cod_available")
+NEGATIVE_STRING_FLAGS = frozenset({"N", "NO", "FALSE", "0"})
 TAT_KEYS = ("tat", "tat_days", "expected_tat", "days")
 
 
@@ -69,8 +71,10 @@ class DelhiveryB2BApi(Protocol):
     async def estimate(self, body: Mapping[str, Any]) -> Dict[str, Any]:
         """The raw JSON answer of `POST /freight/estimate` for the exact body."""
 
-    async def pincode_serviceable(self, pincode: str, weight_g: int) -> bool:
-        """False when Delhivery B2B does not serve the pin."""
+    async def pincode_serviceable(
+        self, pincode: str, weight_g: int, *, is_cod: bool = False, is_origin: bool = False
+    ) -> bool:
+        """False when Delhivery B2B does not serve the pin (or does not support pickup / COD)."""
 
     async def tat_days(self, origin_pin: str, destination_pin: str) -> Optional[int]:
         """Transit days, or None when unknown."""
@@ -282,31 +286,42 @@ class LiveDelhiveryB2BApi:
             raise DelhiveryUnavailableError("Delhivery B2B returned no estimate.")
         return answer
 
-    async def pincode_serviceable(self, pincode: str, weight_g: int) -> bool:
+    async def pincode_serviceable(
+        self, pincode: str, weight_g: int, *, is_cod: bool = False, is_origin: bool = False
+    ) -> bool:
         """`GET /pincode-service/{pin}` (24 h cache). A 'not serviceable' refusal → False."""
-        hit, cached = _cached_lookup(("pin", pincode))
+        check_cod = bool(is_cod and not is_origin)
+        mode_key = ("pin", pincode, "cod" if check_cod else "std")
+        hit, cached = _cached_lookup(mode_key)
         if hit:
             return bool(cached)
-        try:
-            body = await self._call("GET", PINCODE_PATH.format(pincode=pincode), params={"weight": weight_g})
-        except DelhiveryRefusedError as exc:
-            if not _is_not_serviceable(str(exc)):
-                raise
-            serviceable = False
-        else:
-            serviceable = self._serviceable_flag(body)
-        _store_lookup(("pin", pincode), serviceable)
+        raw_hit, body = _cached_lookup(("pin_raw", pincode))
+        if not raw_hit:
+            try:
+                body = await self._call("GET", PINCODE_PATH.format(pincode=pincode), params={"weight": weight_g})
+            except DelhiveryRefusedError as exc:
+                if not _is_not_serviceable(str(exc)):
+                    raise
+                body = {"serviceable": False}
+            _store_lookup(("pin_raw", pincode), body)
+        serviceable = self._serviceable_flag(body, is_cod=check_cod)
+        _store_lookup(mode_key, serviceable)
         return serviceable
 
     @staticmethod
-    def _serviceable_flag(body: Any) -> bool:
-        """An explicit `serviceable: false` anywhere at the top or under `data` → False; else True."""
+    def _serviceable_flag(body: Any, *, is_cod: bool = False) -> bool:
+        """An explicit `serviceable: false` (or `cod: false`/`'N'` when `is_cod=True`) → False; else True."""
         data = body.get("data") if isinstance(body, dict) else None
         for container in (body, data):
             if isinstance(container, dict):
                 for key in SERVICEABLE_FLAG_KEYS:
                     if container.get(key) is False:
                         return False
+                if is_cod:
+                    for key in COD_FLAG_KEYS:
+                        val = container.get(key)
+                        if val is False or (isinstance(val, str) and val.strip().upper() in NEGATIVE_STRING_FLAGS):
+                            return False
         return True
 
     async def tat_days(self, origin_pin: str, destination_pin: str) -> Optional[int]:
