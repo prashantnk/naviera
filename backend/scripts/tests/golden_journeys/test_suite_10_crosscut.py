@@ -48,7 +48,7 @@ from typing import (
 
 import httpx
 import pytest
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from httpx import ASGITransport
 from sqlalchemy import text
 from sqlmodel import col, select
@@ -1033,10 +1033,10 @@ async def j54_world() -> Tuple[World, Mapping[str, Any]]:
 def _registered_routes() -> FrozenSet[Tuple[str, str]]:
     """(METHOD, path template) of every route mounted on the app."""
     pairs = set()
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            for method in route.methods:
-                pairs.add((method, route.path))
+    for ctx in iter_route_contexts(app.routes):
+        if isinstance(ctx.original_route, APIRoute) and ctx.methods and ctx.path:
+            for method in ctx.methods:
+                pairs.add((method, ctx.path))
     return frozenset(pairs)
 
 

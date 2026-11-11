@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
+import jwt
 from fastapi import HTTPException, status
-from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlmodel import SQLModel
 
@@ -36,7 +36,7 @@ def decode_access_token(token: str) -> TokenPayload:
         )
         # Validate the payload against our TokenPayload schema
         token_data = TokenPayload(**payload)
-    except (JWTError, ValidationError) as e:
+    except (jwt.InvalidTokenError, ValidationError) as e:
         # If decoding or validation fails, raise an unauthorized exception
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
