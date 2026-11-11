@@ -11,16 +11,25 @@ This guide covers everything a developer or AI coding agent needs to set up, run
 - **Node.js:** `20` (`>=20`) and **npm**
 - **Google Chrome / Chromium:** Used on headless CDP port `:9224` when running the Selenium/CDP UI E2E suite (`backend/scripts/tests/ui_golden/`)
 
-### 1.2 Install Dependencies & Initialize `.env` Files
+### 1.2 Install Dependencies, Lifecycle & CVE Hygiene (`scripts/dev_env.sh`)
 ```bash
 # 1. Copy committed environment templates (if not already present)
 cp -n backend/.env.example backend/.env
 cp -n frontend/.env.example frontend/.env.local
 
-# 2. Install backend & frontend dependencies (add '--with e2e' in backend if running headless Chrome UI E2E tests)
-cd backend && poetry install && cd ..
-cd frontend && npm ci && cd ..
+# 2. Materialize & auto-upgrade backend + frontend dependencies, purge download caches,
+#    and verify zero CVEs (pip-audit + npm audit --audit-level=moderate)
+bash scripts/dev_env.sh up
+
+# Lockfile-strict install without modifying poetry.lock or package-lock.json:
+bash scripts/dev_env.sh up --frozen
 ```
+
+Lifecycle commands provided by `scripts/dev_env.sh`:
+- **`bash scripts/dev_env.sh up [--frozen]`** — Upgrades `backend/` (`poetry update && poetry install --with dev,e2e`) and `frontend/` (`npm update && npm install`) to the latest compatible versions (or installs locked versions with `--frozen`), purges local Poetry/pip/npm download caches, and runs `pip-audit` + `npm audit --audit-level=moderate`.
+- **`bash scripts/dev_env.sh status`** — Reports whether `backend/.venv`, `frontend/node_modules`, and `frontend/.next` are currently materialized along with installed `fastapi`, `starlette`, and `next` versions.
+- **`bash scripts/dev_env.sh audit`** — Runs `poetry run pip-audit` (backend) and `npm audit --audit-level=moderate` (frontend), exiting non-zero if any vulnerability is detected.
+- **`bash scripts/dev_env.sh down`** — Removes `backend/.venv`, `frontend/node_modules`, `frontend/.next`, and local Poetry/pip/npm download caches so zero installed packages remain on disk when idle.
 
 ### 1.3 Start the Stack (Ports `:8000` & `:3000`)
 ```bash
@@ -87,7 +96,7 @@ All verification is orchestrated through `backend/scripts/run_golden.sh`.
 
 | Tier | Command | DB Required? | What It Verifies |
 | :--- | :--- | :---: | :--- |
-| **Quick** | `bash backend/scripts/run_golden.sh --quick` | No (~60s) | `ruff check .`, `tsc --noEmit`, `npm run test:audit` (`math-check.py` + `find-branding-colors.py`), `vitest` (64 suites), and 35 pure backend `pytest` unit suites. |
+| **Quick** | `bash backend/scripts/run_golden.sh --quick` | No (~60s) | `ruff check .`, `pip-audit`, `tsc --noEmit`, `eslint --max-warnings=0`, `npm run test:audit` (`math-check.py` + `find-branding-colors.py`), `vitest`, and pure backend `pytest` unit suites. |
 | **Smoke** | `bash backend/scripts/run_golden.sh --smoke` | Yes (~3–4m) | Resets & reseeds `logismart-test`, runs B2C lifecycle (`test_09`), B2B lifecycle (`test_10`), D9 pricing matrix (`test_11`), `SMOKE_UI_SUITES`, and `golden_checks.py` (`assert_live_tenants_untouched` + wallet/GST invariants). |
 | **Full (Default)** | `bash backend/scripts/run_golden.sh` | Yes (~10–12m) | Static + all unit suites + all 8 `golden_journeys/` API suites + all headless Chrome `ui_golden/` suites (CDP `:9224`) + `golden_checks.py`. |
 

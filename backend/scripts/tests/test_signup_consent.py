@@ -10,15 +10,18 @@ test tenant.
 """
 
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Optional
 
+import jwt
 import pytest
 from fastapi import HTTPException
 
-from app.core.security import TokenPayload
+from app.core import security as security_module
+from app.core.security import TokenPayload, decode_access_token
 from app.models.tenants import ServiceScope, Tenant, User, UserRole
 from app.repositories.tenants import TenantRepository
 from app.schemas.v1.tenants import PasswordSignupRequest
@@ -270,3 +273,68 @@ async def test_first_user_on_zero_user_tenant_becomes_owner_and_second_is_custom
     assert promoted.role == UserRole.owner
     assert promoted.service_scope == ServiceScope.BOTH
     assert getattr(promoted, "account_type", None) == "TENANT_STAFF"
+
+
+def test_mint_and_decode_access_token_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Minted HS256 JWT round-trips cleanly through PyJWT decode_access_token."""
+    test_secret = "unit-test-hs256-secret-at-least-32-bytes-long!"
+    test_issuer = "https://auth.example.test/auth/v1"
+    monkeypatch.setattr(security_module.settings, "SECRET_KEY", test_secret)
+    monkeypatch.setattr(security_module.settings, "ALGORITHM", "HS256")
+    monkeypatch.setattr(security_module.settings, "JWT_ISSUER", test_issuer)
+
+    service = TenantService(tenant_repo=_InMemoryBootstrapRepo())  # type: ignore[arg-type]
+    user = User(
+        id=uuid.uuid4(),
+        supabase_user_id=NEW_AUTH_USER_ID,
+        email="seller@example.com",
+        full_name="Seller",
+        role=UserRole.customer,
+        service_scope=ServiceScope.B2C,
+        tenant_id=uuid.uuid4(),
+    )
+    resp = service._mint_supabase_session(
+        supabase_user_id=NEW_AUTH_USER_ID, email="seller@example.com", user=user
+    )
+    decoded = decode_access_token(resp.access_token)
+    assert decoded.sub == NEW_AUTH_USER_ID
+    assert decoded.email == "seller@example.com"
+    assert decoded.aud == "authenticated"
+
+
+@pytest.mark.parametrize(
+    "override_claims,signing_secret",
+    [
+        ({}, "wrong-signing-secret-at-least-32-bytes-long!!"),
+        ({"exp": int(time.time()) - 60}, "unit-test-hs256-secret-at-least-32-bytes-long!"),
+        ({"aud": "wrong-audience"}, "unit-test-hs256-secret-at-least-32-bytes-long!"),
+        ({"iss": "https://wrong.issuer/auth/v1"}, "unit-test-hs256-secret-at-least-32-bytes-long!"),
+    ],
+)
+def test_decode_access_token_rejects_invalid_jwts(
+    monkeypatch: pytest.MonkeyPatch,
+    override_claims: dict[str, Any],
+    signing_secret: str,
+) -> None:
+    """Tampered, expired, wrong-audience, and wrong-issuer JWTs raise 401."""
+    test_secret = "unit-test-hs256-secret-at-least-32-bytes-long!"
+    test_issuer = "https://auth.example.test/auth/v1"
+    monkeypatch.setattr(security_module.settings, "SECRET_KEY", test_secret)
+    monkeypatch.setattr(security_module.settings, "ALGORITHM", "HS256")
+    monkeypatch.setattr(security_module.settings, "JWT_ISSUER", test_issuer)
+
+    now_ts = int(time.time())
+    claims: dict[str, Any] = {
+        "sub": NEW_AUTH_USER_ID,
+        "email": "seller@example.com",
+        "aud": "authenticated",
+        "iss": test_issuer,
+        "iat": now_ts,
+        "exp": now_ts + 3600,
+        **override_claims,
+    }
+    bad_token = jwt.encode(claims, signing_secret, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        decode_access_token(bad_token)
+    assert exc.value.status_code == 401
+

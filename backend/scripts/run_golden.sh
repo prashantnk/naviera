@@ -7,7 +7,7 @@
 #   --quick          minutes static + pure unit suites (no journey writes, no servers needed)
 #
 # Phases:
-#   static     ruff (backend) + tsc --noEmit, npm run test:audit, vitest (frontend)
+#   static     ruff, pip-audit (backend) + tsc --noEmit, npm run test:audit, vitest (frontend)
 #   preflight  servers up, live `logismart` counts BEFORE
 #   api        golden journeys, ONE pytest session in a fixed order (the session fixture resets
 #              logismart-test once; later suites read state written by earlier ones)
@@ -195,6 +195,7 @@ step() {  # step <label> <command...>: one static check, prints a one-line verdi
 static_checks() {
   local rc=0
   step ruff "$POETRY" run ruff check . || rc=1
+  step pip_audit "$POETRY" run pip-audit || rc=1
   step tsc bash -c "cd '$FRONTEND_DIR' && npx tsc --noEmit" || rc=1
   step eslint bash -c "cd '$FRONTEND_DIR' && npx eslint --max-warnings=0 ." || rc=1
   step test_audit bash -c "cd '$FRONTEND_DIR' && npm run test:audit" || rc=1

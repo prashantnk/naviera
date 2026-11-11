@@ -5,8 +5,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+import jwt
 from fastapi import Depends, HTTPException
-from jose import jwt
 from pydantic import ValidationError
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel.ext.asyncio.session import AsyncSession

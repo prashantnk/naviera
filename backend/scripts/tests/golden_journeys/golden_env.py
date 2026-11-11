@@ -44,7 +44,7 @@ from typing import (
 )
 from uuid import UUID
 
-from jose import jwt
+import jwt
 from sqlalchemy import event
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
