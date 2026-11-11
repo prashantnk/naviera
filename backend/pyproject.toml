@@ -42,7 +42,7 @@ optional = true
 
 [tool.poetry.group.e2e.dependencies]
 # UI golden layer (backend/scripts/tests/ui_golden): attaches over CDP to Chrome :9224, no browser download.
-pytest-playwright = "^0.7"
+pytest-playwright = ">=0.7,<0.11"
 pypdf = ">=6.21.4,<8.0.0"
 
 [build-system]
